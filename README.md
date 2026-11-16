@@ -16,7 +16,8 @@ plugin assumed.
 
 **Early, not usable yet.** Built so far: the plugin skeleton and its
 configuration page; encodings, keys and fingerprints; the pairing code
-and addresses.
+and addresses; signing and checking requests and answers, with the nonce
+memory.
 
 ## Building
 

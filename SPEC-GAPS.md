@@ -103,6 +103,60 @@ pattern, but leaves these open:
 **Assumed.** The plugin refuses: an uppercase scheme; a port of 0, over
 65535, or with a leading zero; a bracketed host that isn't a valid IPv6
 address; any `?`, `#` or `@`. It accepts a trailing slash and keeps the
-address as given, but always writes its own address without one (its
-configuration refuses nothing more, but see section 7 below). It doesn't
-limit label lengths.
+address as given, but removes a trailing slash from its own configured
+address before using it. It doesn't limit label lengths.
+
+## Section 6: Signing requests and answers
+
+### 6.4 step 2: what "a decimal integer" allows
+
+**Issue.** Step 2 says `Overfin-Date` "parses as a decimal integer", and
+open question 8 says Overfin also takes a leading `+`. Leading zeros, a
+`-` sign, and the largest value aren't settled. Section 6.2 says the
+signed line is "exactly the text of the header", so each spelling is a
+different message, which keeps replays out, but two implementations can
+still disagree on whether a request is valid.
+
+**Assumed.** ASCII digits only: no sign, no leading zero (except `0`
+itself), at most 18 digits. That is exactly what a sender writes for a
+Unix time ("decimal ASCII", section 2), so no honest request is refused.
+The specification should give the grammar, for example `0|[1-9][0-9]*`.
+
+### 6.4 and 6.5: a forgotten key on pair while a code is live
+
+**Issue.** Step 8 has an exception: a key whose pairing the receiver ended
+gets a signed `404`. Section 6.5 says that on `pair`, while a code is
+live, the receiver "hears any key". The two meet when the ended peer's
+operator is given a new code, the only way the pairing starts again
+(7.4: "starts again only with a new code"). Which wins on `pair`?
+
+**Assumed.** On `pair` with a live code, every key is heard, forgotten
+ones included: otherwise a new code could never restart a pairing that
+ended. On success the key is taken off the forgotten list. On every other
+call, and on `pair` without a live code, a forgotten key gets the signed
+`404`.
+
+### 6.5: when a nonce's 10 minutes start
+
+**Issue.** "Keeps every accepted (key, nonce) pair for at least 10
+minutes" doesn't say from when: the request's date or the moment it was
+accepted. Either works, but not obviously.
+
+**Assumed.** From acceptance. A request is accepted at most 5 minutes
+before its date passes out of the window on the other side, so 10 minutes
+from acceptance always outlasts it.
+
+### 6.2: the target the receiver rebuilds
+
+**Issue.** The receiver rebuilds the message "from its own address's
+host", but the `<target>` line can only come from the request itself. The
+section doesn't say so, nor whether a receiver must use the raw target as
+received (percent-encoding untouched) or a decoded path. A web framework
+usually hands over the decoded path, so `/api/v1/federation/%70air`
+would be rebuilt as `/api/v1/federation/pair`. Also unsaid: whether a
+receiver refuses a federation call that carries a query ("federation calls
+have no query").
+
+**Assumed.** The plugin rebuilds `<target>` from the raw request target as
+it reached Jellyfin (path and query, percent-encoding as sent). A request
+signed over another spelling of the path fails step 7.
