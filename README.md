@@ -15,7 +15,8 @@ plugin assumed.
 ## Status
 
 **Early, not usable yet.** Built so far: the plugin skeleton and its
-configuration page; encodings, keys and fingerprints.
+configuration page; encodings, keys and fingerprints; the pairing code
+and addresses.
 
 ## Building
 
