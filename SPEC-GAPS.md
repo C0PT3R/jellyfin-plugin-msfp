@@ -3,11 +3,19 @@
 Places where [MSFP version 0](https://github.com/C0PT3R/msfp-spec/blob/main/spec/v0.md)
 is unclear, incomplete or wrong, found while building this plugin from the
 specification alone. Each entry names the section, the issue, and what the
-plugin assumed. The specification was read at commit `eba7541`.
+plugin assumed.
+
+The entries were first written against commit `eba7541`, then each one
+was checked again against `9b15c83` (HTTPS certificates and pins, and
+`play`'s two `409`s). That commit changes none of the text they are about,
+so every earlier entry is still open; each says so in its status line.
+Entries new at `9b15c83` are marked so.
 
 ## Section 2: Encodings
 
 ### 2.1 Strict or lenient base64url decoding
+
+*Status at 9b15c83: open, the text is unchanged.*
 
 **Issue.** Section 2 says a sender must produce canonical base64url, and
 that Overfin decodes leniently ("don't rely on any of these"). It doesn't
@@ -23,6 +31,8 @@ A canonical sender (which every sender must be) is never refused.
 
 ### 2.2 Duplicate and differently cased JSON fields
 
+*Status at 9b15c83: open, the text is unchanged.*
+
 **Issue.** Section 2 says field names are case-sensitive, and that Overfin
 matches them case-insensitively and keeps the last of duplicates, "don't
 rely on any of these". It doesn't say what a receiver should do with
@@ -37,6 +47,8 @@ of them.
 ## Section 4: Identity and keys
 
 ### 4.1 Which Ed25519 verification rules
+
+*Status at 9b15c83: open, the text is unchanged.*
 
 **Issue.** Section 4.1 says "RFC 8032, pure Ed25519" but not which
 verification rules apply. Implementations differ on edge cases that only
@@ -61,6 +73,8 @@ cases are out of scope.
 
 ### 5.1 Which white space a reader removes
 
+*Status at 9b15c83: open, the text is unchanged.*
+
 **Issue.** "Remove all whitespace anywhere in the text" doesn't say which
 characters count: ASCII space, tab, CR and LF only, or Unicode white space
 too (no-break space, which mail programs like to insert, line separator…).
@@ -69,6 +83,8 @@ too (no-break space, which mail programs like to insert, line separator…).
 A code is ASCII, so removing more can't change a valid code.
 
 ### 5.1 The 1,168-character limit doesn't match base64url
+
+*Status at 9b15c83: open, the text is unchanged.*
 
 **Issue.** The limit is given as 2 × (512 + 72), which is the length of
 *hex* for 584 bytes. In base64url, 584 bytes take 779 characters. A
@@ -81,6 +97,8 @@ looks like a slip; 779 would be the exact bound.
 
 ### 5.1 The address bytes' encoding, and expiry values over 2^63
 
+*Status at 9b15c83: open, the text is unchanged.*
+
 **Issue.** The address is "bytes", but the text doesn't say they are
 ASCII (or UTF-8). Every valid address is ASCII, so only invalid ones are
 concerned. Also, the expiry is unsigned 64-bit; values over 2^63 − 1
@@ -90,6 +108,8 @@ don't fit a signed Unix time.
 over 2^63 − 1 counts as expired.
 
 ### 5.2 Address rules that the host pattern leaves open
+
+*Status at 9b15c83: open, the text is unchanged.*
 
 **Issue.** Section 5.2 says an address "parses as a URL" and gives a host
 pattern, but leaves these open:
@@ -123,6 +143,8 @@ address before using it. It doesn't limit label lengths.
 
 ### 6.4 step 2: what "a decimal integer" allows
 
+*Status at 9b15c83: open, the text is unchanged.*
+
 **Issue.** Step 2 says `Overfin-Date` "parses as a decimal integer", and
 open question 8 says Overfin also takes a leading `+`. Leading zeros, a
 `-` sign, and the largest value aren't settled. Section 6.2 says the
@@ -136,6 +158,8 @@ Unix time ("decimal ASCII", section 2), so no honest request is refused.
 The specification should give the grammar, for example `0|[1-9][0-9]*`.
 
 ### 6.4 and 6.5: a forgotten key on pair while a code is live
+
+*Status at 9b15c83: open, the text is unchanged.*
 
 **Issue.** Step 8 has an exception: a key whose pairing the receiver ended
 gets a signed `404`. Section 6.5 says that on `pair`, while a code is
@@ -151,6 +175,8 @@ call, and on `pair` without a live code, a forgotten key gets the signed
 
 ### 6.5: when a nonce's 10 minutes start
 
+*Status at 9b15c83: open, the text is unchanged.*
+
 **Issue.** "Keeps every accepted (key, nonce) pair for at least 10
 minutes" doesn't say from when: the request's date or the moment it was
 accepted. Either works, but not obviously.
@@ -160,6 +186,8 @@ before its date passes out of the window on the other side, so 10 minutes
 from acceptance always outlasts it.
 
 ### 6.2: the target the receiver rebuilds
+
+*Status at 9b15c83: open, the text is unchanged.*
 
 **Issue.** The receiver rebuilds the message "from its own address's
 host", but the `<target>` line can only come from the request itself. The
@@ -178,6 +206,8 @@ signed over another spelling of the path fails step 7.
 
 ### 3: status codes for a missing Content-Type and for browsers
 
+*Status at 9b15c83: open, the text is unchanged.*
+
 **Issue.** Overfin answers `415` to a `POST` without
 `Content-Type: application/json`, and `403` to a request whose
 `Sec-Fetch-Site` is cross-site, "before federation code runs". These read
@@ -190,6 +220,8 @@ avoid. Also unsaid: whether `application/json; charset=utf-8` counts.
 is compared without its parameters, so a charset is fine.
 
 ### 3 and 14: "the same 404 as a path that doesn't exist" can't hold on Jellyfin
+
+*Status at 9b15c83: open, the text is unchanged.*
 
 **Issue.** Section 6.4 says every failed check gets "an unsigned `404`
 problem, the same as a path that doesn't exist", and section 14 relies on
@@ -207,6 +239,8 @@ whatever it is, since 8.2 already says no one may depend on its bytes.
 
 ### 3: a signature header sent twice
 
+*Status at 9b15c83: open, the text is unchanged.*
+
 **Issue.** Nothing says what to do when a request carries one of the four
 headers twice (or a comma-joined value).
 
@@ -215,6 +249,8 @@ headers twice (or a comma-joined value).
 ## Section 7: Pairing, step by step
 
 ### 7.1 step 2: a code from a peer that is "gone"
+
+*Status at 9b15c83: open, the text is unchanged.*
 
 **Issue.** B refuses a code "when the key is a key B already knows as a
 peer", in any state. A peer that ended the pairing (7.4) shows on B as
@@ -231,6 +267,8 @@ forgotten list.
 
 ### 7.4: the forgotten list has no end
 
+*Status at 9b15c83: open, the text is unchanged.*
+
 **Issue.** The ender records the key's SHA-256 as "forgotten" and answers
 it with signed `404`s from then on. No limit or expiry is given, so the
 list only grows.
@@ -239,6 +277,8 @@ list only grows.
 32 bytes, so this is about tidiness, not size.
 
 ### 7.4 step 3: what the receiver of `ended` keeps
+
+*Status at 9b15c83: open, the text is unchanged.*
 
 **Issue.** The peer that receives `ended` "deletes the ender". It doesn't
 record it as forgotten, so the ender's later requests get unsigned `404`s
@@ -249,6 +289,8 @@ state `ours` or `theirs` (a refused waiting pairing) deletes it too.
 **Assumed.** Deletes only, in every state.
 
 ### 7.2: what "last heard from" counts
+
+*Status at 9b15c83: open, the text is unchanged.*
 
 **Issue.** Each side keeps "when it was last heard from". Section 9.2 sets
 it when a `hello` is received. Unsaid: whether a signed answer to one of
@@ -261,6 +303,8 @@ answer to our own `pair` or `hello` whose signature verified.
 
 ### 9.1: "the `address` field's bytes, exactly as sent"
 
+*Status at 9b15c83: open, the text is unchanged.*
+
 **Issue.** The proof covers "the `address` field's bytes, exactly as
 sent". That could mean the bytes of the JSON string as written in the
 body (with any escapes, such as `\/` for `/`), or the UTF-8 bytes of the
@@ -272,6 +316,8 @@ address (no valid address needs it) can't tell the difference.
 
 ### 9.1: the order of the 404 and 409 checks, and the code after a 409
 
+*Status at 9b15c83: open, the text is unchanged.*
+
 **Issue.** Step 4 of 7.1 lists the checks (code, proof, then 409 for a
 known key), but 9.1 lists the refusals without an order. Can a known
 peer get `409` without a valid code and proof? And does a `409` use up
@@ -282,6 +328,8 @@ code or proof that doesn't check out, and `409` only with a valid code
 and proof. A `409` leaves the code live.
 
 ### 9.1: cleaning names
+
+*Status at 9b15c83: open, the text is unchanged.*
 
 **Issue.** "Control and format characters (Cc and Cf) removed, runs of
 white space made one space, cut to 80 characters". Left open:
@@ -301,6 +349,8 @@ as in the request message (`192.0.2.10:8096`).
 
 ### 9.2: a hello without a `state`
 
+*Status at 9b15c83: open, the text is unchanged.*
+
 **Issue.** `state` is required, and "required" means the receiver refuses
 the request without it (section 9). But 9.2 lists only "a body that isn't
 JSON" as a `404`, and says an unknown value is answered like `waiting`.
@@ -308,3 +358,161 @@ Is `{}`, or `{"state":1}`, refused or answered like `waiting`?
 
 **Assumed.** Refused: a signed `404`, as for a body that isn't JSON. An
 unknown string value is answered like `waiting`, as written.
+
+## Section 3.1: HTTPS certificates (new at 9b15c83)
+
+### 3.1: one pin read, several certificates served
+
+*Status: new at 9b15c83.*
+
+**Issue.** A server "should name the pin of every certificate its
+address may serve now". An address can serve more than one: an ECDSA and
+an RSA certificate chosen by the client's cipher suites, several machines
+behind one name, or a renewal being rolled out. Reading one's own
+certificate (one TLS connection) sees only one of them, and peers that
+get another are refused on every call but `pair` and `hello`.
+
+**Assumed.** The plugin names the one leaf it reads. An operator with
+several certificates sets them all in the plugin's configuration (the
+"certificate pins" field), which replaces the reading.
+
+### 3.1: what to send as SNI when reading one's own certificate
+
+*Status: new at 9b15c83.*
+
+**Issue.** "Connects to its own address, as a peer would". For a host
+name that means SNI with that name; for an IP address there is no SNI
+(RFC 6066 forbids IP literals in it). Not stated.
+
+**Assumed.** SNI with the host name; none for an IP address, as a peer's
+TLS client would do.
+
+### 3.1: a failed reading of one's own certificate
+
+*Status: new at 9b15c83.*
+
+**Issue.** Unsaid: what a server names when it can't read its own
+certificate (its own public address not reachable from inside, as
+behind many home routers without hairpin NAT, a timeout, a parse
+failure), and whether a hello answer waits for the reading.
+
+**Assumed.** A failed reading keeps the last good one (none if there was
+never one); the next attempt comes a minute later. The answer waits for
+the reading, which has 10 seconds. An operator whose server can't reach
+itself sets the pins by hand.
+
+### 3.1 and 9.2: a `certificates` field that isn't a list
+
+*Status: new at 9b15c83.*
+
+**Issue.** "A receiver ignores entries that aren't 43 characters of
+base64url decoding to 32 bytes", but the text doesn't say what to do with
+a field that is not an array at all (`"certificates":"…"`).
+
+**Assumed.** In a `hello` request: refused like an invalid body (signed
+`404`), and the caller's pins are left as they were. In a signed `hello`
+answer: taken as no pins (the field can't be ignored without keeping
+older pins than the latest hello's). The specification should pick one.
+
+### 3.1: which 8, and duplicates
+
+*Status: new at 9b15c83.*
+
+**Issue.** "Keeps at most 8": the first 8 entries, or the first 8 valid
+ones? Does a duplicate count?
+
+**Assumed.** The first 8 valid entries, each pin once, in the order sent.
+
+### 3.1: "the latest signed hello", when two cross
+
+*Status: new at 9b15c83.*
+
+**Issue.** Pins come from "the latest signed `hello` it got from it,
+request or answer". When each side sends a hello at the same time, the
+peer's request and its answer to ours arrive in either order, and only
+the request has a date (an answer is bound to our nonce, not dated). A
+delayed request can then carry pins older than the answer that came
+before it.
+
+**Assumed.** The latest by arrival. A request older than the 5-minute
+window is refused anyway, so stale pins last at most until the next
+hello. The specification could say "by arrival" outright.
+
+### 3.1: when pins "differ"
+
+*Status: new at 9b15c83.*
+
+**Issue.** After a refused certificate, the client sends a hello and
+retries "if the pins it gets differ from those it had". As a list or as
+a set?
+
+**Assumed.** As a list: a reordering causes one retry that fails like
+the first. Harmless either way.
+
+### 3.1: connections opened under pins that were since removed
+
+*Status: new at 9b15c83.*
+
+**Issue.** Certificates are checked when a TLS connection opens. A client
+that keeps connections open (HTTP keep-alive) would go on using one that
+was accepted for a pin the peer has since removed. The text says what
+"passes" but not that a removed pin must end such connections.
+
+**Assumed.** Checked calls to a peer use connections opened under its
+current pins only: when its pins change, the plugin drops the old
+connections.
+
+### 3.1: a signed `404` to `hello` and pins
+
+*Status: new at 9b15c83.*
+
+**Issue.** The caller keeps the pins of a `200` answer; a signed `404`
+(the peer doesn't know us) has no body to name them. Are the old pins
+kept for a peer marked `gone`?
+
+**Assumed.** Kept. A `gone` peer gets no calls but `hello` anyway.
+
+## Section 10: Fetching the media (new at 9b15c83)
+
+### 10: one hello per refused media fetch
+
+*Status: new at 9b15c83; media isn't built yet.*
+
+**Issue.** Media fetches need a *trusted* or *named* certificate, and
+"Overfin does so", the hello and one retry, "for every call and for media
+fetches". A player fetches many HLS segments in a row. A peer serving an
+unnamed certificate would then get one hello per segment.
+
+**Plan.** When media is built: at most one hello per peer at a time, and
+fetches waiting on it share its result.
+
+## Section 9.5: play (new at 9b15c83, not built)
+
+### 9.5: `not-playable` and `stream-limit-reached`
+
+*Status: new at 9b15c83; noted, not built.*
+
+The `409` of `play` is now told apart by its `type`: `not-playable` for a
+copy the owning server can't play, `stream-limit-reached` for its
+limits. A viewer's server reads the `type` of a signed `409` only. The
+plugin builds no `play` yet. No gap found in the new text, except that
+"a body without one" (no `type`) also covers a body that isn't JSON,
+which a reader should not try to parse further.
+
+## Section 14: Security considerations (new at 9b15c83)
+
+### 14: reading one's own certificate trusts the path to oneself
+
+*Status: new at 9b15c83.*
+
+**Issue.** Section 14 notes that someone who can redirect a server's
+connection to its own address can have their certificate named. A milder
+case of the same thing isn't mentioned: split-horizon DNS or an internal
+proxy that serves another certificate inside than outside. The server
+then names the inside certificate, and peers, who see the outside one,
+are refused on every call. Nothing is opened to an attacker, but calls
+fail with no clear reason.
+
+**Assumed.** No change in behaviour; the plugin's page shows the pins it
+names, so an operator can compare them with what peers see, and set the
+right ones by hand.

@@ -15,8 +15,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Jellyfin.Plugin.Msfp.Federation;
 
-/// <summary>This server's address and name, as the operator set them.</summary>
-public sealed record ServerSettings(string Address, string Name);
+/// <summary>
+/// This server's address and name, as the operator set them, and the pins
+/// the operator set (empty: the plugin reads its own certificate).
+/// </summary>
+public sealed record ServerSettings(string Address, string Name, IReadOnlyList<string>? Pins = null);
 
 /// <summary>An answer to a federation call, as bytes: what the controller sends.</summary>
 public sealed record Answer(int Status, byte[] Body, string? ContentType, string? Signature)
@@ -39,6 +42,9 @@ public enum CallOutcome
 
     /// <summary>No answer, or one that doesn't count: change nothing.</summary>
     Unreachable,
+
+    /// <summary>The peer's certificate was refused (a checked call, section 3.1).</summary>
+    CertificateRefused,
 }
 
 /// <summary>The result of a call to a peer.</summary>
@@ -72,20 +78,27 @@ public sealed class FederationService : IDisposable
     private readonly PeerStore _store;
     private readonly TimeProvider _clock;
     private readonly Func<ServerSettings> _settings;
-    private readonly HttpClient _http;
+    /// <summary>How often this server reads its own certificate at most.</summary>
+    public static readonly TimeSpan ReadOwnCertificateEvery = TimeSpan.FromMinutes(1);
+
+    private readonly IPeerTransport _transport;
+    private readonly ICertificateReader _reader;
     private readonly ILogger _log;
     private readonly RequestCheck _check;
+    private readonly SemaphoreSlim _ownPinsLock = new(1, 1);
+    private (string Address, DateTimeOffset At, IReadOnlyList<string> Pins)? _ownReading;
 
-    public FederationService(ServerKey key, PeerStore store, TimeProvider clock, Func<ServerSettings> settings, HttpMessageHandler handler, ILogger? log = null)
+    public FederationService(ServerKey key, PeerStore store, TimeProvider clock, Func<ServerSettings> settings, IPeerTransport transport, ICertificateReader? reader = null, ILogger? log = null)
     {
         _key = key;
         _store = store;
         _clock = clock;
         _settings = settings;
+        _transport = transport;
+        _reader = reader ?? new TlsCertificateReader();
         _log = log ?? NullLogger.Instance;
         Nonces = new NonceMemory(clock);
         _check = new RequestCheck(clock, Nonces);
-        _http = new HttpClient(handler, disposeHandler: true) { Timeout = TimeSpan.FromSeconds(15) };
     }
 
     /// <summary>This server's key.</summary>
@@ -93,14 +106,6 @@ public sealed class FederationService : IDisposable
 
     /// <summary>The nonce memory, begun when this service was made.</summary>
     public NonceMemory Nonces { get; }
-
-    /// <summary>A handler as the plugin uses it: redirects never followed.</summary>
-    public static HttpMessageHandler DefaultHandler() => new SocketsHttpHandler
-    {
-        AllowAutoRedirect = false,
-        UseCookies = false,
-        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
-    };
 
     /// <summary>
     /// This server's own address, when it is valid: the configured one,
@@ -127,7 +132,69 @@ public sealed class FederationService : IDisposable
         return Names.Clean(_settings().Name, host);
     }
 
-    public void Dispose() => _http.Dispose();
+    public void Dispose()
+    {
+        _ownPinsLock.Dispose();
+        (_transport as IDisposable)?.Dispose();
+    }
+
+    /// <summary>
+    /// The pins this server names in hello (section 3.1): none over http;
+    /// the operator's when set; otherwise the pin of the leaf served at its
+    /// own address, read again when the last reading is a minute old. A
+    /// failed reading keeps the last good one.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> OwnPinsAsync(CancellationToken ct = default)
+    {
+        var own = OwnAddress;
+        if (own == null || !own.StartsWith("https://", StringComparison.Ordinal))
+        {
+            return Array.Empty<string>();
+        }
+
+        var configured = (_settings().Pins ?? Array.Empty<string>()).Where(Pins.IsValid).Distinct().Take(Pins.MaxPins).ToList();
+        if (configured.Count > 0)
+        {
+            return configured;
+        }
+
+        await _ownPinsLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var now = _clock.GetUtcNow();
+            var last = _ownReading is { } r && r.Address == own ? r.Pins : null;
+            if (last != null && now - _ownReading!.Value.At < ReadOwnCertificateEvery)
+            {
+                return last;
+            }
+
+            var leaf = await _reader.ReadLeafAsync(own, ct).ConfigureAwait(false);
+            IReadOnlyList<string>? pins = null;
+            if (leaf != null)
+            {
+                try
+                {
+                    pins = new[] { Pins.Of(leaf) };
+                }
+                catch (System.Formats.Asn1.AsnContentException)
+                {
+                }
+            }
+
+            if (pins == null)
+            {
+                _log.LogInformation("MSFP: couldn't read the certificate served at {Address}", own);
+                pins = last ?? Array.Empty<string>();
+            }
+
+            _ownReading = (own, now, pins);
+            return pins;
+        }
+        finally
+        {
+            _ownPinsLock.Release();
+        }
+    }
 
     // ---- Answering calls ------------------------------------------------
 
@@ -136,7 +203,7 @@ public sealed class FederationService : IDisposable
     /// request target, the signature headers and the body. Everything before
     /// the call's own code (the checks of section 6.4) is here.
     /// </summary>
-    public Answer Handle(string call, string target, SignatureHeaders headers, byte[] body)
+    public async Task<Answer> HandleAsync(string call, string target, SignatureHeaders headers, byte[] body, CancellationToken ct = default)
     {
         var own = OwnAddress;
         if (own == null || body.Length > MaxRequestBody || !Address.TryGetHost(own, out var host))
@@ -164,7 +231,7 @@ public sealed class FederationService : IDisposable
 
         try
         {
-            return isPair ? HandlePair(result, body, own, now) : HandleHello(result, body, own, now);
+            return isPair ? HandlePair(result, body, own, now) : await HandleHelloAsync(result, body, now, ct).ConfigureAwait(false);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -259,9 +326,10 @@ public sealed class FederationService : IDisposable
         return Json(req, 200, w => w.WriteString("name", OwnName(own)));
     }
 
-    private Answer HandleHello(CheckResult req, byte[] body, string own, DateTimeOffset now)
+    private async Task<Answer> HandleHelloAsync(CheckResult req, byte[] body, DateTimeOffset now, CancellationToken ct)
     {
-        if (!TryReadObject(body, out var json) || !TryGetString(json, "state", out var state) || state == null)
+        if (!TryReadObject(body, out var json) || !TryGetString(json, "state", out var state) || state == null
+            || !Pins.TryRead(json, out var theirPins))
         {
             return NotFoundFor(req);
         }
@@ -286,10 +354,17 @@ public sealed class FederationService : IDisposable
                 ApplyPaired(peer);
             }
 
+            // The latest signed hello's pins replace the last ones.
+            peer.Pins = theirPins;
             peer.LastHeard = now;
             return View(peer);
         });
-        return Json(req, 200, w => w.WriteString("state", view));
+        var ours = await OwnPinsAsync(ct).ConfigureAwait(false);
+        return Json(req, 200, w =>
+        {
+            w.WriteString("state", view);
+            WritePins(w, ours);
+        });
     }
 
     /// <summary>What a paired hello does (section 9.2), on either side.</summary>
@@ -423,7 +498,7 @@ public sealed class FederationService : IDisposable
             w.WriteString("proof", Encodings.Base64Url(PairingProof.Compute(code.Secret, _key.PublicKey, addressBytes)));
         });
 
-        var result = await CallAsync(code.Address, code.PublicKey, PairPath, body, isPair: true, ct).ConfigureAwait(false);
+        var result = await CallAsync(code.Address, code.PublicKey, PairPath, body, isPair: true, _transport.Any, ct).ConfigureAwait(false);
         switch (result.Outcome)
         {
             case CallOutcome.Ok:
@@ -506,8 +581,13 @@ public sealed class FederationService : IDisposable
             return null;
         }
 
-        var body = JsonObject(w => w.WriteString("state", View(peer)));
-        var result = await CallAsync(peer.Address, key, HelloPath, body, isPair: false, ct).ConfigureAwait(false);
+        var ours = await OwnPinsAsync(ct).ConfigureAwait(false);
+        var body = JsonObject(w =>
+        {
+            w.WriteString("state", View(peer));
+            WritePins(w, ours);
+        });
+        var result = await CallAsync(peer.Address, key, HelloPath, body, isPair: false, _transport.Any, ct).ConfigureAwait(false);
         var now = _clock.GetUtcNow();
         return _store.Change(d =>
         {
@@ -520,6 +600,10 @@ public sealed class FederationService : IDisposable
             if (result.Outcome == CallOutcome.Ok)
             {
                 p.LastHeard = now;
+
+                // A signed answer's pins replace the last ones; a field
+                // that isn't a list counts as none (SPEC-GAPS.md, 3.1).
+                p.Pins = Pins.TryRead(result.Json!.Value, out var named) ? named : new List<string>();
                 if (result.Json is { ValueKind: JsonValueKind.Object } o && o.TryGetProperty("state", out var s)
                     && s.ValueKind == JsonValueKind.String && s.GetString() == "paired")
                 {
@@ -570,7 +654,7 @@ public sealed class FederationService : IDisposable
         }
 
         var body = JsonObject(w => w.WriteString("state", "ended"));
-        await CallAsync(peer.Address, key, HelloPath, body, isPair: false, ct).ConfigureAwait(false);
+        await CallAsync(peer.Address, key, HelloPath, body, isPair: false, _transport.Any, ct).ConfigureAwait(false);
         return true;
     }
 
@@ -581,7 +665,7 @@ public sealed class FederationService : IDisposable
     /// refusal counts only when signed by the peer's key; on pair, refusals
     /// count signed or not.
     /// </summary>
-    internal async Task<CallResult> CallAsync(string address, byte[] peerKey, string path, byte[] body, bool isPair, CancellationToken ct)
+    internal async Task<CallResult> CallAsync(string address, byte[] peerKey, string path, byte[] body, bool isPair, HttpMessageHandler handler, CancellationToken ct)
     {
         if (!Address.TryGetHost(address, out var host))
         {
@@ -600,9 +684,10 @@ public sealed class FederationService : IDisposable
         request.Headers.Add(SignatureHeaders.NonceHeader, headers.Nonce);
         request.Headers.Add(SignatureHeaders.SignatureHeader, headers.Signature);
 
+        using var http = new HttpClient(handler, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(15) };
         try
         {
-            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             var status = (int)response.StatusCode;
             var answer = await ReadLimitedAsync(response.Content, ct).ConfigureAwait(false);
             string? signature = response.Headers.TryGetValues(SignatureHeaders.SignatureHeader, out var values) ? values.FirstOrDefault() : null;
@@ -628,11 +713,74 @@ public sealed class FederationService : IDisposable
 
             return signed || isPair ? new CallResult(CallOutcome.Refused, status, null) : CallResult.Unreachable;
         }
+        catch (HttpRequestException e) when (IsCertificateRefusal(e))
+        {
+            _log.LogInformation("MSFP: {Address} served a certificate that is neither trusted nor named", address);
+            return new CallResult(CallOutcome.CertificateRefused, 0, null);
+        }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException)
         {
             _log.LogInformation("MSFP: {Address} couldn't be reached: {Error}", address, e.Message);
             return CallResult.Unreachable;
         }
+    }
+
+    /// <summary>
+    /// A call that needs a *trusted* or *named* certificate (section 3.1):
+    /// every call but pair and hello. When the certificate is refused, one
+    /// hello, and when it brought other pins, the call once more.
+    /// </summary>
+    internal async Task<CallResult> CallCheckedAsync(string peerKey, string path, byte[] body, CancellationToken ct = default)
+    {
+        var peer = _store.Read(d => d.Find(peerKey) is { } p ? Copy(p) : null);
+        if (peer == null || !Encodings.TryDecodeBase64Url(peerKey, out var key))
+        {
+            return CallResult.Unreachable;
+        }
+
+        var result = await CallAsync(peer.Address, key, path, body, false, _transport.TrustedOrNamed(peerKey, peer.Pins), ct).ConfigureAwait(false);
+        if (result.Outcome != CallOutcome.CertificateRefused)
+        {
+            return result;
+        }
+
+        var after = await HelloAsync(peerKey, ct).ConfigureAwait(false);
+        if (after == null || after.Pins.SequenceEqual(peer.Pins))
+        {
+            return result;
+        }
+
+        return await CallAsync(after.Address, key, path, body, false, _transport.TrustedOrNamed(peerKey, after.Pins), ct).ConfigureAwait(false);
+    }
+
+    private static bool IsCertificateRefusal(Exception e)
+    {
+        for (var inner = e.InnerException; inner != null; inner = inner.InnerException)
+        {
+            if (inner is System.Security.Authentication.AuthenticationException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void WritePins(Utf8JsonWriter w, IReadOnlyList<string> pins)
+    {
+        // Left out when this server names none.
+        if (pins.Count == 0)
+        {
+            return;
+        }
+
+        w.WriteStartArray("certificates");
+        foreach (var pin in pins)
+        {
+            w.WriteStringValue(pin);
+        }
+
+        w.WriteEndArray();
     }
 
     /// <summary>The answer's body, or null when it is over 4 MiB.</summary>
@@ -731,6 +879,7 @@ public sealed class FederationService : IDisposable
         Name = p.Name,
         State = p.State,
         WasPaired = p.WasPaired,
+        Pins = p.Pins.ToList(),
         Added = p.Added,
         LastHeard = p.LastHeard,
     };

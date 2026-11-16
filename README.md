@@ -21,7 +21,9 @@ memory; the `pair` and `hello` calls under `/api/v1/federation/`, and
 pairing from the plugin's page (make a code, use one, accept, check, end),
 with peers kept in the plugin's own data folder. Checked against the
 specification's test vectors, and paired over HTTP with a real Jellyfin
-12.2 running the plugin. Titles, playback and media are not built: a
+12.2 running the plugin. HTTPS certificates and pins (section 3.1):
+`pair` and `hello` accept any certificate, every other call a publicly
+trusted one or one whose pin the peer named in its latest signed `hello`. Titles, playback and media are not built: a
 paired peer can't share anything yet.
 
 ## Building
@@ -52,6 +54,20 @@ it, `http(s)://host[:port]` with no path. Federation stays off until it is
 set. Peers must reach Jellyfin at that address's root: a Jellyfin with a
 base URL (`/jellyfin`) can't federate, and a reverse proxy must keep the
 path and body unchanged, since the signatures cover them.
+
+Over `https`, peers that have this plugin or Overfin accept a
+certificate no public authority issued (self-signed, or from a private
+authority), because this server names its pin, signed, in each `hello`.
+By default the plugin connects to its own address, reads the certificate
+served there and names its pin. To name other pins instead (several
+certificates, or a server that can't reach its own address), set them in
+the plugin's page, one per line: the SHA-256 of the certificate's
+SubjectPublicKeyInfo, in base64url without padding. With openssl:
+
+```sh
+openssl x509 -in cert.pem -pubkey -noout | openssl pkey -pubin -outform der \
+  | openssl dgst -sha256 -binary | base64 | tr '+/' '-_' | tr -d '='
+```
 
 The server's key is made on first start and kept in the plugin's data
 folder (`server-key.seed`, readable by its owner only); peers are in

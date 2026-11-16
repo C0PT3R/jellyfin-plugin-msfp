@@ -13,4 +13,11 @@ public class PluginConfiguration : BasePluginConfiguration
 
     /// <summary>The name peers show for this server. Empty: the address's host.</summary>
     public string ServerName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The pins (MSFP section 3.1) of the certificates this server's address
+    /// serves, one per line. Empty: the plugin reads the certificate served
+    /// at its own address and names that one's pin.
+    /// </summary>
+    public string CertificatePins { get; set; } = string.Empty;
 }

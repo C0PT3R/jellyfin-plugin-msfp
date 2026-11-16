@@ -27,8 +27,12 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
                 key,
                 store,
                 TimeProvider.System,
-                () => new ServerSettings(plugin.Configuration.Address ?? string.Empty, plugin.Configuration.ServerName ?? string.Empty),
-                FederationService.DefaultHandler(),
+                () => new ServerSettings(
+                    plugin.Configuration.Address ?? string.Empty,
+                    plugin.Configuration.ServerName ?? string.Empty,
+                    (plugin.Configuration.CertificatePins ?? string.Empty).Split((char[])['\n', '\r', ',', ' '], StringSplitOptions.RemoveEmptyEntries)),
+                new DefaultTransport(),
+                new TlsCertificateReader(),
                 sp.GetRequiredService<ILoggerFactory>().CreateLogger("Jellyfin.Plugin.Msfp"));
         });
         serviceCollection.AddHostedService<FederationStartup>();

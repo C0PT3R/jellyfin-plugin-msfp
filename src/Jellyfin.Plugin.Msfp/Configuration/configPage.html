@@ -21,6 +21,11 @@
                         <input id="MsfpServerName" name="MsfpServerName" type="text" is="emby-input" maxlength="80" />
                         <div class="fieldDescription">The name peers show. Empty: the address's host.</div>
                     </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="MsfpPins">Certificate pins (optional)</label>
+                        <textarea id="MsfpPins" is="emby-textarea" rows="2" style="width:100%;font-family:monospace"></textarea>
+                        <div class="fieldDescription">Over https, peers accept this server's certificate when it is publicly trusted or named by its pin: the SHA-256 of its public key info, base64url. Empty: the plugin reads the certificate served at this server's address and names it. Set pins here, one per line, to name exactly these instead.</div>
+                    </div>
                     <div>
                         <button is="emby-button" type="submit" class="raised button-submit block emby-button">
                             <span>Save</span>
@@ -30,6 +35,7 @@
 
                 <h3>This server</h3>
                 <p>Fingerprint: <strong id="MsfpFingerprint">…</strong></p>
+                <p>Certificate pins named to peers: <code id="MsfpOwnPins">…</code></p>
                 <div class="fieldDescription">Compare fingerprints with the other server's operator, by phone or another channel you trust, before you accept a pairing.</div>
 
                 <h3>Pair with another server</h3>
@@ -81,6 +87,7 @@
             function msfpLoad() {
                 ApiClient.getJSON(ApiClient.getUrl('Msfp/Status')).then(function (s) {
                     document.querySelector('#MsfpFingerprint').textContent = s.fingerprint;
+                    document.querySelector('#MsfpOwnPins').textContent = (s.certificates || []).join(', ') || 'none';
                 });
                 ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers')).then(function (peers) {
                     var list = document.querySelector('#MsfpPeers');
@@ -158,6 +165,7 @@
                     ApiClient.getPluginConfiguration(MsfpConfig.pluginUniqueId).then(function (config) {
                         document.querySelector('#MsfpAddress').value = config.Address || '';
                         document.querySelector('#MsfpServerName').value = config.ServerName || '';
+                        document.querySelector('#MsfpPins').value = config.CertificatePins || '';
                         Dashboard.hideLoadingMsg();
                     });
                 });
@@ -168,6 +176,7 @@
                     ApiClient.getPluginConfiguration(MsfpConfig.pluginUniqueId).then(function (config) {
                         config.Address = document.querySelector('#MsfpAddress').value.trim();
                         config.ServerName = document.querySelector('#MsfpServerName').value.trim();
+                        config.CertificatePins = document.querySelector('#MsfpPins').value.trim();
                         ApiClient.updatePluginConfiguration(MsfpConfig.pluginUniqueId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);
                         });

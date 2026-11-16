@@ -43,6 +43,12 @@ public sealed class Peer
     /// <summary>Whether it was paired once: a gone peer comes back to paired only then.</summary>
     public bool WasPaired { get; set; }
 
+    /// <summary>
+    /// The pins of its latest signed hello, request or answer (section 3.1):
+    /// the certificates a checked call accepts beside trusted ones.
+    /// </summary>
+    public List<string> Pins { get; set; } = new();
+
     public DateTimeOffset Added { get; set; }
 
     public DateTimeOffset? LastHeard { get; set; }

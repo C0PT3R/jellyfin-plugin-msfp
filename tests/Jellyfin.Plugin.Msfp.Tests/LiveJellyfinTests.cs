@@ -28,7 +28,7 @@ public class LiveJellyfinTests
 
         Assert.True(PairingCode.TryParse(text, out var code));
         var b = new FederationService(ServerKey.Generate(), new PeerStore(null), TimeProvider.System,
-            () => new ServerSettings("http://192.0.2.10:8096", "Live test B"), FederationService.DefaultHandler());
+            () => new ServerSettings("http://192.0.2.10:8096", "Live test B"), new DefaultTransport());
 
         // Requests dated the second B's memory began would be refused by B;
         // A's memory began long ago. Nothing to wait for.

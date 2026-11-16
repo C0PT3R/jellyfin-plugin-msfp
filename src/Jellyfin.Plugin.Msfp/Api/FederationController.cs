@@ -88,7 +88,7 @@ public class FederationController : ControllerBase
             Single(SignatureHeaders.DateHeader),
             Single(SignatureHeaders.NonceHeader),
             Single(SignatureHeaders.SignatureHeader));
-        return _federation.Handle(call, target, headers, body);
+        return await _federation.HandleAsync(call, target, headers, body, HttpContext.RequestAborted).ConfigureAwait(false);
     }
 
     /// <summary>A header's value when it was sent exactly once.</summary>

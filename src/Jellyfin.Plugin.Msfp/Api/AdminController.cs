@@ -32,13 +32,14 @@ public class AdminController : ControllerBase
 
     /// <summary>This server's key, fingerprint and address.</summary>
     [HttpGet("Status")]
-    public ContentResult Status()
+    public async Task<ContentResult> Status(CancellationToken ct)
     {
         return Json(new
         {
             publicKey = _federation.Key.PublicKeyText,
             fingerprint = _federation.Key.Fingerprint,
             address = _federation.OwnAddress,
+            certificates = await _federation.OwnPinsAsync(ct).ConfigureAwait(false),
         });
     }
 
@@ -104,6 +105,7 @@ public class AdminController : ControllerBase
             address = p.Address,
             name = p.Name,
             state = p.State.ToString().ToLowerInvariant(),
+            certificates = p.Pins,
             lastHeard = p.LastHeard,
         };
     }

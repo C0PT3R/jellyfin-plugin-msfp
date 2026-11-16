@@ -18,8 +18,12 @@ namespace Jellyfin.Plugin.Msfp.Tests;
 /// Routes the plugin's outgoing calls to other FederationService instances
 /// in the same process, as if over HTTP.
 /// </summary>
-internal sealed class Network : HttpMessageHandler
+internal sealed class Network : HttpMessageHandler, IPeerTransport
 {
+    public HttpMessageHandler Any => this;
+
+    public HttpMessageHandler TrustedOrNamed(string peerKey, IReadOnlyList<string> pins) => this;
+
     public Dictionary<string, FederationService> Servers { get; } = new();
 
     public HashSet<string> Down { get; } = new();
@@ -28,6 +32,8 @@ internal sealed class Network : HttpMessageHandler
     public Func<HttpResponseMessage, HttpResponseMessage>? Tamper { get; set; }
 
     public int Calls { get; private set; }
+
+    public List<string> Bodies { get; } = new();
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -40,8 +46,9 @@ internal sealed class Network : HttpMessageHandler
 
         string? H(string name) => request.Headers.TryGetValues(name, out var v) ? v.Single() : null;
         var body = await request.Content!.ReadAsByteArrayAsync(cancellationToken);
+        Bodies.Add(Encoding.UTF8.GetString(body));
         var call = request.RequestUri.AbsolutePath.Split('/').Last();
-        var answer = server.Handle(call, request.RequestUri.PathAndQuery, new SignatureHeaders(H("Overfin-Key"), H("Overfin-Date"), H("Overfin-Nonce"), H("Overfin-Signature")), body);
+        var answer = await server.HandleAsync(call, request.RequestUri.PathAndQuery, new SignatureHeaders(H("Overfin-Key"), H("Overfin-Date"), H("Overfin-Nonce"), H("Overfin-Signature")), body, cancellationToken);
         var response = new HttpResponseMessage((HttpStatusCode)answer.Status) { Content = new ByteArrayContent(answer.Body) };
         if (answer.Signature != null)
         {
@@ -49,6 +56,20 @@ internal sealed class Network : HttpMessageHandler
         }
 
         return Tamper == null ? response : Tamper(response);
+    }
+}
+
+/// <summary>A certificate reader the tests set by hand.</summary>
+internal sealed class FakeReader : ICertificateReader
+{
+    public byte[]? Leaf { get; set; }
+
+    public int Reads { get; private set; }
+
+    public Task<byte[]?> ReadLeafAsync(string address, CancellationToken ct)
+    {
+        Reads++;
+        return Task.FromResult(Leaf);
     }
 }
 
@@ -60,12 +81,14 @@ internal sealed class TestServer
         Address = address;
         Store = new PeerStore(null);
         Settings = new ServerSettings(address, name);
-        Service = new FederationService(key ?? ServerKey.Generate(), Store, clock, () => Settings, network);
+        Service = new FederationService(key ?? ServerKey.Generate(), Store, clock, () => Settings, network, Reader);
         Protocol.Address.TryGetHost(address, out var host);
         network.Servers[host] = Service;
     }
 
     public string Address { get; }
+
+    public FakeReader Reader { get; } = new();
 
     public PeerStore Store { get; }
 
@@ -89,7 +112,7 @@ public class FederationVectorTests
     {
         var clock = ManualClock.AtSeconds(date - 60);
         var store = new PeerStore(null);
-        var service = new FederationService(VectorKey(key), store, clock, () => new ServerSettings(address, name), new Network());
+        var service = new FederationService(VectorKey(key), store, clock, () => new ServerSettings(address, name), new Network(), new FakeReader());
         clock.Now = DateTimeOffset.FromUnixTimeSeconds(date);
         return (service, store);
     }
@@ -97,7 +120,7 @@ public class FederationVectorTests
     private static Answer Send(FederationService service, JsonElement e)
     {
         var headers = new SignatureHeaders(VectorKey(e.Str("signer")).PublicKeyText, e.Str("date"), e.Str("nonceText"), e.Str("signature"));
-        return service.Handle(e.Str("name") == "pair" ? "pair" : "hello", e.Str("target"), headers, Encoding.UTF8.GetBytes(e.Str("body")));
+        return service.HandleAsync(e.Str("name") == "pair" ? "pair" : "hello", e.Str("target"), headers, Encoding.UTF8.GetBytes(e.Str("body"))).GetAwaiter().GetResult();
     }
 
     private static long Date(JsonElement e) => long.Parse(e.Str("date"), CultureInfo.InvariantCulture);
@@ -255,7 +278,7 @@ public class FederationTests
         Assert.True((await _b.Service.RedeemAsync(code.Format())).Ok);
 
         Assert.True(Encodings.TryDecodeBase64Url(_a.KeyText, out var aKey));
-        var result = await _b.Service.CallAsync(_a.Address, aKey, FederationService.HelloPath, Encoding.UTF8.GetBytes("{\"state\":\"paired\"}"), false, default);
+        var result = await _b.Service.CallAsync(_a.Address, aKey, FederationService.HelloPath, Encoding.UTF8.GetBytes("{\"state\":\"paired\"}"), false, _net, default);
         Assert.Equal(CallOutcome.Ok, result.Outcome);
         Assert.Equal("waiting", result.Json!.Value.GetProperty("state").GetString());
         Assert.Equal(PeerState.Ours, _a.PeerOf(_b)!.State);
@@ -304,7 +327,7 @@ public class FederationTests
         var code = _a.Service.MakeCode();
         Assert.True(Encodings.TryDecodeBase64Url(_a.KeyText, out var aKey));
         var body = PairBody(_b, code);
-        var result = await _b.Service.CallAsync(_a.Address, aKey, FederationService.PairPath, body, true, default);
+        var result = await _b.Service.CallAsync(_a.Address, aKey, FederationService.PairPath, body, true, _net, default);
         Assert.Equal(CallOutcome.Refused, result.Outcome);
         Assert.Equal(409, result.Status);
 
@@ -494,8 +517,8 @@ public class FederationTests
         var body = PairBody(_b, code);
         Assert.True(Protocol.Address.TryGetHost(_a.Address, out var host));
         var headers = Signing.SignRequest(_b.Service.Key, "POST", host, FederationService.PairPath, body, _clock.Now);
-        Assert.Equal(200, _a.Service.Handle("pair", FederationService.PairPath, headers, body).Status);
-        var again = _a.Service.Handle("pair", FederationService.PairPath, headers, body);
+        Assert.Equal(200, _a.Service.HandleAsync("pair", FederationService.PairPath, headers, body).GetAwaiter().GetResult().Status);
+        var again = _a.Service.HandleAsync("pair", FederationService.PairPath, headers, body).GetAwaiter().GetResult();
         Assert.Equal(404, again.Status);
         Assert.Null(again.Signature);
     }
@@ -555,7 +578,7 @@ public class FederationTests
         Assert.True(Protocol.Address.TryGetHost(to.Address, out var host));
         var path = "/api/v1/federation/" + call;
         var headers = Signing.SignRequest(from.Service.Key, "POST", host, path, body, _clock.Now);
-        return to.Service.Handle(call, path, headers, body);
+        return to.Service.HandleAsync(call, path, headers, body).GetAwaiter().GetResult();
     }
 }
 
