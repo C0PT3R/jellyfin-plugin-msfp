@@ -9,6 +9,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.Msfp.Catalog;
 using Jellyfin.Plugin.Msfp.Protocol;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -71,6 +72,11 @@ public sealed class FederationService : IDisposable
 
     public const string PairPath = "/api/v1/federation/pair";
     public const string HelloPath = "/api/v1/federation/hello";
+    public const string LibrariesPath = "/api/v1/federation/libraries";
+    public const string TitlesPath = "/api/v1/federation/titles";
+
+    /// <summary>The longest `after` of a titles request, in bytes.</summary>
+    public const int MaxAfter = 512;
 
     private static readonly JsonWriterOptions WriterOptions = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
@@ -88,8 +94,9 @@ public sealed class FederationService : IDisposable
     private readonly SemaphoreSlim _ownPinsLock = new(1, 1);
     private (string Address, DateTimeOffset At, IReadOnlyList<string> Pins)? _ownReading;
 
-    public FederationService(ServerKey key, PeerStore store, TimeProvider clock, Func<ServerSettings> settings, IPeerTransport transport, ICertificateReader? reader = null, ILogger? log = null)
+    public FederationService(ServerKey key, PeerStore store, TimeProvider clock, Func<ServerSettings> settings, IPeerTransport transport, ICertificateReader? reader = null, ILogger? log = null, OwnCatalog? catalog = null)
     {
+        Catalog = catalog;
         _key = key;
         _store = store;
         _clock = clock;
@@ -100,6 +107,9 @@ public sealed class FederationService : IDisposable
         Nonces = new NonceMemory(clock);
         _check = new RequestCheck(clock, Nonces);
     }
+
+    /// <summary>This server's catalog, for libraries and titles; null: none offered.</summary>
+    public OwnCatalog? Catalog { get; }
 
     /// <summary>This server's key.</summary>
     public ServerKey Key => _key;
@@ -212,7 +222,7 @@ public sealed class FederationService : IDisposable
         }
 
         var isPair = call == "pair";
-        if (!isPair && call != "hello")
+        if (!isPair && call is not ("hello" or "libraries" or "titles"))
         {
             return Answer.NotFound;
         }
@@ -231,7 +241,13 @@ public sealed class FederationService : IDisposable
 
         try
         {
-            return isPair ? HandlePair(result, body, own, now) : await HandleHelloAsync(result, body, now, ct).ConfigureAwait(false);
+            return call switch
+            {
+                "pair" => HandlePair(result, body, own, now),
+                "hello" => await HandleHelloAsync(result, body, now, ct).ConfigureAwait(false),
+                "libraries" => HandleLibraries(result, body, own),
+                _ => HandleTitles(result, body),
+            };
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -324,6 +340,187 @@ public sealed class FederationService : IDisposable
 
         _log.LogInformation("MSFP: {Address} used a pairing code; waiting for the operator to accept", address);
         return Json(req, 200, w => w.WriteString("name", OwnName(own)));
+    }
+
+    /// <summary>The peer behind a request, when it is paired; null otherwise.</summary>
+    private Peer? Paired(CheckResult req) =>
+        _store.Read(d => d.Find(req.KeyText!) is { State: PeerState.Paired } p ? Copy(p) : null);
+
+    /// <summary>libraries (section 9.3): what is offered to this peer.</summary>
+    private Answer HandleLibraries(CheckResult req, byte[] body, string own)
+    {
+        var peer = Paired(req);
+        if (peer == null || !TryReadObject(body, out _))
+        {
+            return NotFoundFor(req);
+        }
+
+        var offered = Catalog?.Offered(peer.Offered) ?? Array.Empty<LibraryInfo>();
+        return Json(req, 200, w =>
+        {
+            w.WriteString("name", OwnName(own));
+            w.WriteStartArray("libraries");
+            foreach (var lib in offered)
+            {
+                w.WriteStartObject();
+                w.WriteString("id", Catalog!.PeerId(lib.Id));
+                w.WriteString("name", Names.Clean(lib.Name, "?"));
+                w.WriteString("kind", lib.Kind);
+                w.WriteEndObject();
+            }
+
+            w.WriteEndArray();
+        });
+    }
+
+    /// <summary>titles (section 9.4): a page of what the peer may see.</summary>
+    private Answer HandleTitles(CheckResult req, byte[] body)
+    {
+        var peer = Paired(req);
+        if (peer == null || !TryReadObject(body, out var json)
+            || !json.TryGetProperty("libraries", out var libsField) || libsField.ValueKind != JsonValueKind.Array
+            || !TryGetString(json, "after", out var after) || Encoding.UTF8.GetByteCount(after ?? string.Empty) > MaxAfter)
+        {
+            return NotFoundFor(req);
+        }
+
+        var requested = new List<string>();
+        foreach (var e in libsField.EnumerateArray())
+        {
+            if (e.ValueKind != JsonValueKind.String)
+            {
+                return NotFoundFor(req);
+            }
+
+            requested.Add(e.GetString()!);
+        }
+
+        long since = 0;
+        if (json.TryGetProperty("since", out var sinceField) && sinceField.ValueKind != JsonValueKind.Null)
+        {
+            if (sinceField.ValueKind != JsonValueKind.Number || !sinceField.TryGetInt64(out since))
+            {
+                return NotFoundFor(req);
+            }
+        }
+
+        var page = Catalog == null
+            ? new TitlesPage(Array.Empty<TitleOut>(), Array.Empty<string>(), null, false, 1)
+            : Catalog.Page(requested, peer.Offered, after ?? string.Empty, since, peer.OffersSeq);
+        return Json(req, 200, w =>
+        {
+            w.WriteStartArray("titles");
+            foreach (var t in page.Titles)
+            {
+                w.WriteStartObject();
+                w.WriteString("key", t.Key);
+                w.WriteString("kind", t.Kind);
+                w.WriteString("library", t.Library);
+                WriteTags(w, "audio", t.Audio);
+                WriteTags(w, "subtitles", t.Subtitles);
+                w.WriteEndObject();
+            }
+
+            w.WriteEndArray();
+            if (page.Next != null)
+            {
+                w.WriteString("next", page.Next);
+            }
+
+            if (page.Changes)
+            {
+                w.WriteBoolean("changes", true);
+                w.WriteStartArray("gone");
+                foreach (var g in page.Gone)
+                {
+                    w.WriteStringValue(g);
+                }
+
+                w.WriteEndArray();
+            }
+
+            w.WriteNumber("seq", page.Seq);
+        });
+    }
+
+    private static void WriteTags(Utf8JsonWriter w, string name, IReadOnlyList<string> tags)
+    {
+        if (tags.Count == 0)
+        {
+            return;
+        }
+
+        w.WriteStartArray(name);
+        foreach (var t in tags)
+        {
+            w.WriteStringValue(t);
+        }
+
+        w.WriteEndArray();
+    }
+
+    /// <summary>
+    /// Sets which of this server's libraries a peer is offered (media server
+    /// IDs). A change starts a new seq for that peer: its next reading is a
+    /// whole one. Null when the peer is unknown; unknown libraries refused.
+    /// </summary>
+    public Peer? SetOffers(string peerKey, IEnumerable<string> libraries)
+    {
+        var known = (Catalog?.Libraries ?? Array.Empty<LibraryInfo>()).Select(l => l.Id).ToHashSet(StringComparer.Ordinal);
+        var wanted = libraries.Distinct(StringComparer.Ordinal).ToList();
+        if (wanted.Any(l => !known.Contains(l)))
+        {
+            throw new ArgumentException("not a library of this server");
+        }
+
+        var seq = Catalog?.Bump() ?? 0;
+        return _store.Change(d =>
+        {
+            if (d.Find(peerKey) is not { } p)
+            {
+                return null;
+            }
+
+            p.Offered = wanted;
+            p.OffersSeq = seq;
+            return Copy(p);
+        });
+    }
+
+    /// <summary>Sets which of a peer's libraries this server reads: all, or these.</summary>
+    public Peer? SetWants(string peerKey, bool all, IEnumerable<string> libraries)
+    {
+        return _store.Change(d =>
+        {
+            if (d.Find(peerKey) is not { } p)
+            {
+                return null;
+            }
+
+            p.WantAll = all;
+            p.Wanted = libraries.Distinct(StringComparer.Ordinal).ToList();
+            return Copy(p);
+        });
+    }
+
+    /// <summary>Sets a peer's name, cleaned, as its libraries answer gives it.</summary>
+    internal void Rename(string peerKey, string? name)
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            return;
+        }
+
+        _store.Change(d =>
+        {
+            if (d.Find(peerKey) is { } p)
+            {
+                Address.TryGetHost(p.Address, out var host);
+                p.Name = Names.Clean(name, host);
+            }
+
+            return true;
+        });
     }
 
     private async Task<Answer> HandleHelloAsync(CheckResult req, byte[] body, DateTimeOffset now, CancellationToken ct)
@@ -880,6 +1077,10 @@ public sealed class FederationService : IDisposable
         State = p.State,
         WasPaired = p.WasPaired,
         Pins = p.Pins.ToList(),
+        Offered = p.Offered.ToList(),
+        OffersSeq = p.OffersSeq,
+        WantAll = p.WantAll,
+        Wanted = p.Wanted.ToList(),
         Added = p.Added,
         LastHeard = p.LastHeard,
     };

@@ -162,9 +162,8 @@ public class TlsTests
         var hellos = server.Seen.GetValueOrDefault("hello");
         var result = await b.CallCheckedAsync(aKey, Libraries, Empty);
 
-        // Past TLS: libraries isn't built, so A answers an unsigned 404,
-        // which counts as unreachable, not as a refused certificate.
-        Assert.Equal(CallOutcome.Unreachable, result.Outcome);
+        // Past TLS: A answers its (empty) offer, signed.
+        Assert.Equal(CallOutcome.Ok, result.Outcome);
         Assert.Equal(1, server.Seen.GetValueOrDefault("libraries"));
         Assert.Equal(hellos + 1, server.Seen.GetValueOrDefault("hello"));
         Assert.Equal(new[] { Pins.Of(cert) }, b.Peers().Single().Pins);
@@ -186,7 +185,7 @@ public class TlsTests
         var b = MakeB();
         var aKey = await PairAsync(a, b);
 
-        Assert.Equal(CallOutcome.Unreachable, (await b.CallCheckedAsync(aKey, Libraries, Empty)).Outcome);
+        Assert.Equal(CallOutcome.Ok, (await b.CallCheckedAsync(aKey, Libraries, Empty)).Outcome);
         Assert.Equal(1, server.Seen.GetValueOrDefault("libraries"));
 
         // A now names another pin, not the one it serves: its next hello

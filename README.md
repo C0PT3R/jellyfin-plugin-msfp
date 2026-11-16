@@ -23,8 +23,13 @@ with peers kept in the plugin's own data folder. Checked against the
 specification's test vectors, and paired over HTTP with a real Jellyfin
 12.2 running the plugin. HTTPS certificates and pins (section 3.1):
 `pair` and `hello` accept any certificate, every other call a publicly
-trusted one or one whose pin the peer named in its latest signed `hello`. Titles, playback and media are not built: a
-paired peer can't share anything yet.
+trusted one or one whose pin the peer named in its latest signed `hello`. Also built: the `libraries`
+and `titles` calls, both sides. The operator picks, per peer, which
+Jellyfin libraries it is offered. Paired peers' catalogs are read every
+30 minutes and kept in the plugin's storage, where the plugin's page
+shows them. Nothing is added to Jellyfin's own library yet; see
+[DESIGN-NOTES.md](DESIGN-NOTES.md) for the options. Playback (`play`,
+`progress`, `stop`) and media are not built.
 
 ## Building
 
@@ -69,13 +74,25 @@ openssl x509 -in cert.pem -pubkey -noout | openssl pkey -pubin -outform der \
   | openssl dgst -sha256 -binary | base64 | tr '+/' '-_' | tr -d '='
 ```
 
+What a peer sees of an offered library: the films, series, seasons and
+episodes that have a TMDB ID (of the film, or of the series), keyed by
+that ID, with their audio and subtitle languages. It never sees files,
+paths, or Jellyfin's item or library IDs; libraries are named by IDs the
+plugin makes. The plugin follows changes by reading the catalog again
+and comparing it with the last reading: 30 seconds after Jellyfin's
+library events settle, and every 10 minutes whatever happens. Removed
+titles are remembered for 30 days, so peers can read only what changed.
+
 The server's key is made on first start and kept in the plugin's data
 folder (`server-key.seed`, readable by its owner only); peers are in
-`peers.json` beside it.
+`peers.json` beside it, this server's catalog and change log in
+`catalog.json`, and peers' catalogs in `peer-catalogs/`.
 
 Tests of a live server: `MSFP_LIVE_CODE` (a code the live plugin made)
 and `MSFP_LIVE_TOKEN` (a Jellyfin administrator's access token) make
-`LiveJellyfinTests` pair with it, accept, and end. Without them, that test
+`LiveJellyfinTests` pair with it, accept, and end. With `MSFP_LIVE_EXPECT`
+(title keys, comma-separated) it also offers every library and checks that
+the catalog read holds exactly those keys. Without them, that test
 does nothing.
 
 ## Ed25519

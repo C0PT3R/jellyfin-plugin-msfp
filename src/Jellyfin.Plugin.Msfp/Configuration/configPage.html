@@ -53,6 +53,24 @@
 
                 <h3>Peers</h3>
                 <div id="MsfpPeers"></div>
+
+                <dialog id="MsfpOffersDialog" style="min-width:20em">
+                    <h3>Libraries offered to <span id="MsfpOffersPeer"></span></h3>
+                    <div class="fieldDescription">The peer sees the titles of these libraries that have a TMDB ID. Nothing else of this server.</div>
+                    <div id="MsfpOffersList"></div>
+                    <div style="margin-top:1em">
+                        <button is="emby-button" type="button" id="MsfpOffersSave" class="raised button-submit emby-button"><span>Save</span></button>
+                        <button is="emby-button" type="button" id="MsfpOffersCancel" class="raised emby-button"><span>Cancel</span></button>
+                    </div>
+                </dialog>
+
+                <dialog id="MsfpCatalogDialog" style="min-width:24em;max-width:90vw">
+                    <h3>Titles read from <span id="MsfpCatalogPeer"></span></h3>
+                    <p id="MsfpCatalogSummary"></p>
+                    <pre id="MsfpCatalogTitles" style="max-height:50vh;overflow:auto;white-space:pre-wrap"></pre>
+                    <button is="emby-button" type="button" id="MsfpCatalogRead" class="raised emby-button"><span>Read now</span></button>
+                    <button is="emby-button" type="button" id="MsfpCatalogClose" class="raised emby-button"><span>Close</span></button>
+                </dialog>
             </div>
         </div>
         <script type="text/javascript">
@@ -113,6 +131,14 @@
                         row.appendChild(title);
                         row.appendChild(fp);
                         var key = encodeURIComponent(p.key);
+                        if (p.state === 'paired') {
+                            var offered = document.createElement('div');
+                            offered.className = 'fieldDescription';
+                            offered.textContent = 'Libraries offered: ' + (p.offered.length || 'none');
+                            row.appendChild(offered);
+                            row.appendChild(msfpButton('Offers…', function () { msfpOffers(p); }));
+                            row.appendChild(msfpButton('Titles read…', function () { msfpCatalog(p); }));
+                        }
                         if (p.state === 'ours') {
                             row.appendChild(msfpButton('Accept', function () {
                                 msfpPost('Msfp/Peers/' + key + '/Accept').then(msfpLoad, msfpLoad);
@@ -130,6 +156,66 @@
                     });
                 });
             }
+
+            var msfpOffersFor = null;
+            function msfpOffers(p) {
+                msfpOffersFor = p;
+                document.querySelector('#MsfpOffersPeer').textContent = p.name;
+                ApiClient.getJSON(ApiClient.getUrl('Msfp/Libraries')).then(function (libs) {
+                    var list = document.querySelector('#MsfpOffersList');
+                    list.textContent = '';
+                    libs.forEach(function (l) {
+                        var label = document.createElement('label');
+                        label.style.display = 'block';
+                        var box = document.createElement('input');
+                        box.type = 'checkbox';
+                        box.value = l.id;
+                        box.checked = p.offered.indexOf(l.id) >= 0;
+                        label.appendChild(box);
+                        label.appendChild(document.createTextNode(' ' + l.name + (l.kind ? ' (' + l.kind + ')' : '')));
+                        list.appendChild(label);
+                    });
+                    document.querySelector('#MsfpOffersDialog').showModal();
+                });
+            }
+
+            document.querySelector('#MsfpOffersSave').addEventListener('click', function () {
+                var ids = Array.prototype.map.call(document.querySelectorAll('#MsfpOffersList input:checked'), function (b) { return b.value; });
+                msfpPost('Msfp/Peers/' + encodeURIComponent(msfpOffersFor.key) + '/Offers', { libraries: ids }).then(function () {
+                    document.querySelector('#MsfpOffersDialog').close();
+                    msfpLoad();
+                }, function () { msfpMessage('The offer could not be saved.'); });
+            });
+            document.querySelector('#MsfpOffersCancel').addEventListener('click', function () {
+                document.querySelector('#MsfpOffersDialog').close();
+            });
+
+            var msfpCatalogFor = null;
+            function msfpCatalog(p) {
+                msfpCatalogFor = p;
+                document.querySelector('#MsfpCatalogPeer').textContent = p.name;
+                ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers/' + encodeURIComponent(p.key) + '/Catalog')).then(function (c) {
+                    document.querySelector('#MsfpCatalogSummary').textContent =
+                        c.count + ' titles from ' + c.libraries.length + ' libraries offered' +
+                        (c.readAt ? ', read ' + new Date(c.readAt).toLocaleString() : ', not read yet') +
+                        (c.lastResult ? '. ' + c.lastResult : '');
+                    document.querySelector('#MsfpCatalogTitles').textContent = c.titles.map(function (t) {
+                        return t.key + '  ' + t.kind + (t.audio.length ? '  audio ' + t.audio.join(',') : '') + (t.subtitles.length ? '  subtitles ' + t.subtitles.join(',') : '');
+                    }).join('\n');
+                    var d = document.querySelector('#MsfpCatalogDialog');
+                    if (!d.open) { d.showModal(); }
+                });
+            }
+
+            document.querySelector('#MsfpCatalogRead').addEventListener('click', function () {
+                document.querySelector('#MsfpCatalogSummary').textContent = '…';
+                msfpPost('Msfp/Peers/' + encodeURIComponent(msfpCatalogFor.key) + '/Read').then(function () {
+                    msfpCatalog(msfpCatalogFor);
+                }, function () { msfpCatalog(msfpCatalogFor); });
+            });
+            document.querySelector('#MsfpCatalogClose').addEventListener('click', function () {
+                document.querySelector('#MsfpCatalogDialog').close();
+            });
 
             document.querySelector('#MsfpMakeCode').addEventListener('click', function () {
                 msfpMessage('');

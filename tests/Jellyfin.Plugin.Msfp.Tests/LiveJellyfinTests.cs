@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Msfp.Federation;
 using Jellyfin.Plugin.Msfp.Protocol;
+using Jellyfin.Plugin.Msfp.Viewing;
 using Xunit;
 
 namespace Jellyfin.Plugin.Msfp.Tests;
@@ -12,7 +13,9 @@ namespace Jellyfin.Plugin.Msfp.Tests;
 /// <summary>
 /// Pairs with a real Jellyfin running this plugin, over real HTTP. Runs only
 /// when MSFP_LIVE_CODE (a code that Jellyfin made) and MSFP_LIVE_TOKEN (a
-/// Jellyfin administrator's access token) are set; passes otherwise.
+/// Jellyfin administrator's access token) are set; passes otherwise. With
+/// MSFP_LIVE_EXPECT (title keys, comma-separated), it also offers every
+/// library and reads the catalog, which must hold exactly those keys.
 /// </summary>
 public class LiveJellyfinTests
 {
@@ -50,6 +53,29 @@ public class LiveJellyfinTests
         Assert.True(accept.IsSuccessStatusCode);
         var afterHello = await b.HelloAsync(Encodings.Base64Url(code.PublicKey));
         Assert.Equal(PeerState.Paired, afterHello!.State);
+
+        var expect = Environment.GetEnvironmentVariable("MSFP_LIVE_EXPECT");
+        if (!string.IsNullOrEmpty(expect))
+        {
+            var libs = JsonDocument.Parse(await admin.GetStringAsync("/Msfp/Libraries")).RootElement;
+            var ids = libs.EnumerateArray().Select(l => l.GetProperty("id").GetString()).ToList();
+            var offer = await admin.PostAsync($"/Msfp/Peers/{b.Key.PublicKeyText}/Offers",
+                new StringContent(JsonSerializer.Serialize(new { libraries = ids }), System.Text.Encoding.UTF8, "application/json"));
+            Assert.True(offer.IsSuccessStatusCode);
+
+            var reader = new CatalogReader(b, new PeerCatalogStore(null), TimeProvider.System);
+            var result = await reader.ReadAsync(Encodings.Base64Url(code.PublicKey));
+            Assert.True(result.Contains("whole list", StringComparison.Ordinal), result);
+            var catalog = reader.Store.Get(Encodings.Base64Url(code.PublicKey));
+            Assert.Equal(expect.Split(',').OrderBy(k => k, StringComparer.Ordinal), catalog.Titles.Keys);
+            Assert.Equal(ids.Count, catalog.Libraries.Count);
+            Assert.DoesNotContain(catalog.Libraries, l => ids.Contains(l.Id));
+
+            // A second reading asks only for changes.
+            var again = await reader.ReadAsync(Encodings.Base64Url(code.PublicKey));
+            Assert.True(again.Contains("changes", StringComparison.Ordinal), again);
+            Console.WriteLine("MSFP live catalog: " + string.Join(" ", catalog.Titles.Select(t => t.Key + "[" + string.Join(',', t.Value.Audio) + "]")));
+        }
 
         // B ends the pairing: A deletes B.
         Assert.True(await b.EndAsync(Encodings.Base64Url(code.PublicKey)));

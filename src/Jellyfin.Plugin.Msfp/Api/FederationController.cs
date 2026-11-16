@@ -13,7 +13,7 @@ namespace Jellyfin.Plugin.Msfp.Api;
 
 /// <summary>
 /// The federation calls other servers make (MSFP sections 3 and 9), under
-/// the specification's paths. Only pair and hello are built.
+/// the specification's paths: pair, hello, libraries and titles.
 /// </summary>
 [ApiController]
 [AllowAnonymous]
@@ -34,6 +34,14 @@ public class FederationController : ControllerBase
     /// <summary>The hello call (section 9.2).</summary>
     [HttpPost("hello")]
     public Task Hello() => Handle("hello");
+
+    /// <summary>The libraries call (section 9.3).</summary>
+    [HttpPost("libraries")]
+    public Task Libraries() => Handle("libraries");
+
+    /// <summary>The titles call (section 9.4).</summary>
+    [HttpPost("titles")]
+    public Task Titles() => Handle("titles");
 
     private async Task Handle(string call)
     {

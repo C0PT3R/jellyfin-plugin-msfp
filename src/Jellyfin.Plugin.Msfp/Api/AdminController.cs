@@ -2,7 +2,11 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System;
+using System.Collections.Generic;
+using Jellyfin.Plugin.Msfp.Catalog;
 using Jellyfin.Plugin.Msfp.Federation;
+using Jellyfin.Plugin.Msfp.Viewing;
 using Jellyfin.Plugin.Msfp.Protocol;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -15,6 +19,20 @@ public sealed class RedeemRequest
     public string Code { get; set; } = string.Empty;
 }
 
+/// <summary>A list of libraries, from the operator's page.</summary>
+public sealed class LibrariesRequest
+{
+    public List<string> Libraries { get; set; } = new();
+}
+
+/// <summary>Which of a peer's libraries to read.</summary>
+public sealed class WantsRequest
+{
+    public bool All { get; set; } = true;
+
+    public List<string> Libraries { get; set; } = new();
+}
+
 /// <summary>The operator's side of pairing, for Jellyfin administrators only.</summary>
 [ApiController]
 [Route("Msfp")]
@@ -24,10 +42,72 @@ public class AdminController : ControllerBase
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 
     private readonly FederationService _federation;
+    private readonly OwnCatalog _catalog;
+    private readonly CatalogReader _reader;
 
-    public AdminController(FederationService federation)
+    public AdminController(FederationService federation, OwnCatalog catalog, CatalogReader reader)
     {
         _federation = federation;
+        _catalog = catalog;
+        _reader = reader;
+    }
+
+    /// <summary>This server's libraries, with how many titles each has a key for.</summary>
+    [HttpGet("Libraries")]
+    public ContentResult Libraries()
+    {
+        if (_catalog.Libraries.Count == 0)
+        {
+            _catalog.Refresh();
+        }
+
+        return Json(_catalog.Libraries.Select(l => new { id = l.Id, name = l.Name, kind = l.Kind }));
+    }
+
+    /// <summary>Sets which libraries a peer is offered.</summary>
+    [HttpPost("Peers/{key}/Offers")]
+    public ContentResult SetOffers(string key, [FromBody] LibrariesRequest request)
+    {
+        try
+        {
+            var peer = _federation.SetOffers(key, request.Libraries);
+            return peer == null ? Json(new { error = "No such peer." }, 404) : Json(View(peer));
+        }
+        catch (ArgumentException)
+        {
+            return Json(new { error = "Not a library of this server." }, 400);
+        }
+    }
+
+    /// <summary>Sets which of a peer's libraries this server reads.</summary>
+    [HttpPost("Peers/{key}/Wants")]
+    public ContentResult SetWants(string key, [FromBody] WantsRequest request)
+    {
+        var peer = _federation.SetWants(key, request.All, request.Libraries);
+        return peer == null ? Json(new { error = "No such peer." }, 404) : Json(View(peer));
+    }
+
+    /// <summary>What this server read of a peer's catalog: its libraries and up to 1,000 titles from `after`.</summary>
+    [HttpGet("Peers/{key}/Catalog")]
+    public ContentResult Catalog(string key, [FromQuery] string? after)
+    {
+        if (_federation.Peers().All(p => p.Key != key))
+        {
+            return Json(new { error = "No such peer." }, 404);
+        }
+
+        var c = _reader.Store.Get(key);
+        var page = c.Titles.Where(t => after == null || string.CompareOrdinal(t.Key, after) > 0).Take(1000)
+            .Select(t => new { key = t.Key, kind = t.Value.Kind, library = t.Value.Library, audio = t.Value.Audio, subtitles = t.Value.Subtitles });
+        return Json(new { libraries = c.Libraries, requested = c.Requested, seq = c.Seq, readAt = c.ReadAt, lastResult = c.LastResult, count = c.Titles.Count, titles = page });
+    }
+
+    /// <summary>Reads a peer's catalog now.</summary>
+    [HttpPost("Peers/{key}/Read")]
+    public async Task<ContentResult> Read(string key, CancellationToken ct)
+    {
+        var result = await _reader.ReadAsync(key, ct).ConfigureAwait(false);
+        return Json(new { result });
     }
 
     /// <summary>This server's key, fingerprint and address.</summary>
@@ -106,6 +186,9 @@ public class AdminController : ControllerBase
             name = p.Name,
             state = p.State.ToString().ToLowerInvariant(),
             certificates = p.Pins,
+            offered = p.Offered,
+            wantAll = p.WantAll,
+            wanted = p.Wanted,
             lastHeard = p.LastHeard,
         };
     }

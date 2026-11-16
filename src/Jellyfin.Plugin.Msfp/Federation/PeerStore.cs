@@ -49,6 +49,18 @@ public sealed class Peer
     /// </summary>
     public List<string> Pins { get; set; } = new();
 
+    /// <summary>This server's libraries offered to it (media server IDs).</summary>
+    public List<string> Offered { get; set; } = new();
+
+    /// <summary>The catalog seq at which its offer last changed.</summary>
+    public long OffersSeq { get; set; }
+
+    /// <summary>Whether this server reads every library the peer offers.</summary>
+    public bool WantAll { get; set; } = true;
+
+    /// <summary>The peer's libraries read, when not all (the peer's IDs).</summary>
+    public List<string> Wanted { get; set; } = new();
+
     public DateTimeOffset Added { get; set; }
 
     public DateTimeOffset? LastHeard { get; set; }

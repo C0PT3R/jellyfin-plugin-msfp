@@ -9,7 +9,10 @@ The entries were first written against commit `eba7541`, then each one
 was checked again against `9b15c83` (HTTPS certificates and pins, and
 `play`'s two `409`s). That commit changes none of the text they are about,
 so every earlier entry is still open; each says so in its status line.
-Entries new at `9b15c83` are marked so.
+Entries new at `9b15c83` are marked so. For the `libraries` and `titles`
+round, the specification was still at `9b15c83`; every entry above was
+read again against it and stays as marked. The entries from sections 9.3,
+9.4, 11 and 12 at the end are new in that round.
 
 ## Section 2: Encodings
 
@@ -516,3 +519,212 @@ fail with no clear reason.
 **Assumed.** No change in behaviour; the plugin's page shows the pins it
 names, so an operator can compare them with what peers see, and set the
 right ones by hand.
+
+## Section 9.3: libraries (new in the libraries and titles round)
+
+### 9.3 and 12: library IDs are the media server's item IDs
+
+*Status: open at 9b15c83.*
+
+**Issue.** Version 0 notes say Overfin sends its media server's own
+library IDs, and open question 2 asks whether peers should get their own.
+But section 12 says a peer never learns "its media server's item IDs". On
+Jellyfin a library *is* an item, and its ID is an item ID like any other.
+
+**Assumed.** The plugin never sends Jellyfin's IDs. A library's ID is
+`lib_` followed by an HMAC-SHA256 of Jellyfin's ID under a random secret
+kept in the plugin's data folder, cut to 12 bytes, in base64url
+(20 characters). It is opaque and stable, so a peer's wants stay valid
+across readings and restarts, and it can't be linked to anything in
+Jellyfin.
+
+### 9.3: "names are made plain text"
+
+*Status: open at 9b15c83.*
+
+**Issue.** The caller makes library names "plain text". Unsaid: whether
+that means removing control characters, or also HTML or markup, entities,
+bidirectional overrides…
+
+**Assumed.** The same cleaning as server names (9.1): white space
+collapsed, Cc and Cf removed, cut to 80 code points, `?` when empty. Nothing
+else, since the text is shown as text and never as markup.
+
+### 9.3: duplicate IDs, the `mixed` kind, and a bad body
+
+*Status: open at 9b15c83.*
+
+**Issue.** Three small things are unsaid:
+
+1. What a caller does with two libraries of the same `id`.
+2. Which kind a library of no particular type gets: `mixed` or `""`.
+   Jellyfin's "mixed content" libraries have no collection type.
+3. What the receiver answers to a `libraries` body that isn't JSON. Only
+   "signed `404` when the caller isn't paired" is listed.
+
+**Assumed.** (1) The first is kept. (2) `mixed` for Jellyfin's libraries
+without a collection type, and `""` for types outside the list (for
+example playlists). (3) A signed `404`, as `titles` does for a bad body.
+
+## Section 9.4: titles (new in the libraries and titles round)
+
+### 9.4: a changes reading after the caller's wants changed
+
+*Status: open at 9b15c83.*
+
+**Issue.** The receiver answers with changes when its log reaches back to
+`since` and "what it offers the caller hasn't changed". But the caller
+can change what it *asks for* (its wants) between readings. A changes
+reading for a library that was just added to the request would hold only
+that library's recent changes, not its whole content. The receiver can't
+see that the request changed. Overfin "reads at once when what it wants of
+one changes", but the text doesn't say that reading must be a whole one.
+
+**Assumed.** On the caller's side, the plugin asks `since` only when it
+asks for exactly the libraries of its last reading; otherwise it reads the
+whole list. The specification should make that a rule for callers.
+
+### 9.4: which library a title names, when several hold it
+
+*Status: open at 9b15c83.*
+
+**Issue.** `library` is "one of the requested libraries that holds it".
+Unsaid: which one, and whether a title that moves from one of them to
+another (still held by a requested library) counts as a change.
+
+**Assumed.** The one with the lowest ID in byte order, the same on every
+page and reading. A title that leaves one of its libraries is sent again,
+as changed, with the library that holds it now, never as `gone` while
+another requested library holds it. Its languages are those of all its
+copies in the requested libraries.
+
+### 9.4: does `gone` count toward the 5,000?
+
+*Status: open at 9b15c83.*
+
+**Issue.** "A page holds at most 5,000 titles". In a changes answer, can it
+also hold any number of `gone` keys?
+
+**Assumed.** `titles` and `gone` together hold at most 5,000 keys, taken in
+one byte order. `next` is the last key of the page when more changes
+follow.
+
+### 9.4: what a bad `since` is
+
+*Status: open at 9b15c83.*
+
+**Issue.** `since` is an integer, "0 or absent for the whole list". Not
+said: a negative value, a fraction, a string, a value over int64.
+
+**Assumed.** A value that isn't a JSON integer within int64 makes the body
+invalid (signed `404`, like the other bad bodies of 9.4). A negative value
+is answered with the whole list, like 0.
+
+### 9.4: language tags: their form, "each once", and what "skipped" skips
+
+*Status: open at 9b15c83.*
+
+**Issue.**
+1. Tags are "language tags (`fr-CA`)", but a media server usually holds
+   ISO 639-2 codes (Jellyfin: `eng`, `fre` or `fra`). Must a sender use
+   BCP 47's shortest form (`en`, `fr`)? Is `fra` acceptable?
+2. "Each once": tags are case-insensitive in BCP 47 (`fr-CA` = `fr-ca`).
+   Is that one tag or two?
+3. "Anything else is skipped": does a bad tag skip the tag, or the whole
+   title?
+
+**Assumed.** (1) The plugin sends the two-letter code where there is one
+(`en`, `fr`), else the three-letter one, lowercase, and leaves out `und`,
+`mul`, `zxx` and the like. (2) Case-insensitive: one tag. (3) The tag
+only; the title is kept.
+
+### 9.4: languages of series and seasons
+
+*Status: open at 9b15c83.*
+
+**Issue.** `audio` and `subtitles` are "its copies' languages". Series and
+seasons have no copies of their own. Should they carry their episodes'
+languages?
+
+**Assumed.** No: series and seasons carry no tags; films and episodes do.
+
+## Section 11: How titles are identified (new in the libraries and titles round)
+
+### 11: a file holding several episodes
+
+*Status: open at 9b15c83.*
+
+**Issue.** One file can hold episodes 1 and 2 (Jellyfin: `IndexNumber`
+and `IndexNumberEnd`). The text gives one key per episode, but doesn't say
+what a double episode is in the catalog, or what `play` of the second key
+starts.
+
+**Assumed.** For episodes keyed by numbers, the plugin sends one key per
+episode in the range, all pointing to the same copy. An episode keyed by a
+TMDB episode ID gets that one key only: Jellyfin keeps one TMDB ID per
+item. To settle when `play` is built.
+
+### 11: episode 0, and which order is "the owning server's order"
+
+*Status: open at 9b15c83.*
+
+**Issue.**
+1. `<episode>` is "1 to 5 digits", which includes `0`. Some orders have
+   an episode 0; is `s1/e0` valid?
+2. "The owning server's order of the series": Jellyfin keeps season and
+   episode numbers from the files and metadata (aired order), and lets
+   users pick a display order (DVD, absolute…) without renumbering the
+   items.
+
+**Assumed.** (1) Valid, like `s0`. (2) The numbers Jellyfin stores on the
+items (`ParentIndexNumber`, `IndexNumber`), whatever display order is
+picked.
+
+### 11: TMDB season IDs aren't used
+
+*Status: not a gap, a note.*
+
+Jellyfin gives seasons a TMDB *season* ID too (seen in a test: season 1
+of TMDB series 1399 carried its own TMDB ID). MSFP keys seasons by the
+series' ID and the season's number only. The plugin does so and ignores
+the season ID.
+
+### 11 and 9.4: items without a TMDB ID
+
+*Status: not a gap: the specification says it.*
+
+The owning server "must not send" keys of other sources, and the caller
+keeps only titles "identified by TMDB". So the plugin leaves out films and
+series without a TMDB ID, and the seasons and episodes of series without
+one. This was checked live: a film whose NFO had no TMDB ID was not sent.
+
+## Section 12: What the owning server enforces (new in the libraries and titles round)
+
+### 12: limits before play exists
+
+*Status: a note.*
+
+`limits` is optional in `libraries`. The plugin builds no `play` yet, so
+it sends no `limits` rather than announce caps it doesn't enforce. When
+`play` comes, the defaults of section 12 (2 streams, 1 transcode, no
+bitrate cap) will be sent and enforced.
+
+## Section 9.5: previews (new in the libraries and titles round)
+
+### 9.5: no way to share seek-bar previews
+
+*Status: open at 9b15c83; a suggestion for a later version.*
+
+**Issue.** The viewer's server "drops `title`, `next` and `trickplay`
+whatever they hold". Media isn't signed, and the stream is a ticket's
+for the playback's life only. So the viewer's server can make previews
+only by reading the whole video again over the internet: that costs the
+owning server bandwidth, and a playback slot under its limits. Jellyfin
+12.2's public `ITrickplayManager` (`GetTrickplayDirectory`,
+`SaveTrickplayInfo`) looks like it would accept tiles made elsewhere for
+an item. The protocol has no way to fetch them.
+
+**Suggestion.** An optional `previews` member of the play answer: tile
+size, interval and count, and tile URLs under `/api/v1/stream/<ticket>/`,
+checked like subtitle URLs. Or a separate signed call keyed by title, so
+previews don't need a playback. Until then the plugin makes none.

@@ -8,7 +8,9 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.Msfp.Catalog;
 using Jellyfin.Plugin.Msfp.Federation;
+using Jellyfin.Plugin.Msfp.Viewing;
 using Jellyfin.Plugin.Msfp.Protocol;
 using Xunit;
 
@@ -35,10 +37,27 @@ internal sealed class Network : HttpMessageHandler, IPeerTransport
 
     public List<string> Bodies { get; } = new();
 
+    public List<string> Paths { get; } = new();
+
+    /// <summary>Answers made up by a test for a host, signed with the given key.</summary>
+    public Dictionary<string, (ServerKey Key, Func<string, string, (int Status, string Body)> Answer)> Fakes { get; } = new();
+
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         Calls++;
         var host = request.RequestUri!.Authority;
+        Paths.Add(request.RequestUri.AbsolutePath);
+        if (Fakes.TryGetValue(host, out var fake))
+        {
+            var sent = await request.Content!.ReadAsStringAsync(cancellationToken);
+            var (status, answerBody) = fake.Answer(request.RequestUri.AbsolutePath, sent);
+            var bytes = Encoding.UTF8.GetBytes(answerBody);
+            var nonce = request.Headers.GetValues("Overfin-Nonce").Single();
+            var made = new HttpResponseMessage((HttpStatusCode)status) { Content = new ByteArrayContent(bytes) };
+            made.Headers.Add("Overfin-Signature", Signing.SignAnswer(fake.Key, nonce, status, bytes));
+            return made;
+        }
+
         if (Down.Contains(host) || !Servers.TryGetValue(host, out var server))
         {
             throw new HttpRequestException("unreachable");
@@ -57,6 +76,21 @@ internal sealed class Network : HttpMessageHandler, IPeerTransport
 
         return Tamper == null ? response : Tamper(response);
     }
+}
+
+/// <summary>A catalog source the tests fill by hand.</summary>
+internal sealed class FakeSource : ICatalogSource
+{
+    public List<LibraryInfo> Libs { get; } = new();
+
+    public List<CatalogEntry> Items { get; } = new();
+
+    public IReadOnlyList<LibraryInfo> Libraries() => Libs.ToList();
+
+    public IEnumerable<CatalogEntry> Entries() => Items.ToList();
+
+    public void Movie(string library, int id, params string[] audio) =>
+        Items.Add(new CatalogEntry(library, TitleKey.ForMovie(id.ToString(CultureInfo.InvariantCulture)), TitleKey.Movie, audio, Array.Empty<string>()));
 }
 
 /// <summary>A certificate reader the tests set by hand.</summary>
@@ -81,7 +115,9 @@ internal sealed class TestServer
         Address = address;
         Store = new PeerStore(null);
         Settings = new ServerSettings(address, name);
-        Service = new FederationService(key ?? ServerKey.Generate(), Store, clock, () => Settings, network, Reader);
+        Catalog = new OwnCatalog(Source, clock, null);
+        Service = new FederationService(key ?? ServerKey.Generate(), Store, clock, () => Settings, network, Reader, null, Catalog);
+        Catalogs = new CatalogReader(Service, new PeerCatalogStore(null), clock);
         Protocol.Address.TryGetHost(address, out var host);
         network.Servers[host] = Service;
     }
@@ -89,6 +125,12 @@ internal sealed class TestServer
     public string Address { get; }
 
     public FakeReader Reader { get; } = new();
+
+    public FakeSource Source { get; } = new();
+
+    public OwnCatalog Catalog { get; }
+
+    public CatalogReader Catalogs { get; }
 
     public PeerStore Store { get; }
 
