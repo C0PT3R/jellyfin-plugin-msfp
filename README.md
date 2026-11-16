@@ -15,7 +15,7 @@ plugin assumed.
 ## Status
 
 **Early, not usable yet.** Built so far: the plugin skeleton and its
-configuration page.
+configuration page; encodings, keys and fingerprints.
 
 ## Building
 
@@ -37,6 +37,15 @@ The plugin is every DLL in `out` except Jellyfin's own (`MediaBrowser.*`,
 `Jellyfin.*` other than `Jellyfin.Plugin.Msfp.dll`), which
 `ExcludeAssets=runtime` keeps out. Copy them into a folder under Jellyfin's
 `plugins` directory and restart Jellyfin. It targets Jellyfin 12.2.
+
+## Ed25519
+
+MSFP signs with Ed25519. .NET 10 has no Ed25519 of its own (only as half of
+its composite ML-DSA algorithms), so the plugin uses
+[BouncyCastle.Cryptography](https://www.bouncycastle.org/) and ships its DLL
+beside its own. It is fully managed code: no native library such as
+libsodium to match to each platform, so the plugin runs wherever Jellyfin
+runs.
 
 ## License
 

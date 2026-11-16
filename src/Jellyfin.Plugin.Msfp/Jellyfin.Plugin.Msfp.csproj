@@ -20,6 +20,11 @@
     <PackageReference Include="Jellyfin.Model" Version="12.2.0" ExcludeAssets="runtime" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Ed25519: .NET has none of its own. Fully managed, so it runs
+         wherever Jellyfin runs. Shipped with the plugin. -->
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.7.0" />
+  </ItemGroup>
+  <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
