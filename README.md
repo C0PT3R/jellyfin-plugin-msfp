@@ -17,7 +17,12 @@ plugin assumed.
 **Early, not usable yet.** Built so far: the plugin skeleton and its
 configuration page; encodings, keys and fingerprints; the pairing code
 and addresses; signing and checking requests and answers, with the nonce
-memory.
+memory; the `pair` and `hello` calls under `/api/v1/federation/`, and
+pairing from the plugin's page (make a code, use one, accept, check, end),
+with peers kept in the plugin's own data folder. Checked against the
+specification's test vectors, and paired over HTTP with a real Jellyfin
+12.2 running the plugin. Titles, playback and media are not built: a
+paired peer can't share anything yet.
 
 ## Building
 
@@ -39,6 +44,23 @@ The plugin is every DLL in `out` except Jellyfin's own (`MediaBrowser.*`,
 `Jellyfin.*` other than `Jellyfin.Plugin.Msfp.dll`), which
 `ExcludeAssets=runtime` keeps out. Copy them into a folder under Jellyfin's
 `plugins` directory and restart Jellyfin. It targets Jellyfin 12.2.
+
+## Running it
+
+Set this server's address in the plugin's page: where other servers reach
+it, `http(s)://host[:port]` with no path. Federation stays off until it is
+set. Peers must reach Jellyfin at that address's root: a Jellyfin with a
+base URL (`/jellyfin`) can't federate, and a reverse proxy must keep the
+path and body unchanged, since the signatures cover them.
+
+The server's key is made on first start and kept in the plugin's data
+folder (`server-key.seed`, readable by its owner only); peers are in
+`peers.json` beside it.
+
+Tests of a live server: `MSFP_LIVE_CODE` (a code the live plugin made)
+and `MSFP_LIVE_TOKEN` (a Jellyfin administrator's access token) make
+`LiveJellyfinTests` pair with it, accept, and end. Without them, that test
+does nothing.
 
 ## Ed25519
 

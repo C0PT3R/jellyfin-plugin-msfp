@@ -21,6 +21,19 @@ modulo 4. A value then has exactly one text, so the nonce memory, which
 keys on the nonce *text*, can't be fooled by two spellings of one nonce.
 A canonical sender (which every sender must be) is never refused.
 
+### 2.2 Duplicate and differently cased JSON fields
+
+**Issue.** Section 2 says field names are case-sensitive, and that Overfin
+matches them case-insensitively and keeps the last of duplicates, "don't
+rely on any of these". It doesn't say what a receiver should do with
+`{"state":"paired","state":"ended"}` or `{"State":"ended"}`.
+
+**Assumed.** In request bodies, a field name matches only in its exact
+case (`State` is an unknown field, ignored), and a body with any field
+twice is refused like invalid JSON (a `404`). A request two
+implementations would read differently is then refused by at least one
+of them.
+
 ## Section 4: Identity and keys
 
 ### 4.1 Which Ed25519 verification rules
@@ -160,3 +173,138 @@ have no query").
 **Assumed.** The plugin rebuilds `<target>` from the raw request target as
 it reached Jellyfin (path and query, percent-encoding as sent). A request
 signed over another spelling of the path fails step 7.
+
+## Section 3: Transport
+
+### 3: status codes for a missing Content-Type and for browsers
+
+**Issue.** Overfin answers `415` to a `POST` without
+`Content-Type: application/json`, and `403` to a request whose
+`Sec-Fetch-Site` is cross-site, "before federation code runs". These read
+as Overfin's web stack, not as protocol rules, but the text doesn't say
+whether another implementation must do the same. They also tell a prober
+that something answers there, which section 14 ("Probing") tries to
+avoid. Also unsaid: whether `application/json; charset=utf-8` counts.
+
+**Assumed.** Both get the unsigned `404` of a failed check. The media type
+is compared without its parameters, so a charset is fine.
+
+### 3 and 14: "the same 404 as a path that doesn't exist" can't hold on Jellyfin
+
+**Issue.** Section 6.4 says every failed check gets "an unsigned `404`
+problem, the same as a path that doesn't exist", and section 14 relies on
+that ("nobody learns that federation is on"). On Jellyfin, a path that
+doesn't exist gets a `404` with an empty body, not the problem document
+of 8.2; a wrong method on a route that exists gets `405`. So on a host
+whose own 404 differs, the plugin can either send the spec's problem
+document (and be told apart from a missing path) or Jellyfin's own empty
+404 (and differ from the bytes 8.2 shows).
+
+**Assumed.** The plugin sends the problem document of 8.2, the bytes the
+vectors show, and accepts that a prober can tell the plugin is installed.
+The specification could say the unsigned body is the host's own `404`,
+whatever it is, since 8.2 already says no one may depend on its bytes.
+
+### 3: a signature header sent twice
+
+**Issue.** Nothing says what to do when a request carries one of the four
+headers twice (or a comma-joined value).
+
+**Assumed.** Refused: each header must appear exactly once.
+
+## Section 7: Pairing, step by step
+
+### 7.1 step 2: a code from a peer that is "gone"
+
+**Issue.** B refuses a code "when the key is a key B already knows as a
+peer", in any state. A peer that ended the pairing (7.4) shows on B as
+`gone`, and a pairing that ended "starts again only with a new code". So
+B's operator must first remove the `gone` peer, which, being an ending,
+also puts its key on B's forgotten list and sends it an `ended` hello.
+Then redeeming the new code takes it off again. That works, but the
+specification doesn't describe it.
+
+**Assumed.** As described: a known key, `gone` included, is refused when
+redeeming; removing a peer in any state is an ending (7.4). Redeeming a
+code, and a successful `pair` on the maker's side, take the key off the
+forgotten list.
+
+### 7.4: the forgotten list has no end
+
+**Issue.** The ender records the key's SHA-256 as "forgotten" and answers
+it with signed `404`s from then on. No limit or expiry is given, so the
+list only grows.
+
+**Assumed.** Kept forever, like the specification implies. Each entry is
+32 bytes, so this is about tidiness, not size.
+
+### 7.4 step 3: what the receiver of `ended` keeps
+
+**Issue.** The peer that receives `ended` "deletes the ender". It doesn't
+record it as forgotten, so the ender's later requests get unsigned `404`s
+there. Fine, since the ender deleted the receiver too, but the asymmetry
+isn't explained. Also unsaid: whether an `ended` hello from a peer in
+state `ours` or `theirs` (a refused waiting pairing) deletes it too.
+
+**Assumed.** Deletes only, in every state.
+
+### 7.2: what "last heard from" counts
+
+**Issue.** Each side keeps "when it was last heard from". Section 9.2 sets
+it when a `hello` is received. Unsaid: whether a signed answer to one of
+our own calls counts.
+
+**Assumed.** It does: a `hello` received, a successful `pair`, and any
+answer to our own `pair` or `hello` whose signature verified.
+
+## Section 9: The calls
+
+### 9.1: "the `address` field's bytes, exactly as sent"
+
+**Issue.** The proof covers "the `address` field's bytes, exactly as
+sent". That could mean the bytes of the JSON string as written in the
+body (with any escapes, such as `\/` for `/`), or the UTF-8 bytes of the
+decoded string. They differ whenever the sender escapes a character.
+
+**Assumed.** The UTF-8 bytes of the decoded string value. That is also
+what gets stored and compared. A sender that never escapes inside the
+address (no valid address needs it) can't tell the difference.
+
+### 9.1: the order of the 404 and 409 checks, and the code after a 409
+
+**Issue.** Step 4 of 7.1 lists the checks (code, proof, then 409 for a
+known key), but 9.1 lists the refusals without an order. Can a known
+peer get `409` without a valid code and proof? And does a `409` use up
+the code?
+
+**Assumed.** In 7.1's order: a known peer gets a signed `404` for a body,
+code or proof that doesn't check out, and `409` only with a valid code
+and proof. A `409` leaves the code live.
+
+### 9.1: cleaning names
+
+**Issue.** "Control and format characters (Cc and Cf) removed, runs of
+white space made one space, cut to 80 characters". Left open:
+
+1. **Order.** Tab, CR and LF are both Cc and white space. Removing Cc
+   first turns `a\tb` into `ab`; collapsing white space first gives
+   `a b`.
+2. **Ends.** Whether leading and trailing white space is trimmed.
+3. **What counts as white space**: Unicode `White_Space` or ASCII only.
+4. **"The host of the peer's address"**, used for an empty name: with
+   its port or without.
+
+**Assumed.** White space (Unicode `White_Space`) first, made one space,
+then other Cc and Cf removed; both ends trimmed; cut to 80 code points
+without leaving a trailing space; the fallback is the host with its port,
+as in the request message (`192.0.2.10:8096`).
+
+### 9.2: a hello without a `state`
+
+**Issue.** `state` is required, and "required" means the receiver refuses
+the request without it (section 9). But 9.2 lists only "a body that isn't
+JSON" as a `404`, and says an unknown value is answered like `waiting`.
+Is `{}`, or `{"state":1}`, refused or answered like `waiting`?
+
+**Assumed.** Refused: a signed `404`, as for a body that isn't JSON. An
+unknown string value is answered like `waiting`, as written.
