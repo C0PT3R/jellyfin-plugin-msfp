@@ -62,8 +62,11 @@ public sealed class RequestCheck
     /// </summary>
     public CheckResult Check(string ownHost, string method, string target, SignatureHeaders headers, ReadOnlySpan<byte> body, Func<byte[], Hearing> hears)
     {
-        // 1. The key decodes to 32 bytes.
-        if (!Encodings.TryDecodeBase64Url(headers.Key, out var key) || key.Length != ServerKey.Size)
+        // 1. No query (federation calls have none, section 6.2), and the
+        // key decodes to 32 bytes. (Each header appearing once is the
+        // controller's: a header sent twice arrives here as null.)
+        if (target.Contains('?', StringComparison.Ordinal)
+            || !Encodings.TryDecodeBase64Url(headers.Key, out var key) || key.Length != ServerKey.Size)
         {
             return CheckResult.Refused;
         }

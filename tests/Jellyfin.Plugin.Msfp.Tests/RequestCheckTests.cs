@@ -32,6 +32,17 @@ public class RequestCheckTests
         return check.Check(Host, "POST", target, headers, body ?? Body, _ => hearing).Outcome;
     }
 
+    [Theory]
+    [InlineData(Target + "?x=1")]
+    [InlineData(Target + "?")]
+    public void ARequestWithAQueryIsRefusedEvenWhenSignedSo(string target)
+    {
+        // Found live: both the plugin and Overfin accepted a hello signed
+        // over /api/v1/federation/hello?x=1 (sections 6.2 and 6.4, step 1).
+        var (check, _, _) = Receiver();
+        Assert.Equal(CheckOutcome.Refused, Run(check, Sign(target: target), target: target));
+    }
+
     [Fact]
     public void AcceptsAGoodRequest()
     {
