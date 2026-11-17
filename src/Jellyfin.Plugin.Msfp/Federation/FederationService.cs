@@ -398,10 +398,14 @@ public sealed class FederationService : IDisposable
         long since = 0;
         if (json.TryGetProperty("since", out var sinceField) && sinceField.ValueKind != JsonValueKind.Null)
         {
-            if (sinceField.ValueKind != JsonValueKind.Number || !sinceField.TryGetInt64(out since))
+            // An integer in its one form (section 2.1); a negative one is
+            // answered like 0 (section 9.4).
+            if (!StrictJson.TryGetInteger(sinceField, out since))
             {
                 return NotFoundFor(req);
             }
+
+            since = Math.Max(since, 0);
         }
 
         var page = Catalog == null
@@ -897,14 +901,17 @@ public sealed class FederationService : IDisposable
                     return CallResult.Unreachable;
                 }
 
-                try
+                // Answers are read as I-JSON too (section 2.1); a signed
+                // answer that isn't counts as no answer.
+                if (!StrictJson.TryParse(answer, out var doc))
                 {
-                    using var doc = JsonDocument.Parse(answer);
-                    return new CallResult(CallOutcome.Ok, 200, doc.RootElement.Clone());
-                }
-                catch (JsonException)
-                {
+                    _log.LogInformation("MSFP: {Address} answered {Path} with a body that isn't I-JSON", address, path);
                     return CallResult.Unreachable;
+                }
+
+                using (doc)
+                {
+                    return new CallResult(CallOutcome.Ok, 200, doc!.RootElement.Clone());
                 }
             }
 
@@ -1016,35 +1023,28 @@ public sealed class FederationService : IDisposable
     }
 
     /// <summary>
-    /// A request body as the plugin reads it: one JSON object, field names
-    /// matched case-sensitively, no field twice, unknown fields ignored.
+    /// A request body as the plugin reads it: one JSON object, in I-JSON
+    /// (section 2.1: no member twice at any depth, no byte order mark, no
+    /// lone surrogates or noncharacters), member names matched exactly,
+    /// unknown members ignored.
     /// </summary>
     internal static bool TryReadObject(byte[] body, out JsonElement json)
     {
         json = default;
-        try
+        if (!StrictJson.TryParse(body, out var doc))
         {
-            using var doc = JsonDocument.Parse(body);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            return false;
+        }
+
+        using (doc)
+        {
+            if (doc!.RootElement.ValueKind != JsonValueKind.Object)
             {
                 return false;
             }
 
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var p in doc.RootElement.EnumerateObject())
-            {
-                if (!seen.Add(p.Name))
-                {
-                    return false;
-                }
-            }
-
             json = doc.RootElement.Clone();
             return true;
-        }
-        catch (JsonException)
-        {
-            return false;
         }
     }
 

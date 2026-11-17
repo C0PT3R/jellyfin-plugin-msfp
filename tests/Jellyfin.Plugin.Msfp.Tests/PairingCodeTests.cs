@@ -74,10 +74,10 @@ public class PairingCodeTests
     }
 
     [Fact]
-    public void RefusesARemainderOver1168Characters()
+    public void RefusesARemainderOver779Characters()
     {
-        Assert.Equal(1168, PairingCode.MaxRemainder);
-        var text = PairingCode.Prefix + new string('A', 1169);
+        Assert.Equal(779, PairingCode.MaxRemainder);
+        var text = PairingCode.Prefix + new string('A', 780);
         Assert.False(PairingCode.TryParse(text, out _));
     }
 

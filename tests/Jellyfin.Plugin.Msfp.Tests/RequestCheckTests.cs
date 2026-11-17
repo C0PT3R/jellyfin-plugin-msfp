@@ -208,9 +208,10 @@ public class RequestCheckTests
     }
 
     [Theory]
-    [InlineData("0", true, 0L)]
+    [InlineData("0", false, 0L)]
     [InlineData("1800000000", true, 1800000000L)]
-    [InlineData("999999999999999999", true, 999999999999999999L)]
+    [InlineData("9007199254740991", true, 9007199254740991L)]
+    [InlineData("9007199254740992", false, 0L)]
     [InlineData("9999999999999999999", false, 0L)]
     [InlineData("-1", false, 0L)]
     [InlineData("+1", false, 0L)]

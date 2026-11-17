@@ -114,6 +114,13 @@ public sealed class PeerStore
         _data = path != null && File.Exists(path)
             ? JsonSerializer.Deserialize<StoreData>(File.ReadAllBytes(path), Options) ?? new StoreData()
             : new StoreData();
+
+        // Pairings stored before the address rules of 2026-11-16 keep their
+        // address, normalized once (section 5.2, "Stored pairings").
+        foreach (var peer in _data.Peers)
+        {
+            peer.Address = Protocol.Address.Normalize(peer.Address);
+        }
     }
 
     /// <summary>The SHA-256 of a key, as the forgotten list holds it.</summary>

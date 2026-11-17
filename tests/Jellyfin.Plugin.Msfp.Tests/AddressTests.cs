@@ -7,7 +7,6 @@ public class AddressTests
 {
     [Theory]
     [InlineData("https://a.example.org", "a.example.org")]
-    [InlineData("https://a.example.org/", "a.example.org")]
     [InlineData("http://192.0.2.10:8096", "192.0.2.10:8096")]
     [InlineData("http://192.0.2.10:443", "192.0.2.10:443")]
     [InlineData("https://a.example.org:80", "a.example.org:80")]
@@ -66,10 +65,14 @@ public class AddressTests
     [Fact]
     public void AtMost512Bytes()
     {
-        // The host pattern sets no length on labels; only the 512 bytes count.
-        var address = "https://" + new string('a', 504);
-        Assert.Equal(512, address.Length);
-        Assert.True(Address.IsValid(address));
-        Assert.False(Address.IsValid(address + "b"));
+        // Labels of 63 characters, joined by dots: names stop at 253
+        // characters, so only a long name with a port gets near 512; the
+        // whole address is also capped at 512 bytes.
+        var label = new string('a', 63);
+        var name = string.Join('.', label, label, label, new string('a', 61));
+        Assert.Equal(253, name.Length);
+        Assert.True(Address.IsValid("https://" + name));
+        Assert.False(Address.IsValid("https://" + name + "a"));
+        Assert.False(Address.IsValid("https://" + new string('a', 504)));
     }
 }

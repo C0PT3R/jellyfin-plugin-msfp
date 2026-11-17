@@ -14,8 +14,11 @@ public sealed record PairingCode(byte[] PublicKey, byte[] Secret, ulong Expires,
     /// <summary>The text every code starts with.</summary>
     public const string Prefix = "overfin-pair-1.";
 
-    /// <summary>The longest remainder after the prefix a reader accepts.</summary>
-    public const int MaxRemainder = 2 * (Protocol.Address.MaxLength + Fixed);
+    /// <summary>
+    /// The longest remainder after the prefix a reader accepts: 779
+    /// characters, the base64url of 584 bytes (72 and a 512-byte address).
+    /// </summary>
+    public const int MaxRemainder = 779;
 
     /// <summary>How long a code lives.</summary>
     public static readonly TimeSpan Lifetime = TimeSpan.FromHours(24);
@@ -52,8 +55,9 @@ public sealed record PairingCode(byte[] PublicKey, byte[] Secret, ulong Expires,
 
     /// <summary>
     /// Reads a code as section 5.1 says: white space anywhere removed, the
-    /// exact prefix, a remainder of at most 1,168 characters, more than 72
-    /// bytes decoded, and a valid address. The expiry isn't checked here.
+    /// exact prefix, a remainder of at most 779 characters, more than 72
+    /// bytes decoded, a valid key (section 2.1), an expiry at most
+    /// 2^53 − 1, and a valid address. Whether it expired isn't checked here.
     /// </summary>
     public static bool TryParse(string? text, out PairingCode code)
     {
@@ -80,6 +84,12 @@ public sealed record PairingCode(byte[] PublicKey, byte[] Secret, ulong Expires,
 
         var rest = clean[Prefix.Length..];
         if (rest.Length > MaxRemainder || !Encodings.TryDecodeBase64Url(rest, out var bytes) || bytes.Length <= Fixed)
+        {
+            return false;
+        }
+
+        if (!Keys.IsValidKey(bytes.AsSpan(0, 32))
+            || BinaryPrimitives.ReadUInt64BigEndian(bytes.AsSpan(64, 8)) > (ulong)StrictJson.MaxInteger)
         {
             return false;
         }

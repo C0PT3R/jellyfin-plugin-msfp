@@ -141,13 +141,13 @@ public sealed class RequestCheck
     }
 
     /// <summary>
-    /// A date as the plugin reads it: ASCII digits only, no sign, no leading
-    /// zero, at most 18 digits (SPEC-GAPS.md, section 6.4).
+    /// A date as section 2.1 reads it: a positive decimal integer, ASCII
+    /// digits only, no sign, no leading zero, at most 2^53 − 1.
     /// </summary>
     public static bool TryParseDate(string? text, out long date)
     {
         date = 0;
-        if (string.IsNullOrEmpty(text) || text.Length > 18 || (text.Length > 1 && text[0] == '0'))
+        if (string.IsNullOrEmpty(text) || text.Length > 16 || text[0] == '0')
         {
             return false;
         }
@@ -160,6 +160,12 @@ public sealed class RequestCheck
             }
         }
 
-        return long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out date);
+        if (!long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out date) || date > StrictJson.MaxInteger)
+        {
+            date = 0;
+            return false;
+        }
+
+        return true;
     }
 }

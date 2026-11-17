@@ -69,8 +69,36 @@ public sealed class ServerKey
 public static class Keys
 {
     /// <summary>
+    /// Whether 32 bytes are a valid public key (section 2.1): the canonical
+    /// encoding of a point on the curve, in the prime-order subgroup and not
+    /// of small order. The identity, the 8 points of small order and every
+    /// point with a small-order part are refused.
+    /// </summary>
+    public static bool IsValidKey(ReadOnlySpan<byte> publicKey)
+    {
+        if (publicKey.Length != ServerKey.Size)
+        {
+            return false;
+        }
+
+        try
+        {
+            // BouncyCastle's full check: y below p, a point on the curve
+            // whose encoding is canonical, not one of small order, and
+            // [L]A the identity.
+            return Ed25519.ValidatePublicKeyFull(publicKey.ToArray(), 0);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Whether a 64-byte signature of a message verifies under a 32-byte
-    /// public key. Anything of the wrong size doesn't.
+    /// public key, by section 2.1's rules: the key valid, R a valid point
+    /// by the same rules, S below L, then RFC 8032's equation. Anything of
+    /// the wrong size doesn't.
     /// </summary>
     public static bool Verify(ReadOnlySpan<byte> publicKey, ReadOnlySpan<byte> message, ReadOnlySpan<byte> signature)
     {
@@ -79,8 +107,14 @@ public static class Keys
             return false;
         }
 
+        if (!IsValidKey(publicKey) || !IsValidKey(signature[..32]))
+        {
+            return false;
+        }
+
         try
         {
+            // BouncyCastle refuses an S at or above L itself.
             var m = message.ToArray();
             return Ed25519.Verify(signature.ToArray(), 0, publicKey.ToArray(), 0, m, 0, m.Length);
         }

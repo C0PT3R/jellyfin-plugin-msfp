@@ -2,7 +2,7 @@ using System;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
-using System.Text.RegularExpressions;
+using System.Linq;
 
 namespace Jellyfin.Plugin.Msfp.Protocol;
 
@@ -10,19 +10,17 @@ namespace Jellyfin.Plugin.Msfp.Protocol;
 /// A server's address, http(s)://host[:port] with no path (MSFP section
 /// 5.2), and its host as request messages name it (section 6.2).
 /// </summary>
-public static partial class Address
+public static class Address
 {
     /// <summary>The longest address, in bytes.</summary>
     public const int MaxLength = 512;
 
-    [GeneratedRegex(@"^([a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*|\[[0-9a-f:.]+\])(:[0-9]{1,5})?$", RegexOptions.CultureInvariant)]
-    private static partial Regex HostPattern();
-
     /// <summary>
-    /// Whether an address is one section 5.2 accepts. Stricter than the
-    /// section in three ways, each in SPEC-GAPS.md: the scheme in lowercase
-    /// only, a port from 1 to 65535 without leading zeros, and a bracketed
-    /// host that is a real IPv6 address.
+    /// Whether an address is one section 5.2 accepts, and no other form:
+    /// http(s) in lowercase, a host that is a name in lowercase, four
+    /// decimal numbers, or a bracketed IPv6 address in RFC 5952's form; a
+    /// port from 1 to 65535 without leading zeros that isn't the scheme's
+    /// default; no path, not even "/".
     /// </summary>
     public static bool IsValid(string? address)
     {
@@ -52,37 +50,24 @@ public static partial class Address
         }
 
         string defaultPort;
-        string rest;
+        string authority;
         if (address.StartsWith("https://", StringComparison.Ordinal))
         {
             defaultPort = "443";
-            rest = address["https://".Length..];
+            authority = address["https://".Length..];
         }
         else if (address.StartsWith("http://", StringComparison.Ordinal))
         {
             defaultPort = "80";
-            rest = address["http://".Length..];
+            authority = address["http://".Length..];
         }
         else
         {
             return false;
         }
 
-        // No query or fragment, not even an empty one; no user info.
-        if (rest.Contains('?', StringComparison.Ordinal) || rest.Contains('#', StringComparison.Ordinal) || rest.Contains('@', StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var slash = rest.IndexOf('/', StringComparison.Ordinal);
-        var authority = slash < 0 ? rest : rest[..slash];
-        var path = slash < 0 ? string.Empty : rest[slash..];
-        if (path.Length != 0 && path != "/")
-        {
-            return false;
-        }
-
-        if (!HostPattern().IsMatch(authority))
+        // No path, query, fragment or user info, not even an empty one.
+        if (authority.Length == 0 || authority.IndexOfAny(['/', '?', '#', '@', '\\']) >= 0)
         {
             return false;
         }
@@ -90,27 +75,121 @@ public static partial class Address
         // Split off the port: after the last ':' outside brackets.
         var close = authority.LastIndexOf(']');
         var colon = authority.LastIndexOf(':');
-        string name = authority;
+        var name = authority;
         if (colon > close)
         {
             var port = authority[(colon + 1)..];
             name = authority[..colon];
-            if (port == defaultPort || port[0] == '0'
+            if (port.Length == 0 || port.Length > 5 || port == defaultPort || port[0] == '0'
                 || !int.TryParse(port, NumberStyles.None, CultureInfo.InvariantCulture, out var p) || p > 65535)
             {
                 return false;
             }
         }
 
-        if (name.StartsWith('['))
+        if (!IsHost(name))
         {
-            if (!IPAddress.TryParse(name[1..^1], out var ip) || ip.AddressFamily != AddressFamily.InterNetworkV6)
-            {
-                return false;
-            }
+            return false;
         }
 
         host = authority;
         return true;
+    }
+
+    /// <summary>A host: a name, an IPv4 address or a bracketed IPv6 one.</summary>
+    private static bool IsHost(string name)
+    {
+        if (name.StartsWith('['))
+        {
+            if (!name.EndsWith(']') || name.Length < 3)
+            {
+                return false;
+            }
+
+            var inner = name[1..^1];
+
+            // RFC 5952's text form: what .NET writes back is that form
+            // (lowercase, the longest run of zeros compressed), and a zone
+            // identifier is refused.
+            return !inner.Contains('%', StringComparison.Ordinal)
+                && IPAddress.TryParse(inner, out var ip) && ip.AddressFamily == AddressFamily.InterNetworkV6
+                && ip.ToString() == inner;
+        }
+
+        if (name.Length == 0 || name.Length > 253)
+        {
+            return false;
+        }
+
+        var labels = name.Split('.');
+
+        // A host whose last label is all digits is an IPv4 address, and
+        // must be one.
+        if (labels[^1].Length > 0 && labels[^1].All(char.IsAsciiDigit))
+        {
+            if (labels.Length != 4)
+            {
+                return false;
+            }
+
+            foreach (var label in labels)
+            {
+                if (label.Length is 0 or > 3 || !label.All(char.IsAsciiDigit) || (label.Length > 1 && label[0] == '0')
+                    || int.Parse(label, CultureInfo.InvariantCulture) > 255)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        foreach (var label in labels)
+        {
+            if (label.Length is 0 or > 63 || label[0] == '-' || label[^1] == '-')
+            {
+                return false;
+            }
+
+            foreach (var c in label)
+            {
+                if (!(c is >= 'a' and <= 'z' || c is >= '0' and <= '9' || c == '-'))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// An address as a server writes its own, or keeps one it stored before
+    /// these rules (section 5.2, "Stored pairings"): scheme and host in
+    /// lowercase, a trailing "/" and an empty query removed. The result may
+    /// still be invalid.
+    /// </summary>
+    public static string Normalize(string address)
+    {
+        var a = address.Trim();
+        if (a.EndsWith('?'))
+        {
+            a = a[..^1];
+        }
+
+        if (a.EndsWith('/'))
+        {
+            a = a[..^1];
+        }
+
+        var sep = a.IndexOf("://", StringComparison.Ordinal);
+        if (sep > 0)
+        {
+            var end = a.IndexOf('/', sep + 3);
+            var head = end < 0 ? a : a[..end];
+            a = head.ToLowerInvariant() + (end < 0 ? string.Empty : a[end..]);
+        }
+
+        return a;
     }
 }
