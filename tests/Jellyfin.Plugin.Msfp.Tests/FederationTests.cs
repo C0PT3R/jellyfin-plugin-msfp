@@ -233,7 +233,7 @@ public class FederationVectorTests
         var answer = Send(b, e);
         Assert.Equal(404, answer.Status);
         Assert.Null(answer.Signature);
-        Assert.Equal(Answer.NotFoundBody, answer.Body);
+        Assert.Empty(answer.Body);
     }
 
     [Fact]

@@ -43,6 +43,21 @@ public class FederationController : ControllerBase
     [HttpPost("titles")]
     public Task Titles() => Handle("titles");
 
+    /// <summary>
+    /// Any other method on a federation path, and any other path under it:
+    /// Jellyfin's 404 for a path that doesn't exist (an empty body, no
+    /// type), not the 405 routing would give, so a prober learns nothing
+    /// (section 14). Literal routes above win over this one.
+    /// </summary>
+    [AcceptVerbs("GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")]
+    [Route("{**rest}")]
+    public EmptyResult Elsewhere()
+    {
+        Response.StatusCode = StatusCodes.Status404NotFound;
+        Response.ContentLength = 0;
+        return new EmptyResult();
+    }
+
     private async Task Handle(string call)
     {
         // The answer goes out as the bytes signed, never content-coded:
@@ -60,6 +75,13 @@ public class FederationController : ControllerBase
 
         var answer = await Answer(call).ConfigureAwait(false);
         Response.StatusCode = answer.Status;
+        if (answer.Signature == null && answer.Body.Length == 0)
+        {
+            // The unsigned 404: nothing more than Jellyfin's own.
+            Response.ContentLength = 0;
+            return;
+        }
+
         if (answer.ContentType != null)
         {
             Response.ContentType = answer.ContentType;

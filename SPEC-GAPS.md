@@ -244,21 +244,20 @@ is compared without its parameters, so a charset is fine.
 
 ### 3 and 14: "the same 404 as a path that doesn't exist" can't hold on Jellyfin
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status: closed by the corrections of 2026-11-16 (clarification 6): the
+unsigned body is the host's own 404 where it can send it.*
 
-**Issue.** Section 6.4 says every failed check gets "an unsigned `404`
-problem, the same as a path that doesn't exist", and section 14 relies on
-that ("nobody learns that federation is on"). On Jellyfin, a path that
-doesn't exist gets a `404` with an empty body, not the problem document
-of 8.2; a wrong method on a route that exists gets `405`. So on a host
-whose own 404 differs, the plugin can either send the spec's problem
-document (and be told apart from a missing path) or Jellyfin's own empty
-404 (and differ from the bytes 8.2 shows).
+**Issue (as first written).** Section 6.4 said every failed check gets an
+unsigned `404` problem, "the same as a path that doesn't exist". On
+Jellyfin, a path that doesn't exist gets a `404` with an empty body; a
+wrong method on a route that exists gets `405`.
 
-**Assumed.** The plugin sends the problem document of 8.2, the bytes the
-vectors show, and accepts that a prober can tell the plugin is installed.
-The specification could say the unsigned body is the host's own `404`,
-whatever it is, since 8.2 already says no one may depend on its bytes.
+**Now.** The plugin answers every failed check with Jellyfin's own `404`:
+an empty body, no type. Every other method on a federation path, and
+every other path under `/api/v1/federation/`, gets the same, not the
+`405` routing would give. Checked live: a stranger's `hello`, a missing
+`Content-Type`, a cross-site `Sec-Fetch-Site`, `GET` on `hello` and a
+path that doesn't exist all get the same answer.
 
 ### 3: a signature header sent twice
 

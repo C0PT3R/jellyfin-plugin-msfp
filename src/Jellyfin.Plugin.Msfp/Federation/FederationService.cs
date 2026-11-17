@@ -28,8 +28,12 @@ public sealed record Answer(int Status, byte[] Body, string? ContentType, string
     /// <summary>The 404 problem of MSFP section 8.2, with its trailing line feed.</summary>
     public static readonly byte[] NotFoundBody = Encoding.ASCII.GetBytes("{\"type\":\"not-found\",\"title\":\"Not found\",\"status\":404}\n");
 
-    /// <summary>The unsigned 404 every failed check gets.</summary>
-    public static readonly Answer NotFound = new(404, NotFoundBody, "application/problem+json", null);
+    /// <summary>
+    /// The unsigned 404 every failed check gets: Jellyfin's own answer to a
+    /// path that doesn't exist, an empty body with no type, so that the two
+    /// can't be told apart (sections 3 and 14).
+    /// </summary>
+    public static readonly Answer NotFound = new(404, Array.Empty<byte>(), null, null);
 }
 
 /// <summary>What became of a call this server made to a peer.</summary>
