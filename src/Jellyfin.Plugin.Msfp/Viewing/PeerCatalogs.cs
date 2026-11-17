@@ -407,9 +407,10 @@ public sealed class CatalogReader
                 continue;
             }
 
+            // 1 to 64 characters of A-Z a-z 0-9 _ - (section 9.3); of two
+            // libraries with the same ID, the first.
             var id = idField.GetString()!;
-            var bytes = Encoding.UTF8.GetByteCount(id);
-            if (bytes is 0 or > 64 || kept.Any(l => l.Id == id))
+            if (!IsLibraryId(id) || kept.Any(l => l.Id == id))
             {
                 continue;
             }
@@ -422,6 +423,10 @@ public sealed class CatalogReader
 
         return kept;
     }
+
+    /// <summary>A library ID in section 9.3's form.</summary>
+    internal static bool IsLibraryId(string id) =>
+        id.Length is >= 1 and <= 64 && id.All(c => c is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9' or '_' or '-');
 
     /// <summary>A title as section 9.4 says a caller keeps it; null to skip it.</summary>
     internal static (string Key, PeerTitle Title)? ReadTitle(JsonElement t, HashSet<string> asked)
@@ -440,7 +445,10 @@ public sealed class CatalogReader
             return null;
         }
 
-        return (key, new PeerTitle(kind, lib.GetString()!, Tags(t, "audio"), Tags(t, "subtitles")));
+        // Series and seasons carry no languages (section 9.4): whatever a
+        // peer sends for them is dropped.
+        var languages = kind is TitleKey.Movie or TitleKey.Episode;
+        return (key, new PeerTitle(kind, lib.GetString()!, languages ? Tags(t, "audio") : new List<string>(), languages ? Tags(t, "subtitles") : new List<string>()));
     }
 
     private static List<string> Tags(JsonElement t, string name)

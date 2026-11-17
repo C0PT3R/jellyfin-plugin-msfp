@@ -650,6 +650,29 @@ public class CatalogReaderTests
         await Task.CompletedTask;
     }
 
+    [Theory]
+    [InlineData("a b")]
+    [InlineData("lib.A")]
+    [InlineData("lib/A")]
+    [InlineData("lïb")]
+    public void LibraryIdsOutsideTheirFormAreSkipped(string id)
+    {
+        var json = JsonDocument.Parse(JsonSerializer.Serialize(new { libraries = new[] { new { id, name = "x", kind = "movies" }, new { id = "lib_Ok-1", name = "y", kind = "movies" } } })).RootElement;
+        Assert.Equal(new[] { "lib_Ok-1" }, CatalogReader.ReadLibraries(json).Select(l => l.Id));
+    }
+
+    [Fact]
+    public void SeriesAndSeasonsKeepNoLanguages()
+    {
+        var asked = new HashSet<string> { "L" };
+        var series = JsonDocument.Parse("""{"key":"series/tmdb/4","kind":"series","library":"L","audio":["en"],"subtitles":["fr"]}""").RootElement;
+        var episode = JsonDocument.Parse("""{"key":"series/tmdb/4/s1/e2","kind":"episode","library":"L","audio":["en"],"subtitles":["fr"]}""").RootElement;
+        Assert.Empty(CatalogReader.ReadTitle(series, asked)!.Value.Title.Audio);
+        Assert.Empty(CatalogReader.ReadTitle(series, asked)!.Value.Title.Subtitles);
+        Assert.Equal(new[] { "en" }, CatalogReader.ReadTitle(episode, asked)!.Value.Title.Audio);
+        Assert.Equal(new[] { "fr" }, CatalogReader.ReadTitle(episode, asked)!.Value.Title.Subtitles);
+    }
+
     [Fact]
     public async Task FollowsNextAndStopsWhenItDoesntMoveOn()
     {
