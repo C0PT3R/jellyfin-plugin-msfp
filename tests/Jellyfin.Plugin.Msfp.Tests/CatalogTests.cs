@@ -577,6 +577,31 @@ public class CatalogExchangeTests
         Assert.Empty(_b.Catalogs.Store.FileNames());
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ARePairingStartsFromNothing(bool endedHere)
+    {
+        // Found live: B ended, re-paired 13 seconds later, and its first
+        // reading asked since the old pairing's seq, before the minutely
+        // clean-up had dropped the old catalog.
+        await PairAsync();
+        _a.Service.SetOffers(_b.KeyText, new[] { "aaaa" });
+        await _b.Catalogs.ReadAsync(AKey);
+        Assert.Single(BCatalog.Titles);
+        Assert.True(await (endedHere ? _b.Service.EndAsync(AKey) : _a.Service.EndAsync(_b.KeyText)));
+        Assert.Empty(_b.Catalogs.Store.FileNames());
+        Assert.Empty(BCatalog.Titles);
+        Assert.Equal(0, BCatalog.Seq);
+
+        _clock.Advance(TimeSpan.FromSeconds(13));
+        _net.Bodies.Clear();
+        await PairAsync();
+        _a.Service.SetOffers(_b.KeyText, new[] { "aaaa" });
+        await _b.Catalogs.ReadAsync(AKey);
+        Assert.DoesNotContain(_net.Bodies, b => b.Contains("\"since\"", StringComparison.Ordinal));
+    }
+
     private Answer Call(TestServer to, TestServer from, string call, string body)
     {
         Assert.True(Address.TryGetHost(to.Address, out var host));

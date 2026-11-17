@@ -161,6 +161,10 @@ public sealed class CatalogReader
         _federation = federation;
         _store = store;
         _clock = clock;
+
+        // A peer's catalog goes with the peer, at once: a new pairing with
+        // the same key must not start from the old one's titles and seq.
+        federation.PeerRemoved += key => _store.Delete(key);
     }
 
     public PeerCatalogStore Store => _store;

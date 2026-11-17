@@ -581,6 +581,7 @@ public sealed class FederationService : IDisposable
         if (state == "ended")
         {
             _store.Change(d => d.Peers.RemoveAll(p => p.Key == req.KeyText));
+            Removed(req.KeyText!);
             _log.LogInformation("MSFP: a peer ended its pairing");
             return Json(req, 200, w => w.WriteString("state", "ended"));
         }
@@ -908,6 +909,7 @@ public sealed class FederationService : IDisposable
             return false;
         }
 
+        Removed(peerKey);
         var body = JsonObject(w => w.WriteString("state", "ended"));
         await CallAsync(peer.Address, key, HelloPath, body, isPair: false, _transport.Any, ct).ConfigureAwait(false);
         return true;
@@ -920,6 +922,20 @@ public sealed class FederationService : IDisposable
     /// refusal counts only when signed by the peer's key; on pair, refusals
     /// count signed or not.
     /// </summary>
+    /// <summary>
+    /// A peer was deleted (an ending, sent or received): what was kept for
+    /// it goes at once, so that a new pairing with the same key starts from
+    /// nothing (its catalog, its limits, its hold).
+    /// </summary>
+    public event Action<string>? PeerRemoved;
+
+    private void Removed(string peerKey)
+    {
+        _limits.Forget(peerKey);
+        _holds.TryRemove(peerKey, out _);
+        PeerRemoved?.Invoke(peerKey);
+    }
+
     /// <summary>How long to wait before the one retry after an unsigned 404 (section 6.5).</summary>
     internal TimeSpan RetryDelay { get; set; } = TimeSpan.FromSeconds(1);
 
