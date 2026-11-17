@@ -45,8 +45,8 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
                     plugin.Configuration.Address ?? string.Empty,
                     plugin.Configuration.ServerName ?? string.Empty,
                     (plugin.Configuration.CertificatePins ?? string.Empty).Split((char[])['\n', '\r', ',', ' '], StringSplitOptions.RemoveEmptyEntries)),
-                new DefaultTransport(),
-                new TlsCertificateReader(),
+                new DefaultTransport(() => plugin.Configuration.AllowLoopback),
+                new TlsCertificateReader(() => plugin.Configuration.AllowLoopback),
                 sp.GetRequiredService<ILoggerFactory>().CreateLogger("Jellyfin.Plugin.Msfp"),
                 sp.GetRequiredService<OwnCatalog>());
         });

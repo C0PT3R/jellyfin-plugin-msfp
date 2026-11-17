@@ -38,8 +38,12 @@ public sealed class DefaultTransport : IPeerTransport, IDisposable
     private readonly object _lock = new();
     private readonly Dictionary<string, (string Pins, SocketsHttpHandler Handler)> _checked = new(StringComparer.Ordinal);
 
-    public DefaultTransport()
+    private readonly Func<bool> _allowLoopback;
+
+    /// <param name="allowLoopback">Whether the operator allows peers on this machine (section 3.2).</param>
+    public DefaultTransport(Func<bool>? allowLoopback = null)
     {
+        _allowLoopback = allowLoopback ?? (static () => false);
         Any = Make(static (_, _, _, _) => true);
     }
 
@@ -83,10 +87,15 @@ public sealed class DefaultTransport : IPeerTransport, IDisposable
         }
     }
 
-    private static SocketsHttpHandler Make(RemoteCertificateValidationCallback check) => new()
+    private SocketsHttpHandler Make(RemoteCertificateValidationCallback check) => new()
     {
         AllowAutoRedirect = false,
         UseCookies = false,
+
+        // No proxy from the environment, and every connection checked
+        // where it is made (section 3.2).
+        UseProxy = false,
+        ConnectCallback = Destinations.Callback(_allowLoopback),
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),
         SslOptions = new SslClientAuthenticationOptions { RemoteCertificateValidationCallback = check },
     };
@@ -106,6 +115,14 @@ public interface ICertificateReader
 /// </summary>
 public sealed class TlsCertificateReader : ICertificateReader
 {
+    private readonly Func<bool> _allowLoopback;
+
+    /// <param name="allowLoopback">Whether the operator allows connections to this machine (section 3.2).</param>
+    public TlsCertificateReader(Func<bool>? allowLoopback = null)
+    {
+        _allowLoopback = allowLoopback ?? (static () => false);
+    }
+
     /// <summary>How long one reading may take.</summary>
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
@@ -122,10 +139,10 @@ public sealed class TlsCertificateReader : ICertificateReader
         cts.CancelAfter(Timeout);
         try
         {
-            using var tcp = new TcpClient();
-            await tcp.ConnectAsync(host, port, cts.Token).ConfigureAwait(false);
+            // Checked like a connection to a peer (section 3.2).
+            using var socket = await Destinations.ConnectAsync(host, port, _allowLoopback(), cts.Token).ConfigureAwait(false);
             byte[]? leaf = null;
-            using var ssl = new SslStream(tcp.GetStream(), false, (_, cert, _, _) =>
+            using var ssl = new SslStream(new System.Net.Sockets.NetworkStream(socket, ownsSocket: false), false, (_, cert, _, _) =>
             {
                 leaf = cert?.GetRawCertData();
                 return true;
@@ -138,7 +155,7 @@ public sealed class TlsCertificateReader : ICertificateReader
             }, cts.Token).ConfigureAwait(false);
             return leaf;
         }
-        catch (Exception e) when (e is SocketException or System.IO.IOException or System.Security.Authentication.AuthenticationException or OperationCanceledException)
+        catch (Exception e) when (e is SocketException or HttpRequestException or System.IO.IOException or System.Security.Authentication.AuthenticationException or OperationCanceledException)
         {
             return null;
         }

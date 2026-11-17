@@ -94,11 +94,11 @@ public class TlsTests
 
     private FederationService MakeA(HttpsPeer at, Func<ServerSettings> settings)
     {
-        return new FederationService(ServerKey.Generate(), new PeerStore(null), _clock, settings, new DefaultTransport(), new TlsCertificateReader());
+        return new FederationService(ServerKey.Generate(), new PeerStore(null), _clock, settings, new DefaultTransport(() => true), new TlsCertificateReader(() => true));
     }
 
     private FederationService MakeB() =>
-        new(ServerKey.Generate(), new PeerStore(null), _clock, () => _bSettings, new DefaultTransport(), new FakeReader());
+        new(ServerKey.Generate(), new PeerStore(null), _clock, () => _bSettings, new DefaultTransport(() => true), new FakeReader());
 
     /// <summary>B redeems A's code; A accepts (its hello can't reach B).</summary>
     private async Task<string> PairAsync(FederationService a, FederationService b)
@@ -222,9 +222,12 @@ public class TlsTests
     {
         using var cert = TestCertificates.SelfSigned();
         await using var server = await HttpsPeer.StartAsync(cert);
-        var leaf = await new TlsCertificateReader().ReadLeafAsync(server.Address, default);
+        // These test servers listen on loopback, which section 3.2 refuses
+        // unless the operator allows it.
+        Assert.Null(await new TlsCertificateReader().ReadLeafAsync(server.Address, default));
+        var leaf = await new TlsCertificateReader(() => true).ReadLeafAsync(server.Address, default);
         Assert.Equal(cert.RawData, leaf);
-        Assert.Null(await new TlsCertificateReader().ReadLeafAsync("http://127.0.0.1:" + server.Port, default));
-        Assert.Null(await new TlsCertificateReader().ReadLeafAsync("https://127.0.0.1:1", default));
+        Assert.Null(await new TlsCertificateReader(() => true).ReadLeafAsync("http://127.0.0.1:" + server.Port, default));
+        Assert.Null(await new TlsCertificateReader(() => true).ReadLeafAsync("https://127.0.0.1:1", default));
     }
 }

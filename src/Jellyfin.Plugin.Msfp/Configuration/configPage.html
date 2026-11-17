@@ -26,6 +26,13 @@
                         <textarea id="MsfpPins" is="emby-textarea" rows="2" style="width:100%;font-family:monospace"></textarea>
                         <div class="fieldDescription">Over https, peers accept this server's certificate when it is publicly trusted or named by its pin: the SHA-256 of its public key info, base64url. Empty: the plugin reads the certificate served at this server's address and names it. Set pins here, one per line, to name exactly these instead.</div>
                     </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input id="MsfpAllowLoopback" name="MsfpAllowLoopback" type="checkbox" is="emby-checkbox" />
+                            <span>Allow peers on this machine</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">Off by default: the plugin never connects, for a peer, to this machine itself (loopback), nor to link-local addresses (a cloud's metadata service among them), unspecified, multicast or reserved ones. Private ranges (a LAN) are fine. Turn this on only to pair with a server on this same machine; link-local stays refused.</div>
+                    </div>
                     <div>
                         <button is="emby-button" type="submit" class="raised button-submit block emby-button">
                             <span>Save</span>
@@ -252,6 +259,7 @@
                         document.querySelector('#MsfpAddress').value = config.Address || '';
                         document.querySelector('#MsfpServerName').value = config.ServerName || '';
                         document.querySelector('#MsfpPins').value = config.CertificatePins || '';
+                        document.querySelector('#MsfpAllowLoopback').checked = !!config.AllowLoopback;
                         Dashboard.hideLoadingMsg();
                     });
                 });
@@ -263,6 +271,7 @@
                         config.Address = document.querySelector('#MsfpAddress').value.trim();
                         config.ServerName = document.querySelector('#MsfpServerName').value.trim();
                         config.CertificatePins = document.querySelector('#MsfpPins').value.trim();
+                        config.AllowLoopback = document.querySelector('#MsfpAllowLoopback').checked;
                         ApiClient.updatePluginConfiguration(MsfpConfig.pluginUniqueId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);
                         });

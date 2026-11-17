@@ -83,6 +83,16 @@ and comparing it with the last reading: 30 seconds after Jellyfin's
 library events settle, and every 10 minutes whatever happens. Removed
 titles are remembered for 30 days, so peers can read only what changed.
 
+Every address a peer gives (in a code, in a `pair` request) is checked
+each time the plugin connects to it, as MSFP section 3.2 says: the name is
+looked up once, every address of the answer must pass, and the connection
+goes to one that was checked. Loopback (this machine), link-local (a
+cloud's metadata service among them), unspecified, multicast and reserved
+addresses are refused; private ranges are fine. "Allow peers on this
+machine" in the plugin's page allows loopback, and nothing else. No proxy
+from the environment is used. Reading this server's own certificate is
+checked the same way.
+
 Federation calls are limited as MSFP section 8.3 asks, with Overfin's
 numbers: 50 a second (bursts of 400) per network address before any
 signature check, 20 a second (bursts of 200) per peer, 200 a second

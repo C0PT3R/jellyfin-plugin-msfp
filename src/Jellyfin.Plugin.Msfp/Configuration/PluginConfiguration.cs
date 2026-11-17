@@ -20,4 +20,12 @@ public class PluginConfiguration : BasePluginConfiguration
     /// at its own address and names that one's pin.
     /// </summary>
     public string CertificatePins { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Whether the plugin may connect, for a peer, to this machine itself
+    /// (loopback): only to pair with a server on the same machine. Link-local
+    /// (a cloud's metadata service), unspecified, multicast and reserved
+    /// addresses stay refused whatever this says (MSFP section 3.2).
+    /// </summary>
+    public bool AllowLoopback { get; set; }
 }
