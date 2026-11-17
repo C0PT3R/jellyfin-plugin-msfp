@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Msfp.Federation;
-using Jellyfin.Plugin.Msfp.Protocol;
+using Msfp;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;

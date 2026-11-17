@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text.Json;
 
-namespace Jellyfin.Plugin.Msfp.Protocol;
+namespace Msfp;
 
 /// <summary>
 /// Federation bodies as MSFP section 2.1 reads them: I-JSON (RFC 7493).

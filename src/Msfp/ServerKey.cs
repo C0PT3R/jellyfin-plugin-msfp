@@ -2,7 +2,7 @@ using System;
 using System.Security.Cryptography;
 using Org.BouncyCastle.Math.EC.Rfc8032;
 
-namespace Jellyfin.Plugin.Msfp.Protocol;
+namespace Msfp;
 
 /// <summary>
 /// A server's Ed25519 key pair (MSFP section 4.1): pure Ed25519 of

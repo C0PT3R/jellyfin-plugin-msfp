@@ -1,9 +1,8 @@
 using System;
 using System.IO;
-using Jellyfin.Plugin.Msfp.Protocol;
 using Xunit;
 
-namespace Jellyfin.Plugin.Msfp.Tests;
+namespace Msfp.Tests;
 
 /// <summary>Every value of vectors/v0.json, recomputed (MSFP section 15).</summary>
 public class VectorTests

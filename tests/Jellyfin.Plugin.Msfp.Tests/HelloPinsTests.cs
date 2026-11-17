@@ -6,7 +6,8 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Msfp.Federation;
-using Jellyfin.Plugin.Msfp.Protocol;
+using Msfp;
+using Msfp.Tests;
 using Xunit;
 
 namespace Jellyfin.Plugin.Msfp.Tests;

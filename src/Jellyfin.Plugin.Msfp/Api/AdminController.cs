@@ -7,7 +7,7 @@ using System.Collections.Generic;
 using Jellyfin.Plugin.Msfp.Catalog;
 using Jellyfin.Plugin.Msfp.Federation;
 using Jellyfin.Plugin.Msfp.Viewing;
-using Jellyfin.Plugin.Msfp.Protocol;
+using Msfp;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 

@@ -5,7 +5,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Jellyfin.Plugin.Msfp.Protocol;
+using Msfp;
 
 namespace Jellyfin.Plugin.Msfp.Federation;
 
@@ -119,7 +119,7 @@ public sealed class PeerStore
         // address, normalized once (section 5.2, "Stored pairings").
         foreach (var peer in _data.Peers)
         {
-            peer.Address = Protocol.Address.Normalize(peer.Address);
+            peer.Address = global::Msfp.Address.Normalize(peer.Address);
         }
     }
 

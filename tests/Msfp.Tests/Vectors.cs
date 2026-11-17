@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Text.Json;
 
-namespace Jellyfin.Plugin.Msfp.Tests;
+namespace Msfp.Tests;
 
 /// <summary>The test vectors, from this project's byte-for-byte copy of vectors/v0.json.</summary>
 internal static class Vectors
@@ -13,7 +13,7 @@ internal static class Vectors
     public static string CopyPath => Path.Combine(AppContext.BaseDirectory, "vectors", "v0.json");
 
     /// <summary>The copy in the source tree (the one under version control).</summary>
-    public static string SourceCopyPath => Path.Combine(SkeletonTests.FindRepoRoot(), "tests", "Jellyfin.Plugin.Msfp.Tests", "vectors", "v0.json");
+    public static string SourceCopyPath => Path.Combine(ProjectDir(), "vectors", "v0.json");
 
     /// <summary>
     /// The specification repository's file, when it is there: MSFP_SPEC_DIR,
@@ -26,11 +26,23 @@ internal static class Vectors
             var dir = Environment.GetEnvironmentVariable("MSFP_SPEC_DIR");
             if (string.IsNullOrEmpty(dir))
             {
-                dir = Path.Combine(SkeletonTests.FindRepoRoot(), "..", "msfp-spec");
+                dir = Path.Combine(ProjectDir(), "..", "..", "..", "msfp-spec");
             }
 
             return Path.Combine(dir, "vectors", "v0.json");
         }
+    }
+
+    /// <summary>This test project's folder in the source tree, found above the test output.</summary>
+    public static string ProjectDir()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Msfp.Tests.csproj")))
+        {
+            dir = dir.Parent;
+        }
+
+        return dir?.FullName ?? throw new InvalidOperationException("Msfp.Tests.csproj not found above the test output");
     }
 
     public static JsonElement Root => Doc.Value.RootElement;

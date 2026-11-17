@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 
-namespace Jellyfin.Plugin.Msfp.Protocol;
+namespace Msfp;
 
 /// <summary>
 /// Title keys (MSFP section 11): films, series, seasons and episodes named

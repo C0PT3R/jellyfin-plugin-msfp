@@ -6,7 +6,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 
-namespace Jellyfin.Plugin.Msfp.Protocol;
+namespace Msfp;
 
 /// <summary>
 /// Certificate pins (MSFP section 3.1): SHA-256 of a certificate's

@@ -12,5 +12,6 @@ category: "General"
 owner: "C0PT3R"
 artifacts:
 - "Jellyfin.Plugin.Msfp.dll"
+- "Msfp.dll"
 changelog: >
   Early development.

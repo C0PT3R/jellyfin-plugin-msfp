@@ -8,7 +8,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Msfp.Federation;
-using Jellyfin.Plugin.Msfp.Protocol;
+using Msfp;
 
 namespace Jellyfin.Plugin.Msfp.Viewing;
 

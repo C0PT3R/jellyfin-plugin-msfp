@@ -2,7 +2,7 @@ using System;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Jellyfin.Plugin.Msfp.Protocol;
+namespace Msfp;
 
 /// <summary>
 /// The encodings of MSFP section 2: base64url without padding, lowercase

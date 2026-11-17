@@ -7,12 +7,11 @@ using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.Msfp.Protocol;
 
-namespace Jellyfin.Plugin.Msfp.Federation;
+namespace Msfp;
 
 /// <summary>
-/// How the plugin connects to peers (MSFP section 3.1): pair and hello
+/// How a server connects to peers (MSFP section 3.1): pair and hello
 /// accept any certificate; every other call, and media, a trusted one or a
 /// leaf the peer named.
 /// </summary>
@@ -29,7 +28,7 @@ public interface IPeerTransport
 }
 
 /// <summary>
-/// The plugin's transport: real HTTP, redirects never followed. One
+/// The default transport: real HTTP, redirects never followed. One
 /// handler per peer for checked calls, made again when the peer's pins
 /// change, so no connection opened under old pins is used after them.
 /// </summary>
@@ -133,7 +132,7 @@ public sealed class TlsCertificateReader : ICertificateReader
     /// <inheritdoc />
     public async Task<byte[]?> ReadLeafAsync(string address, CancellationToken ct)
     {
-        if (!address.StartsWith("https://", StringComparison.Ordinal) || !Protocol.Address.TryGetHost(address, out var authority))
+        if (!address.StartsWith("https://", StringComparison.Ordinal) || !Address.TryGetHost(address, out var authority))
         {
             return null;
         }

@@ -1,7 +1,7 @@
 using System;
 using System.Globalization;
 
-namespace Jellyfin.Plugin.Msfp.Protocol;
+namespace Msfp;
 
 /// <summary>How a receiver hears a key that signed a request (MSFP section 6.5).</summary>
 public enum Hearing

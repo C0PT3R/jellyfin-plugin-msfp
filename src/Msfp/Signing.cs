@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Jellyfin.Plugin.Msfp.Protocol;
+namespace Msfp;
 
 /// <summary>The four signature headers of a request (MSFP section 6.1), as text.</summary>
 public sealed record SignatureHeaders(string? Key, string? Date, string? Nonce, string? Signature)

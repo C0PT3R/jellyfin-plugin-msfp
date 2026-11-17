@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 
-namespace Jellyfin.Plugin.Msfp.Protocol;
+namespace Msfp;
 
 /// <summary>A token bucket: a rate a second, and a burst it may spend at once.</summary>
 public sealed class TokenBucket

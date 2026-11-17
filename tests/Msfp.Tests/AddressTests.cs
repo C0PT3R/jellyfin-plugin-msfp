@@ -1,7 +1,6 @@
-using Jellyfin.Plugin.Msfp.Protocol;
 using Xunit;
 
-namespace Jellyfin.Plugin.Msfp.Tests;
+namespace Msfp.Tests;
 
 public class AddressTests
 {

@@ -7,10 +7,10 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Jellyfin.Plugin.Msfp.Protocol;
+namespace Msfp;
 
 /// <summary>
-/// Where the plugin may connect for a peer (MSFP section 3.2). Every address
+/// Where a server may connect for a peer (MSFP section 3.2). Every address
 /// it connects to comes from a peer (a code, a pair request), and a hostile
 /// peer could name one inside this machine or its network.
 /// </summary>

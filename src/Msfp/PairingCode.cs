@@ -3,7 +3,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Jellyfin.Plugin.Msfp.Protocol;
+namespace Msfp;
 
 /// <summary>
 /// A pairing code (MSFP section 5): the maker's public key, a one-time
@@ -32,7 +32,7 @@ public sealed record PairingCode(byte[] PublicKey, byte[] Secret, ulong Expires,
     /// </summary>
     public static PairingCode Create(byte[] publicKey, string address, DateTimeOffset now)
     {
-        if (!Protocol.Address.IsValid(address))
+        if (!Msfp.Address.IsValid(address))
         {
             throw new ArgumentException("not a valid MSFP address", nameof(address));
         }
@@ -104,7 +104,7 @@ public sealed record PairingCode(byte[] PublicKey, byte[] Secret, ulong Expires,
         }
 
         var address = Encoding.ASCII.GetString(addressBytes);
-        if (!Protocol.Address.IsValid(address))
+        if (!Msfp.Address.IsValid(address))
         {
             return false;
         }

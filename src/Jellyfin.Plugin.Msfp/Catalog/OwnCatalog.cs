@@ -5,7 +5,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Jellyfin.Plugin.Msfp.Protocol;
+using Msfp;
 
 namespace Jellyfin.Plugin.Msfp.Catalog;
 

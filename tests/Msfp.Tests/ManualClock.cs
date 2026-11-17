@@ -1,6 +1,6 @@
 using System;
 
-namespace Jellyfin.Plugin.Msfp.Tests;
+namespace Msfp.Tests;
 
 /// <summary>A clock the tests set by hand.</summary>
 internal sealed class ManualClock : TimeProvider

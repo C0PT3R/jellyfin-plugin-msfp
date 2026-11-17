@@ -37,6 +37,10 @@ shows them. Nothing is added to Jellyfin's own library yet; see
 
 ## Building
 
+`src/Msfp` is MSFP itself, a class library with no Jellyfin, MediaBrowser
+or ASP.NET reference, tested on its own by `tests/Msfp.Tests`;
+`src/Jellyfin.Plugin.Msfp` is the plugin around it.
+
 You need the .NET 10 SDK, or a container with it:
 
 ```sh
@@ -52,7 +56,7 @@ podman run --rm -v "$PWD":/src:Z -w /src mcr.microsoft.com/dotnet/sdk:10.0 \
 ```
 
 The plugin is every DLL in `out` except Jellyfin's own (`MediaBrowser.*`,
-`Jellyfin.*` other than `Jellyfin.Plugin.Msfp.dll`), which
+`Jellyfin.*` other than `Jellyfin.Plugin.Msfp.dll`; `Msfp.dll` is part of it), which
 `ExcludeAssets=runtime` keeps out. Copy them into a folder under Jellyfin's
 `plugins` directory and restart Jellyfin. It targets Jellyfin 12.2.
 

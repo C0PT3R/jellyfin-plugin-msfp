@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace Jellyfin.Plugin.Msfp.Federation;
+namespace Msfp;
 
 /// <summary>Cleaning server names before they are stored (MSFP section 9.1).</summary>
 public static class Names

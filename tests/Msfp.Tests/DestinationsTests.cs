@@ -7,10 +7,9 @@ using System.Text.Json;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.Msfp.Protocol;
 using Xunit;
 
-namespace Jellyfin.Plugin.Msfp.Tests;
+namespace Msfp.Tests;
 
 /// <summary>Section 3.2: where the plugin connects for a peer.</summary>
 public class DestinationsTests
@@ -96,7 +95,7 @@ public class DestinationsTests
     [Fact]
     public void TheClientAsksForNoContentCoding()
     {
-        using var t = new Jellyfin.Plugin.Msfp.Federation.DefaultTransport();
+        using var t = new DefaultTransport();
         Assert.Equal(DecompressionMethods.None, ((System.Net.Http.SocketsHttpHandler)t.Any).AutomaticDecompression);
     }
 }

@@ -11,7 +11,8 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.Msfp.Catalog;
 using Jellyfin.Plugin.Msfp.Federation;
 using Jellyfin.Plugin.Msfp.Viewing;
-using Jellyfin.Plugin.Msfp.Protocol;
+using Msfp;
+using Msfp.Tests;
 using Xunit;
 
 namespace Jellyfin.Plugin.Msfp.Tests;
@@ -118,7 +119,7 @@ internal sealed class TestServer
         Catalog = new OwnCatalog(Source, clock, null);
         Service = new FederationService(key ?? ServerKey.Generate(), Store, clock, () => Settings, network, Reader, null, Catalog);
         Catalogs = new CatalogReader(Service, new PeerCatalogStore(null), clock);
-        Protocol.Address.TryGetHost(address, out var host);
+        global::Msfp.Address.TryGetHost(address, out var host);
         network.Servers[host] = Service;
     }
 
@@ -557,7 +558,7 @@ public class FederationTests
     {
         var code = _a.Service.MakeCode();
         var body = PairBody(_b, code);
-        Assert.True(Protocol.Address.TryGetHost(_a.Address, out var host));
+        Assert.True(global::Msfp.Address.TryGetHost(_a.Address, out var host));
         var headers = Signing.SignRequest(_b.Service.Key, "POST", host, FederationService.PairPath, body, _clock.Now);
         Assert.Equal(200, _a.Service.HandleAsync("pair", FederationService.PairPath, headers, body).GetAwaiter().GetResult().Status);
         var again = _a.Service.HandleAsync("pair", FederationService.PairPath, headers, body).GetAwaiter().GetResult();
@@ -617,38 +618,9 @@ public class FederationTests
 
     private Answer HandleSigned(TestServer to, TestServer from, string call, byte[] body)
     {
-        Assert.True(Protocol.Address.TryGetHost(to.Address, out var host));
+        Assert.True(global::Msfp.Address.TryGetHost(to.Address, out var host));
         var path = "/api/v1/federation/" + call;
         var headers = Signing.SignRequest(from.Service.Key, "POST", host, path, body, _clock.Now);
         return to.Service.HandleAsync(call, path, headers, body).GetAwaiter().GetResult();
-    }
-}
-
-public class NamesTests
-{
-    [Theory]
-    [InlineData("Server A", "Server A")]
-    [InlineData("  a  b  ", "a b")]
-    [InlineData("a  b", "a b")]
-    [InlineData("a​b", "ab")]
-    [InlineData("a\u0000b", "ab")]
-    [InlineData("a\tb\r\nc", "a b c")]
-    [InlineData("", "host")]
-    [InlineData("​\u0007", "host")]
-    [InlineData(null, "host")]
-    public void Cleans(string? name, string expected)
-    {
-        Assert.Equal(expected, Names.Clean(name, "host"));
-    }
-
-    [Fact]
-    public void CutsTo80CodePoints()
-    {
-        var emoji = string.Concat(Enumerable.Repeat("\U0001F600", 100));
-        var clean = Names.Clean(emoji, "h");
-        Assert.Equal(80, clean.EnumerateRunes().Count());
-
-        var spaced = new string('a', 79) + " b";
-        Assert.Equal(new string('a', 79), Names.Clean(spaced, "h"));
     }
 }

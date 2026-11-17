@@ -4,10 +4,9 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
-using Jellyfin.Plugin.Msfp.Protocol;
 using Xunit;
 
-namespace Jellyfin.Plugin.Msfp.Tests;
+namespace Msfp.Tests;
 
 /// <summary>
 /// The cases of vectors/v0-strict.json (section 2.1, corrections of
@@ -117,12 +116,12 @@ public class StrictVectorTests
     [Fact]
     public void TheCopyIsTheSpecificationsFile()
     {
-        var spec = Path.Combine(SkeletonTests.FindRepoRoot(), "..", "msfp-spec", "vectors", "v0-strict.json");
+        var spec = Path.Combine(Vectors.ProjectDir(), "..", "..", "..", "msfp-spec", "vectors", "v0-strict.json");
         if (!File.Exists(spec))
         {
             return;
         }
 
-        Assert.Equal(File.ReadAllBytes(spec), File.ReadAllBytes(Path.Combine(SkeletonTests.FindRepoRoot(), "tests", "Jellyfin.Plugin.Msfp.Tests", "vectors", "v0-strict.json")));
+        Assert.Equal(File.ReadAllBytes(spec), File.ReadAllBytes(Path.Combine(Vectors.ProjectDir(), "vectors", "v0-strict.json")));
     }
 }

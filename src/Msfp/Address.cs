@@ -4,7 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Linq;
 
-namespace Jellyfin.Plugin.Msfp.Protocol;
+namespace Msfp;
 
 /// <summary>
 /// A server's address, http(s)://host[:port] with no path (MSFP section

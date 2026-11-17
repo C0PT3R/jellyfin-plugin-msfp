@@ -11,6 +11,7 @@ using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Msfp;
 
 namespace Jellyfin.Plugin.Msfp;
 
