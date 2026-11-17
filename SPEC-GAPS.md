@@ -11,9 +11,9 @@ as corrected on 2026-11-16, which answered most of them (its section 17
 lists the corrections, and its `proposals/clarifications.md` the
 clarifications by number). Each entry's status line says where it stands
 now. Entries still open: 11 (a file holding several episodes; episode 0
-and the owning server's order), 12 and 9.5 (notes), and those added in the
-live test with Overfin of 2026-11-17 (6.3 and 6.6, a content coding on
-the answer).
+and the owning server's order), 12 and 9.5 (notes), and those found in the
+live test with Overfin of 2026-11-17: 6.3 and 6.6 (a content coding on
+the answer) and the last section.
 
 ## Section 2: Encodings
 
@@ -748,3 +748,57 @@ an item. The protocol has no way to fetch them.
 size, interval and count, and tile URLs under `/api/v1/stream/<ticket>/`,
 checked like subtitle URLs. Or a separate signed call keyed by title, so
 previews don't need a playback. Until then the plugin makes none.
+
+## Found in the live test with Overfin (2026-11-17, spec at 4adb10b)
+
+### 9.3 and 9.4: a member of the wrong JSON type in an answer
+
+*Status: open.*
+
+**Issue.** Section 9 says a member of another JSON type than its field
+says is an invalid value, which a receiver refuses: that is about
+requests. For answers, 9.3 and 9.4 list what a caller keeps and skips, but
+not what a member of the wrong type does (`"audio": "en"`, `"name": 7`, an
+entry of `titles` that is a string). Live, Overfin refuses the whole
+answer for one such member and keeps its old list.
+
+**Assumed.** In an answer, a member of the wrong type counts as absent;
+an entry that isn't an object is skipped; a bad tag is skipped, not the
+title. Only a body that isn't an I-JSON object, or a `seq` that isn't an
+integer in its one form, fails the answer.
+
+### 9.4: `libraries` in a titles request
+
+*Status: open.*
+
+**Issue.** 9.4's table marks `libraries` required, and section 9 says a
+receiver refuses a request without a required field, but 9.4's list of
+refusals doesn't name it. Live, Overfin answers `{}` and
+`{"libraries":null}` with an empty list.
+
+**Assumed.** Refused, with the signed `404` of 9.4's other bad bodies.
+
+### 3.1: a renewal right after a hello
+
+*Status: open.*
+
+**Issue.** A server reads its own certificate again only a minute or more
+after the last reading. When its certificate is renewed within that
+minute, its answer to a peer's `hello` names the old pin, and the peer's
+one retry fails; nothing tries again before the peer's next scheduled
+call. Seen live with Overfin as the renewed side.
+
+**Assumed.** Nothing changes in the plugin as a caller (one `hello`, one
+retry). As the renewed side, it reads its own certificate as the section
+says.
+
+### 8.3: the limit per network address behind a reverse proxy
+
+*Status: open; a note.*
+
+**Issue.** Behind a reverse proxy, every peer arrives from the proxy's
+address, so the limit by network address becomes one limit for everyone,
+unless the server trusts the proxy's forwarded address.
+
+**Assumed.** The plugin takes the address Jellyfin gives the request,
+which follows Jellyfin's "known proxies" setting. The README says so.
