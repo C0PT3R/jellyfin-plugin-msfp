@@ -50,12 +50,22 @@ public enum CallOutcome
 
     /// <summary>The peer's certificate was refused (a checked call, section 3.1).</summary>
     CertificateRefused,
+
+    /// <summary>
+    /// Not sent: the peer said to wait (a signed retryAfter), or the
+    /// back-off after a 429 or 503 hasn't passed (section 8.3).
+    /// </summary>
+    Held,
 }
 
 /// <summary>The result of a call to a peer.</summary>
-public sealed record CallResult(CallOutcome Outcome, int Status, JsonElement? Json)
+/// <param name="RetryAfter">A signed 429 or 503's retryAfter, 1 to 3,600 seconds; 0 when none.</param>
+/// <param name="Unsigned404">An unsigned 404 came back (a peer that may have just restarted).</param>
+public sealed record CallResult(CallOutcome Outcome, int Status, JsonElement? Json, int RetryAfter = 0, bool Unsigned404 = false)
 {
     public static readonly CallResult Unreachable = new(CallOutcome.Unreachable, 0, null);
+
+    public static readonly CallResult Held = new(CallOutcome.Held, 0, null);
 }
 
 /// <summary>What redeeming a code gave, for the operator.</summary>
@@ -95,6 +105,11 @@ public sealed class FederationService : IDisposable
     private readonly ICertificateReader _reader;
     private readonly ILogger _log;
     private readonly RequestCheck _check;
+    private readonly CallLimits _limits;
+
+    // Calls to a peer held until then: a signed retryAfter, or a back-off
+    // after a 429 or 503 without one (section 8.3).
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTimeOffset Until, TimeSpan Wait)> _holds = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _ownPinsLock = new(1, 1);
     private (string Address, DateTimeOffset At, IReadOnlyList<string> Pins)? _ownReading;
 
@@ -110,6 +125,7 @@ public sealed class FederationService : IDisposable
         _log = log ?? NullLogger.Instance;
         Nonces = new NonceMemory(clock);
         _check = new RequestCheck(clock, Nonces);
+        _limits = new CallLimits(clock);
     }
 
     /// <summary>This server's catalog, for libraries and titles; null: none offered.</summary>
@@ -217,8 +233,15 @@ public sealed class FederationService : IDisposable
     /// request target, the signature headers and the body. Everything before
     /// the call's own code (the checks of section 6.4) is here.
     /// </summary>
-    public async Task<Answer> HandleAsync(string call, string target, SignatureHeaders headers, byte[] body, CancellationToken ct = default)
+    public async Task<Answer> HandleAsync(string call, string target, SignatureHeaders headers, byte[] body, CancellationToken ct = default, string? remoteAddress = null)
     {
+        // Before any signature check, calls are limited by network address
+        // (section 8.3): past it, the unsigned 404 of a failed check.
+        if (!_limits.AllowAddress(remoteAddress))
+        {
+            return Answer.NotFound;
+        }
+
         var own = OwnAddress;
         if (own == null || body.Length > MaxRequestBody || !Address.TryGetHost(own, out var host))
         {
@@ -243,6 +266,22 @@ public sealed class FederationService : IDisposable
                 return Answer.NotFound;
         }
 
+        // A known peer, once its signature checked out: its own limit and
+        // all peers' (section 8.3). Strangers on pair are limited by
+        // address above.
+        IDisposable? slot = null;
+        if (result.Hearing == Hearing.Peer)
+        {
+            switch (_limits.Enter(result.KeyText!, out var retryAfter, out slot))
+            {
+                case LimitVerdict.PeerLimited:
+                    return Signed(result.Nonce!, 429, Problem(429, "rate-limited", "Too many requests", retryAfter), "application/problem+json");
+                case LimitVerdict.Busy:
+                    return Signed(result.Nonce!, 503, Problem(503, "server-busy", "The server is busy; try again shortly", retryAfter), "application/problem+json");
+            }
+        }
+
+        using var held = slot;
         try
         {
             return call switch
@@ -593,13 +632,19 @@ public sealed class FederationService : IDisposable
     /// <summary>A refusal: signed to a peer, plain to a stranger (section 6.6).</summary>
     private Answer Refusal(CheckResult req, int status, string type, string title)
     {
+        if (req.Hearing != Hearing.Peer && status == 404)
+        {
+            // A stranger's refusal on pair: the same as any failed check.
+            return Answer.NotFound;
+        }
+
         var body = status == 404 ? Answer.NotFoundBody : Problem(status, type, title);
         return req.Hearing == Hearing.Peer
             ? Signed(req.Nonce!, status, body, "application/problem+json")
             : new Answer(status, body, "application/problem+json", null);
     }
 
-    private static byte[] Problem(int status, string type, string title)
+    private static byte[] Problem(int status, string type, string title, int retryAfter = 0)
     {
         var ms = new MemoryStream();
         using (var w = new Utf8JsonWriter(ms, WriterOptions))
@@ -608,6 +653,11 @@ public sealed class FederationService : IDisposable
             w.WriteString("type", type);
             w.WriteString("title", title);
             w.WriteNumber("status", status);
+            if (retryAfter > 0)
+            {
+                w.WriteNumber("retryAfter", retryAfter);
+            }
+
             w.WriteEndObject();
         }
 
@@ -870,7 +920,63 @@ public sealed class FederationService : IDisposable
     /// refusal counts only when signed by the peer's key; on pair, refusals
     /// count signed or not.
     /// </summary>
+    /// <summary>How long to wait before the one retry after an unsigned 404 (section 6.5).</summary>
+    internal TimeSpan RetryDelay { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// One call to a peer, with what section 6.5 and 8.3 ask of a caller:
+    /// nothing is sent while the peer said to wait; an unsigned 404 is tried
+    /// once more, a second later, signed again with a new nonce (the peer
+    /// may have just restarted); a signed 429 or 503 holds every call but
+    /// pair until its retryAfter, or, without one, for a back-off that
+    /// doubles from 5 seconds up to an hour.
+    /// </summary>
     internal async Task<CallResult> CallAsync(string address, byte[] peerKey, string path, byte[] body, bool isPair, HttpMessageHandler handler, CancellationToken ct)
+    {
+        if (isPair)
+        {
+            return await CallOnceAsync(address, peerKey, path, body, isPair, handler, ct).ConfigureAwait(false);
+        }
+
+        var keyText = Encodings.Base64Url(peerKey);
+        if (_holds.TryGetValue(keyText, out var hold) && _clock.GetUtcNow() < hold.Until)
+        {
+            return CallResult.Held;
+        }
+
+        var result = await CallOnceAsync(address, peerKey, path, body, isPair, handler, ct).ConfigureAwait(false);
+        if (result.Unsigned404)
+        {
+            await Task.Delay(RetryDelay, ct).ConfigureAwait(false);
+            result = await CallOnceAsync(address, peerKey, path, body, isPair, handler, ct).ConfigureAwait(false);
+        }
+
+        var now = _clock.GetUtcNow();
+        if (result.Outcome == CallOutcome.Ok)
+        {
+            _holds.TryRemove(keyText, out _);
+        }
+        else if (result.Outcome == CallOutcome.Refused && result.Status is 429 or 503)
+        {
+            if (result.RetryAfter > 0)
+            {
+                _holds[keyText] = (now + TimeSpan.FromSeconds(result.RetryAfter), TimeSpan.Zero);
+            }
+            else
+            {
+                var last = _holds.TryGetValue(keyText, out var h) ? h.Wait : TimeSpan.Zero;
+                var wait = last == TimeSpan.Zero ? TimeSpan.FromSeconds(5) : TimeSpan.FromTicks(Math.Min(last.Ticks * 2, TimeSpan.FromHours(1).Ticks));
+                var jittered = TimeSpan.FromTicks((long)(wait.Ticks * (0.8 + (0.4 * Random.Shared.NextDouble()))));
+                _holds[keyText] = (now + jittered, wait);
+            }
+
+            _log.LogInformation("MSFP: {Address} said to wait ({Status}); calls held until {Until}", address, result.Status, _holds[keyText].Until);
+        }
+
+        return result;
+    }
+
+    private async Task<CallResult> CallOnceAsync(string address, byte[] peerKey, string path, byte[] body, bool isPair, HttpMessageHandler handler, CancellationToken ct)
     {
         if (!Address.TryGetHost(address, out var host))
         {
@@ -919,7 +1025,17 @@ public sealed class FederationService : IDisposable
                 }
             }
 
-            return signed || isPair ? new CallResult(CallOutcome.Refused, status, null) : CallResult.Unreachable;
+            if (signed && status is 429 or 503)
+            {
+                return new CallResult(CallOutcome.Refused, status, null, RetryAfterOf(answer!));
+            }
+
+            if (signed || isPair)
+            {
+                return new CallResult(CallOutcome.Refused, status, null);
+            }
+
+            return status == 404 ? CallResult.Unreachable with { Unsigned404 = true } : CallResult.Unreachable;
         }
         catch (HttpRequestException e) when (IsCertificateRefusal(e))
         {
@@ -959,6 +1075,22 @@ public sealed class FederationService : IDisposable
         }
 
         return await CallAsync(after.Address, key, path, body, false, _transport.TrustedOrNamed(peerKey, after.Pins), ct).ConfigureAwait(false);
+    }
+
+    /// <summary>A refusal's retryAfter: an integer from 1 to 3,600, or 0 (section 8.3).</summary>
+    private static int RetryAfterOf(byte[] body)
+    {
+        if (!StrictJson.TryParse(body, out var doc))
+        {
+            return 0;
+        }
+
+        using (doc)
+        {
+            return doc!.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("retryAfter", out var r)
+                && StrictJson.TryGetInteger(r, out var v) && v is >= 1 and <= 3600 ? (int)v : 0;
+        }
     }
 
     private static bool IsCertificateRefusal(Exception e)

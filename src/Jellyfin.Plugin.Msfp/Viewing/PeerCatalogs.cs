@@ -273,7 +273,20 @@ public sealed class CatalogReader
             if (changes == null)
             {
                 changes = isChanges;
-                seq = json.TryGetProperty("seq", out var sq) && sq.ValueKind == JsonValueKind.Number && sq.TryGetInt64(out var s) && s > 0 ? s : 0;
+
+                // seq, when there, is an integer in its one form (section
+                // 2.1): another form makes the answer a bad one. A seq that
+                // isn't positive is no seq (the whole list next time).
+                seq = 0;
+                if (json.TryGetProperty("seq", out var sq) && sq.ValueKind != JsonValueKind.Null)
+                {
+                    if (!StrictJson.TryGetInteger(sq, out var s))
+                    {
+                        return ("The peer's titles answer has a seq that isn't an integer.", null);
+                    }
+
+                    seq = Math.Max(s, 0);
+                }
             }
             else if (changes != isChanges)
             {
@@ -347,6 +360,7 @@ public sealed class CatalogReader
             CallOutcome.Ok => string.Empty,
             CallOutcome.Refused => $"The peer refused ({r.Status}).",
             CallOutcome.CertificateRefused => "The peer's certificate is neither trusted nor named.",
+            CallOutcome.Held => "The peer asked to wait (too many calls); the reading waits its turn.",
             _ => "The peer couldn't be reached, or its answer wasn't signed.",
         };
         return r.Outcome != CallOutcome.Ok || r.Json == null;

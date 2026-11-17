@@ -83,6 +83,17 @@ and comparing it with the last reading: 30 seconds after Jellyfin's
 library events settle, and every 10 minutes whatever happens. Removed
 titles are remembered for 30 days, so peers can read only what changed.
 
+Federation calls are limited as MSFP section 8.3 asks, with Overfin's
+numbers: 50 a second (bursts of 400) per network address before any
+signature check, 20 a second (bursts of 200) per peer, 200 a second
+(bursts of 2,000) for all peers, and 8 requests at once per peer, 64 in
+all. Past a peer's limit it gets a signed `429` with `retryAfter`, past
+all peers' a signed `503`. Behind a reverse proxy, the per-address limit
+sees the proxy's address unless Jellyfin's known proxies are set. As a
+caller, the plugin holds its calls to a peer that said to wait, backs off
+after a `429` or `503` without `retryAfter`, and tries a call once more,
+a second later, after an unsigned `404` (a peer that just restarted).
+
 The server's key is made on first start and kept in the plugin's data
 folder (`server-key.seed`, readable by its owner only); peers are in
 `peers.json` beside it, this server's catalog and change log in

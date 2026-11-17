@@ -131,7 +131,12 @@ public class FederationController : ControllerBase
             Single(SignatureHeaders.DateHeader),
             Single(SignatureHeaders.NonceHeader),
             Single(SignatureHeaders.SignatureHeader));
-        return await _federation.HandleAsync(call, target, headers, body, HttpContext.RequestAborted).ConfigureAwait(false);
+        // The network address the request came from, for the limit before
+        // any signature check (section 8.3). Behind a reverse proxy this is
+        // the proxy's, unless Jellyfin's known proxies are set.
+        var remote = HttpContext.Connection.RemoteIpAddress;
+        var from = remote == null ? null : (remote.IsIPv4MappedToIPv6 ? remote.MapToIPv4() : remote).ToString();
+        return await _federation.HandleAsync(call, target, headers, body, HttpContext.RequestAborted, from).ConfigureAwait(false);
     }
 
     /// <summary>A header's value when it was sent exactly once.</summary>
