@@ -1,6 +1,6 @@
 # Gaps in the MSFP specification
 
-Places where [MSFP version 0](https://github.com/C0PT3R/msfp-spec/blob/main/spec/v0.md)
+Places where [MSFP version 0](https://github.com/msfp-io/msfp-spec/blob/main/spec/v0.md)
 is unclear, incomplete or wrong, found while building this plugin from the
 specification alone. Each entry names the section, the issue, and what the
 plugin assumed.

@@ -6,7 +6,7 @@ other. With this plugin, Jellyfin servers can federate with each other and
 with Overfin, MSFP's first implementation.
 
 The protocol is specified in
-[github.com/C0PT3R/msfp-spec](https://github.com/C0PT3R/msfp-spec)
+[github.com/msfp-io/msfp-spec](https://github.com/msfp-io/msfp-spec)
 (version 0). This plugin is built from that specification alone, as an
 independent second implementation. Where the specification is unclear,
 incomplete or wrong, [SPEC-GAPS.md](SPEC-GAPS.md) says so, and says what the

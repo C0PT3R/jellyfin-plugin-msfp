@@ -29,6 +29,7 @@ public class SkeletonTests
         Assert.Contains($"guid: \"{Plugin.PluginId}\"", manifest);
         Assert.Contains("- \"Jellyfin.Plugin.Msfp.dll\"", manifest);
         Assert.Contains("- \"Msfp.dll\"", manifest);
+        Assert.Contains("- \"BouncyCastle.Cryptography.dll\"", manifest);
         Assert.Contains("targetAbi: \"12.2.0.0\"", manifest);
     }
 

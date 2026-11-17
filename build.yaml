@@ -13,5 +13,6 @@ owner: "C0PT3R"
 artifacts:
 - "Jellyfin.Plugin.Msfp.dll"
 - "Msfp.dll"
+- "BouncyCastle.Cryptography.dll"
 changelog: >
   Early development.
