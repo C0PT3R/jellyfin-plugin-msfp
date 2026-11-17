@@ -1084,8 +1084,10 @@ public sealed class FederationService : IDisposable
             return result;
         }
 
-        var after = await HelloAsync(peerKey, ct).ConfigureAwait(false);
-        if (after == null || after.Pins.SequenceEqual(peer.Pins))
+        // One such hello to a peer at a time; calls that wait on it share
+        // its result. Pins are compared as sets (section 3.1).
+        var after = await RenewalHelloAsync(peerKey).ConfigureAwait(false);
+        if (after == null || after.Pins.ToHashSet(StringComparer.Ordinal).SetEquals(peer.Pins))
         {
             return result;
         }
@@ -1106,6 +1108,22 @@ public sealed class FederationService : IDisposable
             return doc!.RootElement.ValueKind == JsonValueKind.Object
                 && doc.RootElement.TryGetProperty("retryAfter", out var r)
                 && StrictJson.TryGetInteger(r, out var v) && v is >= 1 and <= 3600 ? (int)v : 0;
+        }
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Task<Peer?>>> _renewals = new(StringComparer.Ordinal);
+
+    /// <summary>The hello after a refused certificate: one per peer at a time, shared.</summary>
+    private async Task<Peer?> RenewalHelloAsync(string peerKey)
+    {
+        var lazy = _renewals.GetOrAdd(peerKey, k => new Lazy<Task<Peer?>>(() => HelloAsync(k, CancellationToken.None)));
+        try
+        {
+            return await lazy.Value.ConfigureAwait(false);
+        }
+        finally
+        {
+            _renewals.TryRemove(new KeyValuePair<string, Lazy<Task<Peer?>>>(peerKey, lazy));
         }
     }
 

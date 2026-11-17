@@ -5,20 +5,21 @@ is unclear, incomplete or wrong, found while building this plugin from the
 specification alone. Each entry names the section, the issue, and what the
 plugin assumed.
 
-The entries were first written against commit `eba7541`, then each one
-was checked again against `9b15c83` (HTTPS certificates and pins, and
-`play`'s two `409`s). That commit changes none of the text they are about,
-so every earlier entry is still open; each says so in its status line.
-Entries new at `9b15c83` are marked so. For the `libraries` and `titles`
-round, the specification was still at `9b15c83`; every entry above was
-read again against it and stays as marked. The entries from sections 9.3,
-9.4, 11 and 12 at the end are new in that round.
+The entries were first written against commit `eba7541`, then checked
+again against `9b15c83`, and, on 2026-11-17, against `4adb10b`: version 0
+as corrected on 2026-11-16, which answered most of them (its section 17
+lists the corrections, and its `proposals/clarifications.md` the
+clarifications by number). Each entry's status line says where it stands
+now. Entries still open: 11 (a file holding several episodes; episode 0
+and the owning server's order), 12 and 9.5 (notes), and those added in the
+live test with Overfin of 2026-11-17 (6.3 and 6.6, a content coding on
+the answer).
 
 ## Section 2: Encodings
 
 ### 2.1 Strict or lenient base64url decoding
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by section 2.1 (a receiver refuses any other text); the plugin follows it.*
 
 **Issue.** Section 2 says a sender must produce canonical base64url, and
 that Overfin decodes leniently ("don't rely on any of these"). It doesn't
@@ -34,7 +35,7 @@ A canonical sender (which every sender must be) is never refused.
 
 ### 2.2 Duplicate and differently cased JSON fields
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by section 2.1 (I-JSON, exact member names; a name in another case is an unknown member); the plugin follows it.*
 
 **Issue.** Section 2 says field names are case-sensitive, and that Overfin
 matches them case-insensitively and keeps the last of duplicates, "don't
@@ -51,7 +52,7 @@ of them.
 
 ### 4.1 Which Ed25519 verification rules
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by section 2.1 (keys and R in the prime-order subgroup, not of small order; S below L). The plugin now makes these checks itself, on top of BouncyCastle's verification; the plugin follows it.*
 
 **Issue.** Section 4.1 says "RFC 8032, pure Ed25519" but not which
 verification rules apply. Implementations differ on edge cases that only
@@ -76,7 +77,7 @@ cases are out of scope.
 
 ### 5.1 Which white space a reader removes
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by section 5.1 (the Unicode `White_Space` property); the plugin follows it.*
 
 **Issue.** "Remove all whitespace anywhere in the text" doesn't say which
 characters count: ASCII space, tab, CR and LF only, or Unicode white space
@@ -87,7 +88,7 @@ A code is ASCII, so removing more can't change a valid code.
 
 ### 5.1 The 1,168-character limit doesn't match base64url
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by section 5.1 (779 characters, 584 bytes); the plugin follows it.*
 
 **Issue.** The limit is given as 2 × (512 + 72), which is the length of
 *hex* for 584 bytes. In base64url, 584 bytes take 779 characters. A
@@ -100,7 +101,7 @@ looks like a slip; 779 would be the exact bound.
 
 ### 5.1 The address bytes' encoding, and expiry values over 2^63
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by section 5.1 (ASCII only; an expiry above 2^53 − 1 refused); the plugin follows it.*
 
 **Issue.** The address is "bytes", but the text doesn't say they are
 ASCII (or UTF-8). Every valid address is ASCII, so only invalid ones are
@@ -112,7 +113,7 @@ over 2^63 − 1 counts as expired.
 
 ### 5.2 Address rules that the host pattern leaves open
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by section 5.2's grammar (no trailing `/` either, one text form for IPv4 and IPv6); the plugin follows it.*
 
 **Issue.** Section 5.2 says an address "parses as a URL" and gives a host
 pattern, but leaves these open:
@@ -146,7 +147,7 @@ address before using it. It doesn't limit label lengths.
 
 ### 6.4 step 2: what "a decimal integer" allows
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by section 2.1 (`0` or `[1-9][0-9]*`, at most 2^53 − 1; the date positive); the plugin follows it.*
 
 **Issue.** Step 2 says `Overfin-Date` "parses as a decimal integer", and
 open question 8 says Overfin also takes a leading `+`. Leading zeros, a
@@ -162,7 +163,7 @@ The specification should give the grammar, for example `0|[1-9][0-9]*`.
 
 ### 6.4 and 6.5: a forgotten key on pair while a code is live
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 3 (sections 6.5 and 7.1); the plugin follows it.*
 
 **Issue.** Step 8 has an exception: a key whose pairing the receiver ended
 gets a signed `404`. Section 6.5 says that on `pair`, while a code is
@@ -178,7 +179,7 @@ call, and on `pair` without a live code, a forgotten key gets the signed
 
 ### 6.5: when a nonce's 10 minutes start
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 2 (from acceptance); the plugin follows it.*
 
 **Issue.** "Keeps every accepted (key, nonce) pair for at least 10
 minutes" doesn't say from when: the request's date or the moment it was
@@ -190,7 +191,7 @@ from acceptance always outlasts it.
 
 ### 6.2: the target the receiver rebuilds
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 1 (the target as received; a query refused). Live, the plugin accepted a signed query until 2f03163; the plugin follows it.*
 
 **Issue.** The receiver rebuilds the message "from its own address's
 host", but the `<target>` line can only come from the request itself. The
@@ -229,7 +230,7 @@ signed.
 
 ### 3: status codes for a missing Content-Type and for browsers
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 5 (the unsigned 404; Overfin's 415 and 403 are a version 0 note); the plugin follows it.*
 
 **Issue.** Overfin answers `415` to a `POST` without
 `Content-Type: application/json`, and `403` to a request whose
@@ -261,7 +262,7 @@ path that doesn't exist all get the same answer.
 
 ### 3: a signature header sent twice
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by section 2.1 (each header exactly once, no comma); the plugin follows it.*
 
 **Issue.** Nothing says what to do when a request carries one of the four
 headers twice (or a comma-joined value).
@@ -272,7 +273,7 @@ headers twice (or a comma-joined value).
 
 ### 7.1 step 2: a code from a peer that is "gone"
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 8 (remove the gone peer first; that is an ending); the plugin follows it.*
 
 **Issue.** B refuses a code "when the key is a key B already knows as a
 peer", in any state. A peer that ended the pairing (7.4) shows on B as
@@ -289,7 +290,7 @@ forgotten list.
 
 ### 7.4: the forgotten list has no end
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 9 (entries may go after a year; the plugin keeps them, which is allowed); the plugin follows it.*
 
 **Issue.** The ender records the key's SHA-256 as "forgotten" and answers
 it with signed `404`s from then on. No limit or expiry is given, so the
@@ -300,7 +301,7 @@ list only grows.
 
 ### 7.4 step 3: what the receiver of `ended` keeps
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 10 (it deletes the ender in every state and doesn't record it as forgotten). The plugin now also drops the ender's catalog at once; the plugin follows it.*
 
 **Issue.** The peer that receives `ended` "deletes the ender". It doesn't
 record it as forgotten, so the ender's later requests get unsigned `404`s
@@ -312,7 +313,7 @@ state `ours` or `theirs` (a refused waiting pairing) deletes it too.
 
 ### 7.2: what "last heard from" counts
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 11; the plugin follows it.*
 
 **Issue.** Each side keeps "when it was last heard from". Section 9.2 sets
 it when a `hello` is received. Unsaid: whether a signed answer to one of
@@ -325,7 +326,7 @@ answer to our own `pair` or `hello` whose signature verified.
 
 ### 9.1: "the `address` field's bytes, exactly as sent"
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by section 9.1 (the value after JSON decoding, as UTF-8); the plugin follows it.*
 
 **Issue.** The proof covers "the `address` field's bytes, exactly as
 sent". That could mean the bytes of the JSON string as written in the
@@ -338,7 +339,7 @@ address (no valid address needs it) can't tell the difference.
 
 ### 9.1: the order of the 404 and 409 checks, and the code after a 409
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 12; the plugin follows it.*
 
 **Issue.** Step 4 of 7.1 lists the checks (code, proof, then 409 for a
 known key), but 9.1 lists the refusals without an order. Can a known
@@ -351,7 +352,7 @@ and proof. A `409` leaves the code live.
 
 ### 9.1: cleaning names
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 13 (white space first, then Cc and Cf); the plugin follows it.*
 
 **Issue.** "Control and format characters (Cc and Cf) removed, runs of
 white space made one space, cut to 80 characters". Left open:
@@ -371,7 +372,7 @@ as in the request message (`192.0.2.10:8096`).
 
 ### 9.2: a hello without a `state`
 
-*Status at 9b15c83: open, the text is unchanged.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 15; the plugin follows it.*
 
 **Issue.** `state` is required, and "required" means the receiver refuses
 the request without it (section 9). But 9.2 lists only "a body that isn't
@@ -385,7 +386,7 @@ unknown string value is answered like `waiting`, as written.
 
 ### 3.1: one pin read, several certificates served
 
-*Status: new at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 24; the plugin follows it.*
 
 **Issue.** A server "should name the pin of every certificate its
 address may serve now". An address can serve more than one: an ECDSA and
@@ -400,7 +401,7 @@ several certificates sets them all in the plugin's configuration (the
 
 ### 3.1: what to send as SNI when reading one's own certificate
 
-*Status: new at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 25; the plugin follows it.*
 
 **Issue.** "Connects to its own address, as a peer would". For a host
 name that means SNI with that name; for an IP address there is no SNI
@@ -411,7 +412,7 @@ TLS client would do.
 
 ### 3.1: a failed reading of one's own certificate
 
-*Status: new at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 26; the plugin follows it.*
 
 **Issue.** Unsaid: what a server names when it can't read its own
 certificate (its own public address not reachable from inside, as
@@ -425,7 +426,7 @@ itself sets the pins by hand.
 
 ### 3.1 and 9.2: a `certificates` field that isn't a list
 
-*Status: new at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 27; the plugin follows it.*
 
 **Issue.** "A receiver ignores entries that aren't 43 characters of
 base64url decoding to 32 bytes", but the text doesn't say what to do with
@@ -438,7 +439,7 @@ older pins than the latest hello's). The specification should pick one.
 
 ### 3.1: which 8, and duplicates
 
-*Status: new at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 28; the plugin follows it.*
 
 **Issue.** "Keeps at most 8": the first 8 entries, or the first 8 valid
 ones? Does a duplicate count?
@@ -447,7 +448,7 @@ ones? Does a duplicate count?
 
 ### 3.1: "the latest signed hello", when two cross
 
-*Status: new at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 29 (latest by arrival); the plugin follows it.*
 
 **Issue.** Pins come from "the latest signed `hello` it got from it,
 request or answer". When each side sends a hello at the same time, the
@@ -462,7 +463,7 @@ hello. The specification could say "by arrival" outright.
 
 ### 3.1: when pins "differ"
 
-*Status: new at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 30 (compared as sets; the plugin compared lists until this round); the plugin follows it.*
 
 **Issue.** After a refused certificate, the client sends a hello and
 retries "if the pins it gets differ from those it had". As a list or as
@@ -473,7 +474,7 @@ the first. Harmless either way.
 
 ### 3.1: connections opened under pins that were since removed
 
-*Status: new at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 31; the plugin follows it.*
 
 **Issue.** Certificates are checked when a TLS connection opens. A client
 that keeps connections open (HTTP keep-alive) would go on using one that
@@ -486,7 +487,7 @@ connections.
 
 ### 3.1: a signed `404` to `hello` and pins
 
-*Status: new at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 32; the plugin follows it.*
 
 **Issue.** The caller keeps the pins of a `200` answer; a signed `404`
 (the peer doesn't know us) has no body to name them. Are the old pins
@@ -498,7 +499,7 @@ kept for a peer marked `gone`?
 
 ### 10: one hello per refused media fetch
 
-*Status: new at 9b15c83; media isn't built yet.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 33 (one such `hello` to a peer at a time, its result shared); the plugin follows it.*
 
 **Issue.** Media fetches need a *trusted* or *named* certificate, and
 "Overfin does so", the hello and one retry, "for every call and for media
@@ -512,7 +513,7 @@ fetches waiting on it share its result.
 
 ### 9.5: `not-playable` and `stream-limit-reached`
 
-*Status: new at 9b15c83; noted, not built.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 7 and section 8.2 (the `type` tells them apart); `play` isn't built; the plugin follows it.*
 
 The `409` of `play` is now told apart by its `type`: `not-playable` for a
 copy the owning server can't play, `stream-limit-reached` for its
@@ -525,7 +526,7 @@ which a reader should not try to parse further.
 
 ### 14: reading one's own certificate trusts the path to oneself
 
-*Status: new at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by section 14 (operator pins avoid it) and clarification 34 (split-horizon names); the plugin follows it.*
 
 **Issue.** Section 14 notes that someone who can redirect a server's
 connection to its own address can have their certificate named. A milder
@@ -543,7 +544,7 @@ right ones by hand.
 
 ### 9.3 and 12: library IDs are the media server's item IDs
 
-*Status: open at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by proposal 2 (opaque IDs chosen by the owning server, 1 to 64 characters of `A–Z a–z 0–9 _ -`). The plugin's IDs already were a keyed MAC; as a reader it now skips IDs outside that form; the plugin follows it.*
 
 **Issue.** Version 0 notes say Overfin sends its media server's own
 library IDs, and open question 2 asks whether peers should get their own.
@@ -559,7 +560,7 @@ Jellyfin.
 
 ### 9.3: "names are made plain text"
 
-*Status: open at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 14; the plugin follows it.*
 
 **Issue.** The caller makes library names "plain text". Unsaid: whether
 that means removing control characters, or also HTML or markup, entities,
@@ -571,7 +572,7 @@ else, since the text is shown as text and never as markup.
 
 ### 9.3: duplicate IDs, the `mixed` kind, and a bad body
 
-*Status: open at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 17; the plugin follows it.*
 
 **Issue.** Three small things are unsaid:
 
@@ -589,7 +590,7 @@ example playlists). (3) A signed `404`, as `titles` does for a bad body.
 
 ### 9.4: a changes reading after the caller's wants changed
 
-*Status: open at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 18; the plugin follows it.*
 
 **Issue.** The receiver answers with changes when its log reaches back to
 `since` and "what it offers the caller hasn't changed". But the caller
@@ -605,7 +606,7 @@ whole list. The specification should make that a rule for callers.
 
 ### 9.4: which library a title names, when several hold it
 
-*Status: open at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by section 9.4 (the requested library whose ID comes first in byte order); the plugin follows it.*
 
 **Issue.** `library` is "one of the requested libraries that holds it".
 Unsaid: which one, and whether a title that moves from one of them to
@@ -619,7 +620,7 @@ copies in the requested libraries.
 
 ### 9.4: does `gone` count toward the 5,000?
 
-*Status: open at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 19; the plugin follows it.*
 
 **Issue.** "A page holds at most 5,000 titles". In a changes answer, can it
 also hold any number of `gone` keys?
@@ -630,7 +631,7 @@ follow.
 
 ### 9.4: what a bad `since` is
 
-*Status: open at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 20 (and section 2.1's one form for integers); the plugin follows it.*
 
 **Issue.** `since` is an integer, "0 or absent for the whole list". Not
 said: a negative value, a fraction, a string, a value over int64.
@@ -641,7 +642,7 @@ is answered with the whole list, like 0.
 
 ### 9.4: language tags: their form, "each once", and what "skipped" skips
 
-*Status: open at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 21; the plugin follows it.*
 
 **Issue.**
 1. Tags are "language tags (`fr-CA`)", but a media server usually holds
@@ -659,7 +660,7 @@ only; the title is kept.
 
 ### 9.4: languages of series and seasons
 
-*Status: open at 9b15c83.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 22. As a reader, the plugin now drops languages a peer sends for a series or a season; the plugin follows it.*
 
 **Issue.** `audio` and `subtitles` are "its copies' languages". Series and
 seasons have no copies of their own. Should they carry their episodes'
@@ -701,7 +702,7 @@ picked.
 
 ### 11: TMDB season IDs aren't used
 
-*Status: not a gap, a note.*
+*Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 23; the plugin follows it.*
 
 Jellyfin gives seasons a TMDB *season* ID too (seen in a test: season 1
 of TMDB series 1399 carried its own TMDB ID). MSFP keys seasons by the
