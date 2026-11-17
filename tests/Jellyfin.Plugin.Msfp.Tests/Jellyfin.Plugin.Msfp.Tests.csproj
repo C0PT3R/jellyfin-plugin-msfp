@@ -22,5 +22,6 @@
   <ItemGroup>
     <None Include="vectors/v0.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="vectors/v0-strict.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="vectors/v1-strict.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

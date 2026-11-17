@@ -1,4 +1,9 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Net;
+using System.Text.Json;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -61,5 +66,37 @@ public class DestinationsTests
     public async Task ARefusedAddressIsNeverConnectedTo(string host)
     {
         await Assert.ThrowsAsync<HttpRequestException>(() => Destinations.ConnectAsync(host, 9, allowLoopback: false, CancellationToken.None));
+    }
+
+    public static IEnumerable<object[]> V1Destinations() =>
+        JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "vectors", "v1-strict.json"))).RootElement
+            .GetProperty("destinations").EnumerateArray().Select(c => new object[] { c.GetProperty("text").GetString()!, c.GetProperty("valid").GetBoolean() });
+
+    /// <summary>
+    /// The destinations of vectors/v1/strict.json (msfp-spec fdc4d3b), NAT64
+    /// and 6to4 included: section 3.2 of version 0 says the same since
+    /// 2026-11-17. A text that isn't an IP address (a zone) can't be one.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(V1Destinations))]
+    public void TheV1DestinationVectors(string text, bool valid)
+    {
+        var allowed = IPAddress.TryParse(text, out var ip) && !text.Contains('%', StringComparison.Ordinal) && Destinations.IsAllowed(ip, allowLoopback: false);
+        Assert.Equal(valid, allowed);
+    }
+
+    [Theory]
+    [InlineData("64:ff9b:1::a9fe:a9fe", false)]
+    [InlineData("64:ff9b:1::c000:20a", true)]
+    public void TheLocalUseNat64PrefixByItsLast32Bits(string ip, bool allowed)
+    {
+        Assert.Equal(allowed, Destinations.IsAllowed(IPAddress.Parse(ip), allowLoopback: false));
+    }
+
+    [Fact]
+    public void TheClientAsksForNoContentCoding()
+    {
+        using var t = new Jellyfin.Plugin.Msfp.Federation.DefaultTransport();
+        Assert.Equal(DecompressionMethods.None, ((System.Net.Http.SocketsHttpHandler)t.Any).AutomaticDecompression);
     }
 }

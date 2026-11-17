@@ -637,6 +637,59 @@ public class CatalogReaderTests
     private static string Libraries(params string[] ids) =>
         JsonSerializer.Serialize(new { name = "Faked A", libraries = ids.Select(i => new { id = i, name = "L " + i, kind = "movies" }) });
 
+    [Theory]
+    [InlineData("""{"titles":"x","seq":7}""")]
+    [InlineData("""{"titles":[],"changes":true,"gone":7,"seq":7}""")]
+    [InlineData("""{"titles":[],"next":5,"seq":7}""")]
+    [InlineData("""{"titles":[],"changes":"yes","seq":7}""")]
+    [InlineData("""{"titles":[],"seq":"7"}""")]
+    public async Task ATopLevelMemberOfTheWrongTypeFailsTheTitlesAnswer(string page)
+    {
+        // Section 9.4, corrected 2026-11-17: only entries inside lists are
+        // skipped; a wrong type at the top fails the answer, and what was
+        // read before is kept.
+        var first = true;
+        await PairThenFake((path, body) => path.EndsWith("libraries", StringComparison.Ordinal)
+            ? (200, Libraries("L1"))
+            : (200, first ? """{"titles":[{"key":"movie/tmdb/1","kind":"movie","library":"L1"}],"seq":3}""" : page));
+        Assert.Contains("whole list", await _b.Catalogs.ReadAsync(_a.KeyText));
+        first = false;
+        Assert.Contains("isn't", await _b.Catalogs.ReadAsync(_a.KeyText));
+        Assert.Equal(new[] { "movie/tmdb/1" }, _b.Catalogs.Store.Get(_a.KeyText).Titles.Keys);
+    }
+
+    [Fact]
+    public async Task TitlesNullCountsAsEmpty()
+    {
+        await PairThenFake((path, body) => path.EndsWith("libraries", StringComparison.Ordinal)
+            ? (200, Libraries("L1"))
+            : (200, """{"titles":null,"next":null,"changes":null,"gone":null,"seq":3}"""));
+        Assert.Contains("whole list: 0 titles", await _b.Catalogs.ReadAsync(_a.KeyText));
+    }
+
+    [Theory]
+    [InlineData("""{"name":"A","libraries":{}}""")]
+    [InlineData("""{"name":7,"libraries":[{"id":"L1","name":"x","kind":"movies"}]}""")]
+    public async Task ATopLevelMemberOfTheWrongTypeFailsTheLibrariesAnswer(string answer)
+    {
+        var first = true;
+        await PairThenFake((path, body) => path.EndsWith("libraries", StringComparison.Ordinal)
+            ? (200, first ? Libraries("L1") : answer)
+            : (200, """{"titles":[{"key":"movie/tmdb/1","kind":"movie","library":"L1"}],"seq":3}"""));
+        Assert.Contains("whole list", await _b.Catalogs.ReadAsync(_a.KeyText));
+        first = false;
+        Assert.Contains("isn't of its type", await _b.Catalogs.ReadAsync(_a.KeyText));
+        Assert.Equal(new[] { "movie/tmdb/1" }, _b.Catalogs.Store.Get(_a.KeyText).Titles.Keys);
+        Assert.Equal("Faked A", _b.PeerOf(_a)!.Name);
+    }
+
+    [Fact]
+    public void ALibrarysNameOrKindOfTheWrongTypeCountsAsAbsent()
+    {
+        var json = JsonDocument.Parse("""{"libraries":[{"id":"L1","name":7,"kind":["movies"]},{"id":"L2","name":"ok","kind":3}]}""").RootElement;
+        Assert.Equal(new[] { new PeerLibrary("L1", "?", string.Empty), new PeerLibrary("L2", "ok", string.Empty) }, CatalogReader.ReadLibraries(json));
+    }
+
     [Fact]
     public async Task SkipsWhatSection94SaysToSkip()
     {

@@ -92,7 +92,9 @@ each time the plugin connects to it, as MSFP section 3.2 says: the name is
 looked up once, every address of the answer must pass, and the connection
 goes to one that was checked. Loopback (this machine), link-local (a
 cloud's metadata service among them), unspecified, multicast and reserved
-addresses are refused; private ranges are fine. "Allow peers on this
+addresses are refused, NAT64 (`64:ff9b::/96`, `64:ff9b:1::/48`) and 6to4
+(`2002::/16`) addresses judged as the IPv4 address they carry; private
+ranges are fine. "Allow peers on this
 machine" in the plugin's page allows loopback, and nothing else. No proxy
 from the environment is used. Reading this server's own certificate is
 checked the same way.
@@ -102,8 +104,10 @@ numbers: 50 a second (bursts of 400) per network address before any
 signature check, 20 a second (bursts of 200) per peer, 200 a second
 (bursts of 2,000) for all peers, and 8 requests at once per peer, 64 in
 all. Past a peer's limit it gets a signed `429` with `retryAfter`, past
-all peers' a signed `503`. Behind a reverse proxy, the per-address limit
-sees the proxy's address unless Jellyfin's known proxies are set. As a
+all peers' a signed `503`. Behind a reverse proxy, set Jellyfin's known
+proxies (Dashboard, Networking): the per-address limit then counts the
+client address the proxy forwards, from those proxies only, as MSFP
+section 8.3 says; otherwise every request counts as the proxy's. As a
 caller, the plugin holds its calls to a peer that said to wait, backs off
 after a `429` or `503` without `retryAfter`, and tries a call once more,
 a second later, after an unsigned `404` (a peer that just restarted).

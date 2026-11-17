@@ -95,6 +95,10 @@ public sealed class DefaultTransport : IPeerTransport, IDisposable
         // No proxy from the environment, and every connection checked
         // where it is made (section 3.2).
         UseProxy = false,
+
+        // No Accept-Encoding: federation answers carry no content coding
+        // (section 3), and a coded one is refused, never unpacked.
+        AutomaticDecompression = System.Net.DecompressionMethods.None,
         ConnectCallback = Destinations.Callback(_allowLoopback),
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),
         SslOptions = new SslClientAuthenticationOptions { RemoteCertificateValidationCallback = check },

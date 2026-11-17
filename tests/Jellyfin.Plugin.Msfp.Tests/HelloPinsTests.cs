@@ -52,6 +52,24 @@ public class HelloPinsTests
     }
 
     [Fact]
+    public async Task AnsweringAHelloNamesTheCertificateServedNow()
+    {
+        // Section 3.1, corrected 2026-11-17: a renewal right after a hello
+        // is named in the next answer, so the peer's one retry passes.
+        await PairAsync();
+        using var z = TestCertificates.SelfSigned("a.example.org");
+        _a.Reader.Leaf = z.RawData;
+        _clock.Advance(FederationService.ReadOwnCertificateWhenAnswering);
+        await _b.Service.HelloAsync(_a.KeyText);
+        Assert.Equal(new[] { Pins.Of(z) }, _b.PeerOf(_a)!.Pins);
+
+        // A reading at most a few seconds old is reused.
+        var reads = _a.Reader.Reads;
+        await _b.Service.HelloAsync(_a.KeyText);
+        Assert.Equal(reads, _a.Reader.Reads);
+    }
+
+    [Fact]
     public async Task PairAloneLearnsNoPins()
     {
         Assert.True((await _b.Service.RedeemAsync(_a.Service.MakeCode().Format())).Ok);

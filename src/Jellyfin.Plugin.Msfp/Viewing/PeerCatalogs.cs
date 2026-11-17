@@ -236,6 +236,15 @@ public sealed class CatalogReader
             return ("The libraries answer isn't a JSON object.", null);
         }
 
+        // A top-level member of the wrong type fails the answer (section 9,
+        // corrected 2026-11-17); limits, which the plugin doesn't read
+        // yet, are the one exception.
+        var badLibs = WrongType(root, "libraries", JsonValueKind.Array) ?? WrongType(root, "name", JsonValueKind.String);
+        if (badLibs != null)
+        {
+            return ($"The libraries answer's {badLibs} isn't of its type.", null);
+        }
+
         if (root.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String)
         {
             _federation.Rename(peer.Key, n.GetString());
@@ -271,6 +280,16 @@ public sealed class CatalogReader
             if (json.ValueKind != JsonValueKind.Object)
             {
                 return ("A titles answer isn't a JSON object.", null);
+            }
+
+            // Top-level members of the wrong type fail the answer (section
+            // 9.4, corrected 2026-11-17): skipping one could end a reading
+            // early or mix its kinds, and titles the peer holds be dropped.
+            var wrong = WrongType(json, "titles", JsonValueKind.Array) ?? WrongType(json, "gone", JsonValueKind.Array)
+                ?? WrongType(json, "next", JsonValueKind.String) ?? WrongType(json, "changes", JsonValueKind.True, JsonValueKind.False);
+            if (wrong != null)
+            {
+                return ($"The peer's titles answer has a {wrong} that isn't of its type.", null);
             }
 
             var isChanges = json.TryGetProperty("changes", out var ch) && ch.ValueKind == JsonValueKind.True;
@@ -440,6 +459,15 @@ public sealed class CatalogReader
         }
 
         return kept;
+    }
+
+    /// <summary>
+    /// The member's name when it is there, not null, and of none of the
+    /// kinds given; null otherwise (absent and null are fine).
+    /// </summary>
+    internal static string? WrongType(JsonElement obj, string name, params JsonValueKind[] kinds)
+    {
+        return obj.TryGetProperty(name, out var e) && e.ValueKind != JsonValueKind.Null && Array.IndexOf(kinds, e.ValueKind) < 0 ? name : null;
     }
 
     /// <summary>A library ID in section 9.3's form.</summary>

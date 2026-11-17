@@ -113,6 +113,15 @@ public class FederationController : ControllerBase
             return Federation.Answer.NotFound;
         }
 
+        // A coded request is never decoded: refused at once (section 3).
+        foreach (var coding in Request.Headers.ContentEncoding)
+        {
+            if (!string.Equals(coding?.Trim(), "identity", StringComparison.OrdinalIgnoreCase))
+            {
+                return Federation.Answer.NotFound;
+            }
+        }
+
         var body = await ReadBody(Request.Body).ConfigureAwait(false);
         if (body == null)
         {

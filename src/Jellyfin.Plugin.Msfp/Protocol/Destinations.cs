@@ -56,12 +56,19 @@ public static class Destinations
 
             var b = ip.GetAddressBytes();
 
-            // Hardening beyond section 3.2's list: the NAT64 prefix
-            // 64:ff9b::/96 reaches the IPv4 address it carries, so it is
-            // judged as that address (169.254.169.254 stays out of reach).
-            if (b[0] == 0x00 && b[1] == 0x64 && b[2] == 0xff && b[3] == 0x9b && b.AsSpan(4, 8).IndexOfAnyExcept((byte)0) < 0)
+            // NAT64 (64:ff9b::/96, and the local-use 64:ff9b:1::/48 by its
+            // last 32 bits) and 6to4 (2002::/16) reach the IPv4 address they
+            // carry, so they are judged as that address (section 3.2,
+            // corrected 2026-11-17).
+            if (b[0] == 0x00 && b[1] == 0x64 && b[2] == 0xff && b[3] == 0x9b
+                && (b.AsSpan(4, 8).IndexOfAnyExcept((byte)0) < 0 || (b[4] == 0x00 && b[5] == 0x01)))
             {
                 return IsAllowed(new IPAddress(b.AsSpan(12, 4)), allowLoopback);
+            }
+
+            if (b[0] == 0x20 && b[1] == 0x02)
+            {
+                return IsAllowed(new IPAddress(b.AsSpan(2, 4)), allowLoopback);
             }
 
             if (b[0] == 0xff || (b[0] == 0xfe && (b[1] & 0xc0) == 0x80))

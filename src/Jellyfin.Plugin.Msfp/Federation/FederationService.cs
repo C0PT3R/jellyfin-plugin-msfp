@@ -101,6 +101,13 @@ public sealed class FederationService : IDisposable
     /// <summary>How often this server reads its own certificate at most.</summary>
     public static readonly TimeSpan ReadOwnCertificateEvery = TimeSpan.FromMinutes(1);
 
+    /// <summary>
+    /// How old a reading of this server's own certificate may be when it
+    /// answers a hello (section 3.1, corrected 2026-11-17): the answer names
+    /// the certificate served now, so a peer's retry after a renewal passes.
+    /// </summary>
+    public static readonly TimeSpan ReadOwnCertificateWhenAnswering = TimeSpan.FromSeconds(2);
+
     private readonly IPeerTransport _transport;
     private readonly ICertificateReader _reader;
     private readonly ILogger _log;
@@ -112,6 +119,7 @@ public sealed class FederationService : IDisposable
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTimeOffset Until, TimeSpan Wait)> _holds = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _ownPinsLock = new(1, 1);
     private (string Address, DateTimeOffset At, IReadOnlyList<string> Pins)? _ownReading;
+    private DateTimeOffset? _ownReadingFailedAt;
 
     public FederationService(ServerKey key, PeerStore store, TimeProvider clock, Func<ServerSettings> settings, IPeerTransport transport, ICertificateReader? reader = null, ILogger? log = null, OwnCatalog? catalog = null)
     {
@@ -174,7 +182,14 @@ public sealed class FederationService : IDisposable
     /// own address, read again when the last reading is a minute old. A
     /// failed reading keeps the last good one.
     /// </summary>
-    public async Task<IReadOnlyList<string>> OwnPinsAsync(CancellationToken ct = default)
+    public Task<IReadOnlyList<string>> OwnPinsAsync(CancellationToken ct = default) => OwnPinsAsync(ReadOwnCertificateEvery, ct);
+
+    /// <summary>
+    /// This server's pins, read again when the last reading is maxAge old or
+    /// more. A failed reading keeps the last good one, and the next attempt
+    /// waits a minute.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> OwnPinsAsync(TimeSpan maxAge, CancellationToken ct = default)
     {
         var own = OwnAddress;
         if (own == null || !own.StartsWith("https://", StringComparison.Ordinal))
@@ -193,7 +208,12 @@ public sealed class FederationService : IDisposable
         {
             var now = _clock.GetUtcNow();
             var last = _ownReading is { } r && r.Address == own ? r.Pins : null;
-            if (last != null && now - _ownReading!.Value.At < ReadOwnCertificateEvery)
+            if (last != null && now - _ownReading!.Value.At < maxAge)
+            {
+                return last;
+            }
+
+            if (last != null && _ownReadingFailedAt is { } failed && now - failed < ReadOwnCertificateEvery)
             {
                 return last;
             }
@@ -214,7 +234,17 @@ public sealed class FederationService : IDisposable
             if (pins == null)
             {
                 _log.LogInformation("MSFP: couldn't read the certificate served at {Address}", own);
-                pins = last ?? Array.Empty<string>();
+                _ownReadingFailedAt = now;
+                if (last != null)
+                {
+                    return last;
+                }
+
+                pins = Array.Empty<string>();
+            }
+            else
+            {
+                _ownReadingFailedAt = null;
             }
 
             _ownReading = (own, now, pins);
@@ -604,7 +634,9 @@ public sealed class FederationService : IDisposable
             peer.LastHeard = now;
             return View(peer);
         });
-        var ours = await OwnPinsAsync(ct).ConfigureAwait(false);
+
+        // Named as served now, not from an earlier reading (section 3.1).
+        var ours = await OwnPinsAsync(ReadOwnCertificateWhenAnswering, ct).ConfigureAwait(false);
         return Json(req, 200, w =>
         {
             w.WriteString("state", view);
@@ -1029,7 +1061,10 @@ public sealed class FederationService : IDisposable
             var status = (int)response.StatusCode;
             var answer = await ReadLimitedAsync(response.Content, ct).ConfigureAwait(false);
             string? signature = response.Headers.TryGetValues(SignatureHeaders.SignatureHeader, out var values) ? values.FirstOrDefault() : null;
-            var signed = answer != null && Signing.CheckAnswer(peerKey, headers.Nonce!, status, answer, signature);
+            // An answer with a content coding counts as badly signed,
+            // whatever its signature, and is never decoded (sections 3, 6.6).
+            var coded = response.Content.Headers.ContentEncoding.Any(e => !e.Equals("identity", StringComparison.OrdinalIgnoreCase));
+            var signed = !coded && answer != null && Signing.CheckAnswer(peerKey, headers.Nonce!, status, answer, signature);
 
             if (status == 200)
             {

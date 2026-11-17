@@ -13,7 +13,8 @@ clarifications by number). Each entry's status line says where it stands
 now. Entries still open: 11 (a file holding several episodes; episode 0
 and the owning server's order), 12 and 9.5 (notes), and those found in the
 live test with Overfin of 2026-11-17: 6.3 and 6.6 (a content coding on
-the answer) and the last section.
+the answer) and the last section. The corrections of 2026-11-17
+(msfp-spec fdc4d3b) answered all of those; their status lines say how.
 
 ## Section 2: Encodings
 
@@ -208,7 +209,7 @@ signed over another spelling of the path fails step 7.
 
 ### 6.3 and 6.6: a content coding on the answer
 
-*Status: new in the live test with Overfin (spec at 4adb10b).*
+*Status at msfp-spec fdc4d3b (the corrections of 2026-11-17): closed by section 3 (no content codings; a coded answer counts as badly signed, a coded request is never decoded). The plugin sends answers uncoded, asks for none, refuses a coded answer, and refuses a coded request with the unsigned 404.*
 
 **Issue.** The answer message hashes "the exact answer body bytes". HTTP
 may send a body with a content coding (`Content-Encoding: gzip`), and a
@@ -753,7 +754,7 @@ previews don't need a playback. Until then the plugin makes none.
 
 ### 9.3 and 9.4: a member of the wrong JSON type in an answer
 
-*Status: open.*
+*Status at msfp-spec fdc4d3b (the corrections of 2026-11-17): closed by the section 9 introduction, 9.3 and 9.4: entries inside lists are skipped (or a member counts as absent), a top-level member of the wrong type fails the answer, `limits` excepted. The plugin now fails the answer for a wrong-typed `libraries`, top-level `name`, `titles`, `gone`, `next`, `changes` or `seq`; what it assumed before (absent) is gone.*
 
 **Issue.** Section 9 says a member of another JSON type than its field
 says is an invalid value, which a receiver refuses: that is about
@@ -769,7 +770,7 @@ integer in its one form, fails the answer.
 
 ### 9.4: `libraries` in a titles request
 
-*Status: open.*
+*Status at msfp-spec fdc4d3b (the corrections of 2026-11-17): closed by section 9.4's refusals, which now name it. The plugin already refused it.*
 
 **Issue.** 9.4's table marks `libraries` required, and section 9 says a
 receiver refuses a request without a required field, but 9.4's list of
@@ -780,7 +781,7 @@ refusals doesn't name it. Live, Overfin answers `{}` and
 
 ### 3.1: a renewal right after a hello
 
-*Status: open.*
+*Status at msfp-spec fdc4d3b (the corrections of 2026-11-17): closed by section 3.1 (a hello's answer names the certificate served when it answers). The plugin now reads its own certificate again for each hello it answers when its last reading is 2 seconds old or more; a failed reading still waits a minute.*
 
 **Issue.** A server reads its own certificate again only a minute or more
 after the last reading. When its certificate is renewed within that
@@ -794,7 +795,7 @@ says.
 
 ### 8.3: the limit per network address behind a reverse proxy
 
-*Status: open; a note.*
+*Status at msfp-spec fdc4d3b (the corrections of 2026-11-17): closed by section 8.3's implementation note. The plugin counts by the address Jellyfin gives the request. Checked live with Jellyfin 12.2: with `KnownProxies` set, a request from a known proxy counts as the rightmost `X-Forwarded-For` address (not a spoofed one further left), and a request from any other source as its own address, whatever it forwards; IPv6 counts by its `/64`.*
 
 **Issue.** Behind a reverse proxy, every peer arrives from the proxy's
 address, so the limit by network address becomes one limit for everyone,
