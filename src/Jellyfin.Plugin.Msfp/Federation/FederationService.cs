@@ -955,9 +955,12 @@ public sealed class FederationService : IDisposable
         }
 
         var keyText = Encodings.Base64Url(peerKey);
-        if (_holds.TryGetValue(keyText, out var hold) && _clock.GetUtcNow() < hold.Until)
+        if (_holds.TryGetValue(keyText, out var hold))
         {
-            return CallResult.Held;
+            if (_clock.GetUtcNow() < hold.Until)
+            {
+                return CallResult.Held;
+            }
         }
 
         var result = await CallOnceAsync(address, peerKey, path, body, isPair, handler, ct).ConfigureAwait(false);
@@ -974,19 +977,27 @@ public sealed class FederationService : IDisposable
         }
         else if (result.Outcome == CallOutcome.Refused && result.Status is 429 or 503)
         {
+            (DateTimeOffset Until, TimeSpan Wait) next;
             if (result.RetryAfter > 0)
             {
-                _holds[keyText] = (now + TimeSpan.FromSeconds(result.RetryAfter), TimeSpan.Zero);
+                next = (now + TimeSpan.FromSeconds(result.RetryAfter), TimeSpan.Zero);
             }
             else
             {
-                var last = _holds.TryGetValue(keyText, out var h) ? h.Wait : TimeSpan.Zero;
+                // The back-off doubles only while refusals follow each
+                // other: one long after the last hold starts again at 5 s.
+                var last = _holds.TryGetValue(keyText, out var h) && now - h.Until < TimeSpan.FromHours(1) ? h.Wait : TimeSpan.Zero;
                 var wait = last == TimeSpan.Zero ? TimeSpan.FromSeconds(5) : TimeSpan.FromTicks(Math.Min(last.Ticks * 2, TimeSpan.FromHours(1).Ticks));
                 var jittered = TimeSpan.FromTicks((long)(wait.Ticks * (0.8 + (0.4 * Random.Shared.NextDouble()))));
-                _holds[keyText] = (now + jittered, wait);
+                next = (now + jittered, wait);
             }
 
-            _log.LogInformation("MSFP: {Address} said to wait ({Status}); calls held until {Until}", address, result.Status, _holds[keyText].Until);
+            _holds[keyText] = next;
+            _log.LogInformation("MSFP: {Address} said to wait ({Status}); calls held until {Until}", address, result.Status, next.Until);
+        }
+        else if (result.Outcome != CallOutcome.Unreachable)
+        {
+            _holds.TryRemove(keyText, out _);
         }
 
         return result;
@@ -1086,7 +1097,7 @@ public sealed class FederationService : IDisposable
 
         // One such hello to a peer at a time; calls that wait on it share
         // its result. Pins are compared as sets (section 3.1).
-        var after = await RenewalHelloAsync(peerKey).ConfigureAwait(false);
+        var after = await RenewalHelloAsync(peerKey, ct).ConfigureAwait(false);
         if (after == null || after.Pins.ToHashSet(StringComparer.Ordinal).SetEquals(peer.Pins))
         {
             return result;
@@ -1114,12 +1125,12 @@ public sealed class FederationService : IDisposable
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Task<Peer?>>> _renewals = new(StringComparer.Ordinal);
 
     /// <summary>The hello after a refused certificate: one per peer at a time, shared.</summary>
-    private async Task<Peer?> RenewalHelloAsync(string peerKey)
+    private async Task<Peer?> RenewalHelloAsync(string peerKey, CancellationToken ct)
     {
         var lazy = _renewals.GetOrAdd(peerKey, k => new Lazy<Task<Peer?>>(() => HelloAsync(k, CancellationToken.None)));
         try
         {
-            return await lazy.Value.ConfigureAwait(false);
+            return await lazy.Value.WaitAsync(ct).ConfigureAwait(false);
         }
         finally
         {

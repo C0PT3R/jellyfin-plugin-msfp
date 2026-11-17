@@ -34,6 +34,18 @@ public class LimitsTests
         Assert.Equal(400, Enumerable.Range(0, 450).Count(_ => limits.AllowAddress("192.0.2.7")));
         Assert.True(limits.AllowAddress("192.0.2.8"));
         Assert.True(limits.AllowAddress(null));
+
+        // IPv6 by its /64: another address of the same network shares it.
+        Assert.Equal(400, Enumerable.Range(0, 450).Count(i => limits.AllowAddress("2001:db8:1:2::" + (i + 1).ToString("x", System.Globalization.CultureInfo.InvariantCulture))));
+        Assert.True(limits.AllowAddress("2001:db8:1:3::1"));
+    }
+
+    [Fact]
+    public void AllAddressesTogetherAreLimitedToo()
+    {
+        var limits = new CallLimits(_clock);
+        var passed = Enumerable.Range(0, 5000).Count(i => limits.AllowAddress("10.0." + (i / 200).ToString(System.Globalization.CultureInfo.InvariantCulture) + "." + (i % 200).ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        Assert.Equal((int)CallLimits.BeforeSignatureBurst, passed);
     }
 
     [Fact]

@@ -33,6 +33,9 @@ public class DestinationsTests
     [InlineData("ff02::1", false)]
     [InlineData("240.0.0.1", false)]
     [InlineData("255.255.255.255", false)]
+    [InlineData("64:ff9b::a9fe:a9fe", false)]
+    [InlineData("64:ff9b::7f00:1", false)]
+    [InlineData("64:ff9b::c000:20a", true)]
     public void AddressesByDefault(string ip, bool allowed)
     {
         Assert.Equal(allowed, Destinations.IsAllowed(IPAddress.Parse(ip), allowLoopback: false));

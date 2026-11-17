@@ -94,6 +94,26 @@ public static class Keys
         }
     }
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> CheckedKeys = new(StringComparer.Ordinal);
+
+    private static bool IsValidKeyCached(ReadOnlySpan<byte> publicKey)
+    {
+        var text = Convert.ToBase64String(publicKey);
+        if (CheckedKeys.TryGetValue(text, out var valid))
+        {
+            return valid;
+        }
+
+        valid = IsValidKey(publicKey);
+        if (CheckedKeys.Count >= 10_000)
+        {
+            CheckedKeys.Clear();
+        }
+
+        CheckedKeys[text] = valid;
+        return valid;
+    }
+
     /// <summary>
     /// Whether a 64-byte signature of a message verifies under a 32-byte
     /// public key, by section 2.1's rules: the key valid, R a valid point
@@ -107,7 +127,9 @@ public static class Keys
             return false;
         }
 
-        if (!IsValidKey(publicKey) || !IsValidKey(signature[..32]))
+        // A key is checked once and the result kept (section 2.1); R on
+        // every signature.
+        if (!IsValidKeyCached(publicKey) || !IsValidKey(signature[..32]))
         {
             return false;
         }

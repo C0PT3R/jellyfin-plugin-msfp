@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Threading;
 
 namespace Jellyfin.Plugin.Msfp.Protocol;
@@ -80,7 +81,11 @@ public sealed class CallLimits
     private readonly Dictionary<string, int> _peerBusy = new(StringComparer.Ordinal);
     private readonly TimeProvider _clock;
     private TokenBucket? _all;
+    private TokenBucket? _strangers;
     private int _allBusy;
+
+    /// <summary>All calls together before any signature check: a second, in bursts.</summary>
+    public const double BeforeSignatureRate = 400, BeforeSignatureBurst = 4000;
 
     public CallLimits(TimeProvider clock)
     {
@@ -100,8 +105,25 @@ public sealed class CallLimits
         }
 
         var now = _clock.GetUtcNow();
+
+        // IPv6 addresses count by their /64: one network hands out many.
+        if (IPAddress.TryParse(address, out var ip) && ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 && !ip.IsIPv4MappedToIPv6)
+        {
+            var b = ip.GetAddressBytes();
+            Array.Clear(b, 8, 8);
+            address = new IPAddress(b).ToString() + "/64";
+        }
+
         lock (_lock)
         {
+            // All addresses together too, since each call before the
+            // signature check costs a signature check (section 8.3).
+            _strangers ??= new TokenBucket(BeforeSignatureRate, BeforeSignatureBurst, now);
+            if (!_strangers.TryTake(now, out _))
+            {
+                return false;
+            }
+
             if (!_addresses.TryGetValue(address, out var bucket))
             {
                 if (_addresses.Count >= MaxAddresses)
@@ -159,14 +181,16 @@ public sealed class CallLimits
                 return LimitVerdict.Busy;
             }
 
-            if (!bucket.TryTake(now, out retryAfter))
-            {
-                return LimitVerdict.PeerLimited;
-            }
-
+            // All peers' bucket first, so that a busy server doesn't also
+            // spend the peer's own budget.
             if (!_all.TryTake(now, out retryAfter))
             {
                 return LimitVerdict.Busy;
+            }
+
+            if (!bucket.TryTake(now, out retryAfter))
+            {
+                return LimitVerdict.PeerLimited;
             }
 
             _peerBusy[peerKey] = busy + 1;
