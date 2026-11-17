@@ -205,6 +205,26 @@ have no query").
 it reached Jellyfin (path and query, percent-encoding as sent). A request
 signed over another spelling of the path fails step 7.
 
+### 6.3 and 6.6: a content coding on the answer
+
+*Status: new in the live test with Overfin (spec at 4adb10b).*
+
+**Issue.** The answer message hashes "the exact answer body bytes". HTTP
+may send a body with a content coding (`Content-Encoding: gzip`), and a
+host's response compression does so by itself when the caller sends
+`Accept-Encoding: gzip`, which Go's HTTP client does by default (and then
+unpacks the body before handing it over). The section doesn't say whether
+the hashed bytes are the body before or after a content coding, nor
+whether a server may content-code a federation answer at all. Live,
+Jellyfin gzipped every answer of the plugin to Overfin; Overfin checked
+the unpacked bytes and accepted them. A caller that checks the bytes it
+received, or a proxy that changes the coding, would fail.
+
+**Assumed.** The plugin never content-codes a federation answer (it
+removes `Accept-Encoding` before Jellyfin's compression sees it), and
+sends no `Accept-Encoding` itself, so the bytes on the wire are the bytes
+signed.
+
 ## Section 3: Transport
 
 ### 3: status codes for a missing Content-Type and for browsers

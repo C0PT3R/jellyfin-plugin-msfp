@@ -45,6 +45,19 @@ public class FederationController : ControllerBase
 
     private async Task Handle(string call)
     {
+        // The answer goes out as the bytes signed, never content-coded:
+        // Jellyfin's response compression would otherwise gzip it for a
+        // caller that accepts gzip, and a caller that checks the bytes it
+        // received, or a proxy between, would see other bytes than those
+        // signed (SPEC-GAPS.md, section 6.3). The compression middleware
+        // reads Accept-Encoding when the answer starts, so removing it here
+        // is enough; the feature covers HTTPS too.
+        Request.Headers.Remove(HeaderNames.AcceptEncoding);
+        if (HttpContext.Features.Get<IHttpsCompressionFeature>() is { } compression)
+        {
+            compression.Mode = HttpsCompressionMode.DoNotCompress;
+        }
+
         var answer = await Answer(call).ConfigureAwait(false);
         Response.StatusCode = answer.Status;
         if (answer.ContentType != null)
