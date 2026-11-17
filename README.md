@@ -20,8 +20,12 @@ and addresses; signing and checking requests and answers, with the nonce
 memory; the `pair` and `hello` calls under `/api/v1/federation/`, and
 pairing from the plugin's page (make a code, use one, accept, check, end),
 with peers kept in the plugin's own data folder. Checked against the
-specification's test vectors, and paired over HTTP with a real Jellyfin
-12.2 running the plugin. HTTPS certificates and pins (section 3.1):
+specification's test vectors (`v0.json`, and `v0-strict.json` of the
+corrections of 2026-11-16), paired over HTTP with a real Jellyfin 12.2
+running the plugin, and tested live against a real Overfin over HTTP and
+HTTPS: pairing from either side, ending, re-pairing, `libraries` and
+`titles` both ways (whole, changes, paging), pins and certificate
+renewals, limits and restarts. HTTPS certificates and pins (section 3.1):
 `pair` and `hello` accept any certificate, every other call a publicly
 trusted one or one whose pin the peer named in its latest signed `hello`. Also built: the `libraries`
 and `titles` calls, both sides. The operator picks, per peer, which
