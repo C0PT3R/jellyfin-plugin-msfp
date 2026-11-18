@@ -10,8 +10,10 @@ again against `9b15c83`, and, on 2026-11-17, against `4adb10b`: version 0
 as corrected on 2026-11-16, which answered most of them (its section 17
 lists the corrections, and its `proposals/clarifications.md` the
 clarifications by number). Each entry's status line says where it stands
-now. Entries still open: 11 (a file holding several episodes; episode 0
-and the owning server's order), 12 and 9.5 (notes), and those found in the
+now. On 2026-11-17, entries 11 (a file holding several episodes; episode 0
+and the owning server's order), 12 and 9.5 were closed too: by proposal 5
+and version 1, the double episodes' missing IDs left to the plugin
+(looked up in TMDB). No entry is open. Before that, also open were those found in the
 live test with Overfin of 2026-11-17: 6.3 and 6.6 (a content coding on
 the answer) and the last section. The corrections of 2026-11-17
 (msfp-spec fdc4d3b) answered all of those; their status lines say how.
@@ -673,7 +675,7 @@ languages?
 
 ### 11: a file holding several episodes
 
-*Status: open at 9b15c83.*
+*Status on 2026-11-17: closed by proposal 5 (v1 catalog 4.3: one key per episode, each with `with`; v1 playback 2.2: `play` of any of them plays the file). What was left, the second episode's key when Jellyfin keeps one TMDB episode ID per item, is the plugin's to do, decided by the owner: the plugin looks up the missing episode IDs in TMDB (the season's details), and leaves the episode out when TMDB can't be reached. The spec stays: the `s<n>/e<m>` form is only for episodes TMDB doesn't list. Not built yet.*
 
 **Issue.** One file can hold episodes 1 and 2 (Jellyfin: `IndexNumber`
 and `IndexNumberEnd`). The text gives one key per episode, but doesn't say
@@ -687,7 +689,7 @@ item. To settle when `play` is built.
 
 ### 11: episode 0, and which order is "the owning server's order"
 
-*Status: open at 9b15c83.*
+*Status on 2026-11-17: closed by proposal 5. (1) `e0` is valid (v1 catalog 4). (2) Keys use TMDB's own numbering of the series, whatever order a server shows (v1 catalog 4.1): the numbers Jellyfin stores are right when they are TMDB's aired order; an episode numbered another way is mapped to TMDB's numbers or left out.*
 
 **Issue.**
 1. `<episode>` is "1 to 5 digits", which includes `0`. Some orders have
@@ -723,7 +725,7 @@ one. This was checked live: a film whose NFO had no TMDB ID was not sent.
 
 ### 12: limits before play exists
 
-*Status: a note.*
+*Status: a note, not a gap; it closes when the plugin builds `play`.*
 
 `limits` is optional in `libraries`. The plugin builds no `play` yet, so
 it sends no `limits` rather than announce caps it doesn't enforce. When
@@ -734,7 +736,7 @@ bitrate cap) will be sent and enforced.
 
 ### 9.5: no way to share seek-bar previews
 
-*Status: open at 9b15c83; a suggestion for a later version.*
+*Status on 2026-11-17: closed by v1: the `play` answer carries `trickplay` (v1 playback 2.4), and the sheets are fetched under the ticket and re-encoded by the viewer's server (v1 media 3). Not covered: previews without a playback (a call keyed by title), an idea for later.*
 
 **Issue.** The viewer's server "drops `title`, `next` and `trickplay`
 whatever they hold". Media isn't signed, and the stream is a ticket's
