@@ -26,6 +26,11 @@
                         <textarea id="MsfpPins" is="emby-textarea" rows="2" style="width:100%;font-family:monospace"></textarea>
                         <div class="fieldDescription">Over https, peers accept this server's certificate when it is publicly trusted or named by its pin: the SHA-256 of its public key info, base64url. Empty: the plugin reads the certificate served at this server's address and names it. Set pins here, one per line, to name exactly these instead.</div>
                     </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="MsfpTranscodes">Transcodes at once on this server</label>
+                        <input id="MsfpTranscodes" name="MsfpTranscodes" type="number" is="emby-input" min="0" max="100" step="1" />
+                        <div class="fieldDescription">Your users' transcodes and paired servers' together. At the limit, a paired server's viewer is told this server is busy; your own users are never refused. Direct play and remux (the video copied) don't count. 0: paired servers get no transcodes. Each pairing's own limits apply as well.</div>
+                    </div>
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label>
                             <input id="MsfpAllowLoopback" name="MsfpAllowLoopback" type="checkbox" is="emby-checkbox" />
@@ -50,6 +55,7 @@
                 <h3>This server</h3>
                 <p>Fingerprint: <strong id="MsfpFingerprint">…</strong></p>
                 <p>Address: <code id="MsfpOwnAddress">…</code>; next key: <code id="MsfpNextKey">…</code></p>
+                <p>Paired servers' viewers playing here: <span id="MsfpPlaying">…</span>; transcodes now: <span id="MsfpTranscoding">…</span></p>
                 <div class="fieldDescription">Compare fingerprints with the other server's operator, by phone or another channel you trust, before you accept a pairing.</div>
                 <div>
                     <button is="emby-button" type="button" id="MsfpRotate" class="raised emby-button"><span>Change to the next key</span></button>
@@ -137,6 +143,10 @@
                     document.querySelector('#MsfpFingerprint').textContent = s.on ? s.fingerprint : '…';
                     document.querySelector('#MsfpOwnAddress').textContent = s.on ? s.address + (s.waiting ? ' (moving: not reached there yet)' : '') : '…';
                     document.querySelector('#MsfpNextKey').textContent = s.on ? s.nextKey + (s.nextOnServer ? '' : ' (not on this server)') : '…';
+                    document.querySelector('#MsfpPlaying').textContent = s.on ? String(s.playing) : '…';
+                    document.querySelector('#MsfpTranscoding').textContent = s.on && s.transcodes
+                        ? (s.transcodes.own + s.transcodes.peers) + ' of ' + s.transcodes.most + ' (your users ' + s.transcodes.own + ', paired servers ' + s.transcodes.peers + ')'
+                        : '…';
                 });
                 ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers')).then(function (peers) {
                     var list = document.querySelector('#MsfpPeers');
@@ -340,6 +350,7 @@
                         document.querySelector('#MsfpPins').value = config.CertificatePins || '';
                         document.querySelector('#MsfpAllowLoopback').checked = !!config.AllowLoopback;
                         document.querySelector('#MsfpDiscovery').checked = !!config.Discovery;
+                        document.querySelector('#MsfpTranscodes').value = config.TranscodesAtOnce == null ? 2 : config.TranscodesAtOnce;
                         Dashboard.hideLoadingMsg();
                     });
                 });
@@ -353,6 +364,8 @@
                         config.CertificatePins = document.querySelector('#MsfpPins').value.trim();
                         config.AllowLoopback = document.querySelector('#MsfpAllowLoopback').checked;
                         config.Discovery = document.querySelector('#MsfpDiscovery').checked;
+                        var most = parseInt(document.querySelector('#MsfpTranscodes').value, 10);
+                        config.TranscodesAtOnce = isNaN(most) ? 2 : Math.max(0, Math.min(100, most));
                         ApiClient.updatePluginConfiguration(MsfpConfig.pluginUniqueId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);
                             setTimeout(msfpLoad, 1500);

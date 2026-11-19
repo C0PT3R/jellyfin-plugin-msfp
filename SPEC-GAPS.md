@@ -40,8 +40,10 @@ own people". Jellyfin has no budget of transcodes: it starts as many as
 are asked. Whether a host without one must make one (an operator setting),
 or may have the pairings' limits as the only bound, isn't said.
 
-**Assumed.** No budget: each pairing's `transcodes` is the only limit. A
-setting for the peers' transcodes together is the plugin's to add.
+**Assumed.** The plugin makes one: "Transcodes at once on this server"
+(2 by default), counting the server's own users' transcodes and peers'
+together; at it, a peer's transcode gets `server-busy`, and the server's
+own users are never refused. The pairings' `transcodes` apply as well.
 
 ### playback 6: finding that a remux re-encodes the video
 

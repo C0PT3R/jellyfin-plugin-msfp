@@ -13,6 +13,7 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.MediaEncoding;
 using MediaBrowser.Controller.Security;
+using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Entities;
 using Microsoft.Extensions.Logging;
 using Msfp;
@@ -37,21 +38,33 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
     private readonly ISubtitleEncoder _subtitles;
     private readonly ITranscodeManager _transcodes;
     private readonly Hls _hls;
+    private readonly TranscodeLimit _limit;
     private readonly ILogger<JellyfinPlayback> _log;
     private readonly ConcurrentDictionary<string, Live> _live = new(StringComparer.Ordinal);
 
     public JellyfinPlayback(ILibraryManager library, ISubtitleEncoder subtitles, ITranscodeManager transcodes,
-        IServerConfigurationManager server, IAuthenticationManager auth, ILogger<JellyfinPlayback> log)
+        IServerConfigurationManager server, IAuthenticationManager auth, ISessionManager sessions, ILogger<JellyfinPlayback> log)
     {
         _library = library;
         _subtitles = subtitles;
         _transcodes = transcodes;
         _hls = new Hls(server, auth);
+        _limit = new TranscodeLimit(() => Plugin.Instance?.Configuration.TranscodesAtOnce ?? 2, () => OwnTranscodes(sessions.Sessions));
         _log = log;
     }
 
     /// <summary>The peers' playbacks here now, for the operator's page.</summary>
     public int Playing => _live.Count;
+
+    /// <summary>Transcodes now, the server's own users' and peers', and the limit.</summary>
+    public (int Own, int Peers, int Most) Transcodes => _limit.Now();
+
+    // The server's own users' transcodes: their sessions playing with the
+    // video re-encoded (peers' HLS, asked as devices msfp-<handle>, are
+    // counted by the limit itself).
+    internal static int OwnTranscodes(IEnumerable<SessionInfo> sessions) =>
+        sessions.Count(s => s.NowPlayingItem is not null && s.TranscodingInfo is { IsVideoDirect: false }
+            && s.DeviceId?.StartsWith("msfp-", StringComparison.Ordinal) != true);
 
     /// <inheritdoc />
     public ValueTask<CopyInfo> DescribeAsync(string copy, CancellationToken ct)
@@ -118,7 +131,7 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
         if (Direct.Plays(file, request))
         {
             request.Admit?.Invoke("direct");
-            live = new Live(item.Id, video.Path, request.Peer.Name, null);
+            live = new Live(item.Id, video.Path, request.Peer.Name, null, false);
             started = new Started { Handle = handle, Method = "direct", Protocol = "file", MimeType = file.MimeType };
         }
         else
@@ -129,16 +142,29 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
             }
 
             var choice = Hls.Choose(file, audio, request);
-            var slot = request.Admit?.Invoke(choice.Method);
+            var transcode = choice.Method == "transcode";
+            if (transcode && !_limit.TryTake())
+            {
+                _log.LogInformation("MSFP: {Peer} can't play {Title} here: transcodes at once on this server are all in use", request.Peer.Name, request.Title);
+                throw new MsfpException(MsfpError.ServerBusy);
+            }
+
+            ISlot? slot = null;
             try
             {
+                slot = request.Admit?.Invoke(choice.Method);
                 var master = await _hls.MasterAsync(item.Id, handle, choice, audio?.Index ?? -1, ct).ConfigureAwait(false);
-                live = new Live(item.Id, video.Path, request.Peer.Name, master);
+                live = new Live(item.Id, video.Path, request.Peer.Name, master, transcode);
                 started = new Started { Handle = handle, Method = choice.Method, Protocol = "hls" };
             }
             catch
             {
                 slot?.Release();
+                if (transcode)
+                {
+                    _limit.Give();
+                }
+
                 throw;
             }
         }
@@ -194,6 +220,11 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
         }
 
         _log.LogInformation("MSFP: {Peer}'s playback here ended ({Reason})", live.Peer, reason);
+        if (live.Transcode)
+        {
+            _limit.Give();
+        }
+
         if (live.Master is not null)
         {
             try
@@ -366,8 +397,11 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
         return s.Title is { Length: > 0 } t ? t : s.DisplayTitle ?? "Track " + s.Index.ToString(CultureInfo.InvariantCulture);
     }
 
-    private sealed class Live(Guid item, string path, string peer, string? master)
+    private sealed class Live(Guid item, string path, string peer, string? master, bool transcode)
     {
+        /// <summary>A transcode, counted by the server-wide limit.</summary>
+        public bool Transcode { get; } = transcode;
+
         /// <summary>Jellyfin's master playlist URL, for HLS; null for the file.</summary>
         public string? Master { get; } = master;
 

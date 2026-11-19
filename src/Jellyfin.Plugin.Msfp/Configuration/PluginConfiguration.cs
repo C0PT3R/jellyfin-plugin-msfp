@@ -36,4 +36,12 @@ public class PluginConfiguration : BasePluginConfiguration
     /// federates.
     /// </summary>
     public bool Discovery { get; set; }
+
+    /// <summary>
+    /// Transcodes at once on this server: the server's own users' and peers'
+    /// together. At the limit a peer's transcode is refused (server busy);
+    /// the server's own users never are. Direct play and remux don't count.
+    /// 0: no transcode for peers.
+    /// </summary>
+    public int TranscodesAtOnce { get; set; } = 2;
 }

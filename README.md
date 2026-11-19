@@ -140,9 +140,16 @@ the plugin serves it:
 - **Subtitles**: the text ones, as WebVTT made by Jellyfin's subtitle
   encoder. Picture subtitles (PGS) and seek-bar previews aren't served.
 
-Not built yet: a copy of several files (refused as not playable), a
-budget of transcodes for all peers together (each pairing's limit is the
-only one), checking that a remux Jellyfin made didn't re-encode the video,
+Transcodes also have a limit for the whole server, "Transcodes at once on
+this server" in the plugin's page (2 by default). It counts this server's
+own users' transcodes (their sessions playing with the video re-encoded)
+and peers' together. At the limit, a peer's transcode is refused as
+`server-busy`, which its viewer's server shows as busy for now; this
+server's own users are never refused, even above it. Direct play and
+remux don't count. 0 gives peers no transcode. The page shows the
+transcodes in use now.
+
+Not built yet: a copy of several files (refused as not playable), checking that a remux Jellyfin made didn't re-encode the video,
 Jellyfin's own dashboard showing peers' playbacks, and skip markers
 (intro, credits).
 

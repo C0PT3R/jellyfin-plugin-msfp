@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Msfp.Catalog;
 using Jellyfin.Plugin.Msfp.Federation;
+using Jellyfin.Plugin.Msfp.Playback;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Msfp;
@@ -65,12 +66,14 @@ public class AdminController : ControllerBase
     private readonly EngineHost _host;
     private readonly HostCatalog _catalog;
     private readonly WantsKeeper _wants;
+    private readonly JellyfinPlayback _playback;
 
-    public AdminController(EngineHost host, HostCatalog catalog, WantsKeeper wants)
+    public AdminController(EngineHost host, HostCatalog catalog, WantsKeeper wants, JellyfinPlayback playback)
     {
         _host = host;
         _catalog = catalog;
         _wants = wants;
+        _playback = playback;
     }
 
     /// <summary>This server: its fingerprint, address, keys and parts; why federation is off.</summary>
@@ -93,6 +96,7 @@ public class AdminController : ControllerBase
             discovery = s.Discovery,
             parts = s.Parts.Keys,
             playing = e.Playbacks().Count,
+            transcodes = _playback.Transcodes is var t ? new { own = t.Own, peers = t.Peers, most = t.Most } : null,
         };
     }, off: true);
 
