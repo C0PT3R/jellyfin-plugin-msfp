@@ -1,197 +1,319 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using System;
-using System.Collections.Generic;
 using Jellyfin.Plugin.Msfp.Catalog;
 using Jellyfin.Plugin.Msfp.Federation;
-using Jellyfin.Plugin.Msfp.Viewing;
-using Msfp;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Msfp;
 
 namespace Jellyfin.Plugin.Msfp.Api;
 
-/// <summary>A code to redeem, from the operator's page.</summary>
-public sealed class RedeemRequest
+/// <summary>A pairing code, from the operator's page.</summary>
+public sealed class CodeRequest
 {
     public string Code { get; set; } = string.Empty;
+
+    public string Note { get; set; } = string.Empty;
 }
 
 /// <summary>A list of libraries, from the operator's page.</summary>
 public sealed class LibrariesRequest
 {
     public List<string> Libraries { get; set; } = new();
+
+    /// <summary>For wants: read every library the peer offers, those it adds later too.</summary>
+    public bool All { get; set; }
 }
 
-/// <summary>Which of a peer's libraries to read.</summary>
-public sealed class WantsRequest
+/// <summary>A pairing's limits, from the operator's page.</summary>
+public sealed class LimitsRequest
 {
-    public bool All { get; set; } = true;
+    public int Streams { get; set; }
 
-    public List<string> Libraries { get; set; } = new();
+    public int Transcodes { get; set; }
+
+    public int BitrateKbps { get; set; }
 }
 
-/// <summary>The operator's side of pairing, for Jellyfin administrators only.</summary>
+/// <summary>A key change, from the operator's page.</summary>
+public sealed class KeyRequest
+{
+    /// <summary>A next key exported earlier ("" or null: the one on this server).</summary>
+    public string? NextKey { get; set; }
+
+    /// <summary>For a stolen key: revoke it without the next key (every pairing ends).</summary>
+    public bool WithoutNext { get; set; }
+}
+
+/// <summary>
+/// The operator's side of federation, for Jellyfin administrators only:
+/// pairing, keys, what each peer is offered and what is read of it, through
+/// the engine's own API.
+/// </summary>
 [ApiController]
 [Route("Msfp")]
 [Authorize(Policy = "RequiresElevation")]
+[ApiExplorerSettings(IgnoreApi = true)]
 public class AdminController : ControllerBase
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 
-    private readonly FederationService _federation;
-    private readonly OwnCatalog _catalog;
-    private readonly CatalogReader _reader;
+    private readonly EngineHost _host;
+    private readonly HostCatalog _catalog;
+    private readonly WantsKeeper _wants;
 
-    public AdminController(FederationService federation, OwnCatalog catalog, CatalogReader reader)
+    public AdminController(EngineHost host, HostCatalog catalog, WantsKeeper wants)
     {
-        _federation = federation;
+        _host = host;
         _catalog = catalog;
-        _reader = reader;
+        _wants = wants;
     }
 
-    /// <summary>This server's libraries, with how many titles each has a key for.</summary>
-    [HttpGet("Libraries")]
-    public ContentResult Libraries()
-    {
-        if (_catalog.Libraries.Count == 0)
-        {
-            _catalog.Refresh();
-        }
-
-        return Json(_catalog.Libraries.Select(l => new { id = l.Id, name = l.Name, kind = l.Kind }));
-    }
-
-    /// <summary>Sets which libraries a peer is offered.</summary>
-    [HttpPost("Peers/{key}/Offers")]
-    public ContentResult SetOffers(string key, [FromBody] LibrariesRequest request)
-    {
-        try
-        {
-            var peer = _federation.SetOffers(key, request.Libraries);
-            return peer == null ? Json(new { error = "No such peer." }, 404) : Json(View(peer));
-        }
-        catch (ArgumentException)
-        {
-            return Json(new { error = "Not a library of this server." }, 400);
-        }
-    }
-
-    /// <summary>Sets which of a peer's libraries this server reads.</summary>
-    [HttpPost("Peers/{key}/Wants")]
-    public ContentResult SetWants(string key, [FromBody] WantsRequest request)
-    {
-        var peer = _federation.SetWants(key, request.All, request.Libraries);
-        return peer == null ? Json(new { error = "No such peer." }, 404) : Json(View(peer));
-    }
-
-    /// <summary>What this server read of a peer's catalog: its libraries and up to 1,000 titles from `after`.</summary>
-    [HttpGet("Peers/{key}/Catalog")]
-    public ContentResult Catalog(string key, [FromQuery] string? after)
-    {
-        if (_federation.Peers().All(p => p.Key != key))
-        {
-            return Json(new { error = "No such peer." }, 404);
-        }
-
-        var c = _reader.Store.Get(key);
-        var page = c.Titles.Where(t => after == null || string.CompareOrdinal(t.Key, after) > 0).Take(1000)
-            .Select(t => new { key = t.Key, kind = t.Value.Kind, library = t.Value.Library, audio = t.Value.Audio, subtitles = t.Value.Subtitles });
-        return Json(new { libraries = c.Libraries, requested = c.Requested, seq = c.Seq, readAt = c.ReadAt, lastResult = c.LastResult, count = c.Titles.Count, titles = page });
-    }
-
-    /// <summary>Reads a peer's catalog now.</summary>
-    [HttpPost("Peers/{key}/Read")]
-    public async Task<ContentResult> Read(string key, CancellationToken ct)
-    {
-        var result = await _reader.ReadAsync(key, ct).ConfigureAwait(false);
-        return Json(new { result });
-    }
-
-    /// <summary>This server's key, fingerprint and address.</summary>
+    /// <summary>This server: its fingerprint, address, keys and parts; why federation is off.</summary>
     [HttpGet("Status")]
-    public async Task<ContentResult> Status(CancellationToken ct)
+    public Task<ContentResult> Status(CancellationToken ct) => Run(async e =>
     {
-        return Json(new
+        var s = await e.ServerAsync(ct).ConfigureAwait(false);
+        return new
         {
-            publicKey = _federation.Key.PublicKeyText,
-            fingerprint = _federation.Key.Fingerprint,
-            address = _federation.OwnAddress,
-            certificates = await _federation.OwnPinsAsync(ct).ConfigureAwait(false),
-        });
-    }
+            on = true,
+            fingerprint = s.Fingerprint,
+            address = s.Address,
+            named = s.Named,
+            former = s.Former,
+            waiting = s.Waiting,
+            nextKey = s.NextKey,
+            nextOnServer = s.NextOnServer,
+            rotationSince = s.RotationSince,
+            revokedAt = s.RevokedAt,
+            discovery = s.Discovery,
+            parts = s.Parts.Keys,
+            playing = e.Playbacks().Count,
+        };
+    }, off: true);
 
-    /// <summary>Makes a pairing code.</summary>
+    /// <summary>Makes a pairing code, shown once.</summary>
     [HttpPost("Codes")]
-    public ContentResult MakeCode()
+    public Task<ContentResult> MakeCode([FromBody] CodeRequest? request, CancellationToken ct) => Run(async e =>
     {
-        if (_federation.OwnAddress == null)
-        {
-            return Json(new { error = "Set this server's address first, and save." }, 400);
-        }
+        var (text, code) = await e.MakeCodeAsync(request?.Note, ct).ConfigureAwait(false);
+        return new { code = text, id = code.Id, expires = code.Expires };
+    });
 
-        var code = _federation.MakeCode();
-        return Json(new { code = code.Format(), expires = code.Expires });
-    }
+    /// <summary>The live codes (never their text).</summary>
+    [HttpGet("Codes")]
+    public Task<ContentResult> Codes(CancellationToken ct) => Run(async e => await e.CodesAsync(ct).ConfigureAwait(false));
+
+    /// <summary>Deletes a code.</summary>
+    [HttpPost("Codes/{id}/Delete")]
+    public Task<ContentResult> DeleteCode(string id, CancellationToken ct) => Run(async e =>
+    {
+        await e.DeleteCodeAsync(id, ct).ConfigureAwait(false);
+        return new { ok = true };
+    });
+
+    /// <summary>What a code says, before redeeming it.</summary>
+    [HttpPost("Preview")]
+    public Task<ContentResult> Preview([FromBody] CodeRequest request, CancellationToken ct) => Run(async e =>
+        await e.ReadCodeAsync(request.Code.Trim(), ct).ConfigureAwait(false));
 
     /// <summary>Redeems another server's code.</summary>
     [HttpPost("Redeem")]
-    public async Task<ContentResult> Redeem([FromBody] RedeemRequest request, CancellationToken ct)
-    {
-        var result = await _federation.RedeemAsync(request.Code, ct).ConfigureAwait(false);
-        return Json(new { ok = result.Ok, message = result.Message, peer = result.Peer == null ? null : View(result.Peer) }, result.Ok ? 200 : 400);
-    }
+    public Task<ContentResult> Redeem([FromBody] CodeRequest request, CancellationToken ct) => Run(async e =>
+        View(await e.RedeemCodeAsync(request.Code.Trim(), ct).ConfigureAwait(false)));
 
     /// <summary>The peers, with their fingerprints.</summary>
     [HttpGet("Peers")]
-    public ContentResult Peers()
+    public Task<ContentResult> Peers(CancellationToken ct) => Run(async e =>
     {
-        return Json(_federation.Peers().Select(View));
-    }
+        e.PanelOpen();
+        return (await e.PeersAsync(ct).ConfigureAwait(false)).Select(View).ToList();
+    });
 
     /// <summary>Accepts a peer that used this server's code.</summary>
-    [HttpPost("Peers/{key}/Accept")]
-    public async Task<ContentResult> Accept(string key, CancellationToken ct)
+    [HttpPost("Peers/{id}/Accept")]
+    public Task<ContentResult> Accept(string id, CancellationToken ct) => Run(async e =>
     {
-        var peer = await _federation.AcceptAsync(key, ct).ConfigureAwait(false);
-        return peer == null ? Json(new { error = "No peer waiting for this server's operator." }, 404) : Json(View(peer));
-    }
+        var p = View(await e.AcceptAsync(id, ct).ConfigureAwait(false));
+        _wants.Apply(id);
+        return p;
+    });
 
     /// <summary>Asks a peer where the pairing stands.</summary>
-    [HttpPost("Peers/{key}/Hello")]
-    public async Task<ContentResult> Hello(string key, CancellationToken ct)
-    {
-        var peer = await _federation.HelloAsync(key, ct).ConfigureAwait(false);
-        return peer == null ? Json(new { error = "No such peer." }, 404) : Json(View(peer));
-    }
+    [HttpPost("Peers/{id}/Hello")]
+    public Task<ContentResult> Hello(string id, CancellationToken ct) => Run(async e =>
+        View(await e.CheckAsync(id, ct).ConfigureAwait(false)));
 
     /// <summary>Ends a pairing, or refuses a waiting one.</summary>
-    [HttpPost("Peers/{key}/End")]
-    public async Task<ContentResult> End(string key, CancellationToken ct)
+    [HttpPost("Peers/{id}/End")]
+    public Task<ContentResult> End(string id, CancellationToken ct) => Run(async e =>
     {
-        var ended = await _federation.EndAsync(key, ct).ConfigureAwait(false);
-        return ended ? Json(new { ok = true }) : Json(new { error = "No such peer." }, 404);
-    }
+        await e.EndAsync(id, ct).ConfigureAwait(false);
+        _wants.Forget(id);
+        return new { ok = true };
+    });
 
-    private static object View(Peer p)
+    /// <summary>Accepts a peer's new key, once the operators compared fingerprints.</summary>
+    [HttpPost("Peers/{id}/Confirm")]
+    public Task<ContentResult> Confirm(string id, CancellationToken ct) => Run(async e =>
+        View(await e.ConfirmRotationAsync(id, ct).ConfigureAwait(false)));
+
+    /// <summary>Sets a pairing's limits on what it plays here.</summary>
+    [HttpPost("Peers/{id}/Limits")]
+    public Task<ContentResult> Limits(string id, [FromBody] LimitsRequest request, CancellationToken ct) => Run(async e =>
     {
-        Encodings.TryDecodeBase64Url(p.Key, out var raw);
+        await e.SetLimitsAsync(id, new Limits { Streams = request.Streams, Transcodes = request.Transcodes, BitrateKbps = request.BitrateKbps }, ct).ConfigureAwait(false);
+        return View(await e.PeerAsync(id, ct).ConfigureAwait(false));
+    });
+
+    /// <summary>This server's libraries, those offered to the peer marked.</summary>
+    [HttpGet("Peers/{id}/Offers")]
+    public Task<ContentResult> Offers(string id, CancellationToken ct) => Run(async e =>
+        (await e.OffersAsync(id, ct).ConfigureAwait(false)).Select(l => new { id = l.Id, name = l.Name, kind = l.Kind, offered = l.Offered }));
+
+    /// <summary>Sets which libraries a peer is offered.</summary>
+    [HttpPost("Peers/{id}/Offers")]
+    public Task<ContentResult> SetOffers(string id, [FromBody] LibrariesRequest request, CancellationToken ct) => Run(async e =>
+    {
+        var ours = _catalog.Read().Libraries.Select(l => l.Id).ToHashSet(StringComparer.Ordinal);
+        if (request.Libraries.Any(l => !ours.Contains(l)))
+        {
+            throw new MsfpException(MsfpError.NotFound, "Not a library of this server.");
+        }
+
+        await e.SetOffersAsync(id, request.Libraries, ct).ConfigureAwait(false);
+        return View(await e.PeerAsync(id, ct).ConfigureAwait(false));
+    });
+
+    /// <summary>The libraries the peer offers this server, asked now, those read marked.</summary>
+    [HttpGet("Peers/{id}/Theirs")]
+    public Task<ContentResult> Theirs(string id, CancellationToken ct) => Run(async e => new
+    {
+        all = _wants.WantsAll(id),
+        libraries = (await e.TheirLibrariesAsync(id, ct).ConfigureAwait(false)).Select(l => new { id = l.Id, name = l.Name, kind = l.Kind, wanted = l.Wanted, gone = l.Gone }),
+    });
+
+    /// <summary>Sets which of a peer's libraries this server reads; a reading follows at once.</summary>
+    [HttpPost("Peers/{id}/Wants")]
+    public Task<ContentResult> SetWants(string id, [FromBody] LibrariesRequest request, CancellationToken ct) => Run(async e =>
+    {
+        _wants.Set(id, request.All);
+        var libraries = request.All
+            ? (await e.TheirLibrariesAsync(id, ct).ConfigureAwait(false)).Where(l => !l.Gone).Select(l => l.Id).ToList()
+            : request.Libraries;
+        await e.SetWantsAsync(id, libraries, ct).ConfigureAwait(false);
+        return View(await e.PeerAsync(id, ct).ConfigureAwait(false));
+    });
+
+    /// <summary>Reads a peer's catalog now.</summary>
+    [HttpPost("Peers/{id}/Read")]
+    public Task<ContentResult> Read(string id, CancellationToken ct) => Run(async e =>
+        new { titles = await e.ReadNowAsync(id, ct).ConfigureAwait(false) });
+
+    /// <summary>What this server read of a peer's catalog: the libraries read and up to 1,000 titles after `after`.</summary>
+    [HttpGet("Peers/{id}/Catalog")]
+    public Task<ContentResult> Catalog(string id, [FromQuery] string? after, CancellationToken ct) => Run(async e =>
+    {
+        var wants = await e.WantsAsync(id, ct).ConfigureAwait(false);
+        var store = _host.Store ?? throw new MsfpException(MsfpError.NotFound);
+        var titles = await store.ReadAsync(tx => tx.PeerTitlesAsync(id, after ?? string.Empty, 1000), ct).ConfigureAwait(false);
         return new
         {
-            key = p.Key,
-            fingerprint = Keys.Fingerprint(raw),
-            address = p.Address,
-            name = p.Name,
-            state = p.State.ToString().ToLowerInvariant(),
-            certificates = p.Pins,
-            offered = p.Offered,
-            wantAll = p.WantAll,
-            wanted = p.Wanted,
-            lastHeard = p.LastHeard,
+            libraries = wants.Select(l => new { id = l.Id, name = l.Name, kind = l.Kind, wanted = l.Wanted, gone = l.Gone }),
+            titles = titles.Select(t => t is VideoTitle v
+                ? new { key = t.Key, kind = t.Kind, library = t.Libraries?.FirstOrDefault(), audio = v.Audio ?? [], subtitles = v.Subtitles ?? [], height = v.Video?.Height }
+                : new { key = t.Key, kind = t.Kind, library = t.Libraries?.FirstOrDefault(), audio = new List<string>(), subtitles = new List<string>(), height = (int?)null }),
+            more = titles.Count == 1000,
         };
+    });
+
+    /// <summary>Moves this server to its next key and tells the peers.</summary>
+    [HttpPost("Key/Rotate")]
+    public Task<ContentResult> Rotate([FromBody] KeyRequest? request, CancellationToken ct) => Run(async e =>
+    {
+        await e.RotateAsync(string.IsNullOrWhiteSpace(request?.NextKey) ? null : request.NextKey.Trim(), ct).ConfigureAwait(false);
+        return new { ok = true };
+    });
+
+    /// <summary>Revokes this server's key (it was stolen) and rotates to the next one, or ends every pairing without it.</summary>
+    [HttpPost("Key/Stolen")]
+    public Task<ContentResult> Stolen([FromBody] KeyRequest? request, CancellationToken ct) => Run(async e =>
+    {
+        var rotated = await e.KeyStolenAsync(string.IsNullOrWhiteSpace(request?.NextKey) ? null : request.NextKey.Trim(), request?.WithoutNext == true, ct).ConfigureAwait(false);
+        return new { rotated };
+    });
+
+    /// <summary>The next key, exported to keep apart (shown once), then deleted from this server.</summary>
+    [HttpPost("Key/Export")]
+    public Task<ContentResult> ExportNext(CancellationToken ct) => Run(async e =>
+    {
+        var (text, fingerprint) = await e.ExportNextKeyAsync(ct).ConfigureAwait(false);
+        return new { key = text, fingerprint };
+    });
+
+    /// <summary>Peers' playbacks here now.</summary>
+    [HttpGet("Playbacks")]
+    public Task<ContentResult> Playbacks() => Run(e => Task.FromResult<object>(e.Playbacks()
+        .Select(p => new { id = p.Id, peer = p.Peer, peerName = p.PeerName, title = p.Title, method = p.Method, since = p.Since, state = p.State })));
+
+    /// <summary>Ends a peer's playback here.</summary>
+    [HttpPost("Playbacks/{id}/Stop")]
+    public Task<ContentResult> StopPlayback(string id) => Run(e =>
+    {
+        e.StopPlayback(id, EndReason.Operator);
+        return Task.FromResult<object>(new { ok = true });
+    });
+
+    // Runs an action on the engine: the operator is told when federation is
+    // off, and an engine error is a 400 with its code.
+    private async Task<ContentResult> Run(Func<MsfpEngine, Task<object>> action, bool off = false)
+    {
+        if (_host.Engine is not { } engine)
+        {
+            return off
+                ? Json(new { on = false, problem = _host.Problem })
+                : Json(new { error = _host.Problem.Length > 0 ? _host.Problem : "Federation is off.", code = "off" }, 409);
+        }
+
+        try
+        {
+            return Json(await action(engine).ConfigureAwait(false));
+        }
+        catch (MsfpException e)
+        {
+            return Json(new { error = e.Message, code = e.Code.ToString() }, e.Code == MsfpError.NotFound ? 404 : 400);
+        }
     }
+
+    private Task<ContentResult> Run<T>(Func<MsfpEngine, Task<T>> action, bool off = false) =>
+        Run(async e => (object)(await action(e).ConfigureAwait(false))!, off);
+
+    private static object View(PeerView p) => new
+    {
+        id = p.Id,
+        name = p.Name,
+        address = p.Address,
+        fingerprint = p.Fingerprint,
+        state = p.State.Value,
+        paired = p.Paired,
+        seen = p.Seen,
+        suspended = p.Suspended,
+        inbound = p.Inbound.ToString(),
+        callsFailed = p.CallsFailed,
+        pending = p.Pending?.Fingerprint,
+        refused = p.Refused?.Fingerprint,
+        limits = p.Limits,
+        theirLimits = p.TheirLimits,
+        moving = p.Moving?.Address,
+        offers = p.Offers,
+        wants = p.Wants,
+        wantsGone = p.WantsGone,
+        parts = p.Parts.Keys,
+    };
 
     private static ContentResult Json(object value, int status = 200)
     {

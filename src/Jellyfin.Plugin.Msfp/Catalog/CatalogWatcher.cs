@@ -1,0 +1,114 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Jellyfin.Plugin.Msfp.Federation;
+using MediaBrowser.Controller.Library;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+namespace Jellyfin.Plugin.Msfp.Catalog;
+
+/// <summary>
+/// Tells the engine when this server's titles change: 30 seconds after
+/// Jellyfin's library events settle, and every 10 minutes whatever happens
+/// (a change Jellyfin raised no event for). The engine reads the catalog
+/// again then, and keeps what changed in its log. A library gone from
+/// Jellyfin is told apart: peers' playbacks from it end.
+/// </summary>
+public sealed class CatalogWatcher : IHostedService, IDisposable
+{
+    public static readonly TimeSpan Settle = TimeSpan.FromSeconds(30);
+    public static readonly TimeSpan Every = TimeSpan.FromMinutes(10);
+
+    private readonly ILibraryManager _library;
+    private readonly HostCatalog _catalog;
+    private readonly EngineHost _host;
+    private readonly ILogger<CatalogWatcher> _log;
+    private readonly object _lock = new();
+    private HashSet<string>? _libraries;
+    private Timer? _settle;
+    private Timer? _every;
+    private int _running;
+
+    public CatalogWatcher(ILibraryManager library, HostCatalog catalog, EngineHost host, ILogger<CatalogWatcher> log)
+    {
+        _library = library;
+        _catalog = catalog;
+        _host = host;
+        _log = log;
+    }
+
+    /// <inheritdoc />
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        _library.ItemAdded += Changed;
+        _library.ItemUpdated += Changed;
+        _library.ItemRemoved += Changed;
+        _every = new Timer(_ => Run(), null, TimeSpan.FromSeconds(15), Every);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        _library.ItemAdded -= Changed;
+        _library.ItemUpdated -= Changed;
+        _library.ItemRemoved -= Changed;
+        _every?.Change(Timeout.Infinite, Timeout.Infinite);
+        _settle?.Change(Timeout.Infinite, Timeout.Infinite);
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        _every?.Dispose();
+        _settle?.Dispose();
+    }
+
+    private void Changed(object? sender, ItemChangeEventArgs e)
+    {
+        lock (_lock)
+        {
+            // Each event pushes the reading back: a scan is read once, after it.
+            _settle ??= new Timer(_ => Run(), null, Timeout.Infinite, Timeout.Infinite);
+            _settle.Change(Settle, Timeout.InfiniteTimeSpan);
+        }
+    }
+
+    private void Run()
+    {
+        if (Interlocked.Exchange(ref _running, 1) == 1)
+        {
+            return;
+        }
+
+        try
+        {
+            _catalog.Changed();
+            var libraries = _catalog.Read().Libraries.Select(l => l.Id).ToHashSet(StringComparer.Ordinal);
+            var gone = _libraries?.Except(libraries).ToList() ?? [];
+            _libraries = libraries;
+            if (_host.Engine is not { } engine)
+            {
+                return;
+            }
+
+            foreach (var id in gone)
+            {
+                engine.LibraryRemovedAsync(id).GetAwaiter().GetResult();
+            }
+
+            engine.CatalogChanged();
+        }
+        catch (Exception e)
+        {
+            _log.LogError(e, "MSFP: reading the catalog failed");
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _running, 0);
+        }
+    }
+}

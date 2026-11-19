@@ -9,12 +9,12 @@
         <div data-role="content">
             <div class="content-primary">
                 <h2>MSFP Federation</h2>
-                <p>Early, not usable yet.</p>
+                <p>Early. <span id="MsfpProblem" style="font-weight:bold"></span></p>
                 <form id="MsfpConfigForm">
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="MsfpAddress">This server's address</label>
                         <input id="MsfpAddress" name="MsfpAddress" type="text" is="emby-input" placeholder="https://media.example.org" />
-                        <div class="fieldDescription">Where peers reach this server: http or https, a host and an optional port, no path. Empty: federation is off.</div>
+                        <div class="fieldDescription">Where peers reach this server: https, a host and an optional port, no path (Jellyfin's base URL, if any, is added by itself). Empty: federation is off. Changing it moves this server: paired servers are told.</div>
                     </div>
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="MsfpServerName">This server's name</label>
@@ -33,6 +33,13 @@
                         </label>
                         <div class="fieldDescription checkboxFieldDescription">Off by default: the plugin never connects, for a peer, to this machine itself (loopback), nor to link-local addresses (a cloud's metadata service among them), unspecified, multicast or reserved ones. Private ranges (a LAN) are fine. Turn this on only to pair with a server on this same machine; link-local stays refused.</div>
                     </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input id="MsfpDiscovery" name="MsfpDiscovery" type="checkbox" is="emby-checkbox" />
+                            <span>Serve the discovery document</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">Off by default: /.well-known/msfp tells anyone who asks that this server federates.</div>
+                    </div>
                     <div>
                         <button is="emby-button" type="submit" class="raised button-submit block emby-button">
                             <span>Save</span>
@@ -42,8 +49,13 @@
 
                 <h3>This server</h3>
                 <p>Fingerprint: <strong id="MsfpFingerprint">…</strong></p>
-                <p>Certificate pins named to peers: <code id="MsfpOwnPins">…</code></p>
+                <p>Address: <code id="MsfpOwnAddress">…</code>; next key: <code id="MsfpNextKey">…</code></p>
                 <div class="fieldDescription">Compare fingerprints with the other server's operator, by phone or another channel you trust, before you accept a pairing.</div>
+                <div>
+                    <button is="emby-button" type="button" id="MsfpRotate" class="raised emby-button"><span>Change to the next key</span></button>
+                    <button is="emby-button" type="button" id="MsfpStolen" class="raised emby-button"><span>This server's key was stolen</span></button>
+                    <div class="fieldDescription">Changing keys tells paired servers, which follow without anything to do. A stolen key is revoked: paired servers stop trusting it, and follow to the next key.</div>
+                </div>
 
                 <h3>Pair with another server</h3>
                 <div>
@@ -68,6 +80,16 @@
                     <div style="margin-top:1em">
                         <button is="emby-button" type="button" id="MsfpOffersSave" class="raised button-submit emby-button"><span>Save</span></button>
                         <button is="emby-button" type="button" id="MsfpOffersCancel" class="raised emby-button"><span>Cancel</span></button>
+                    </div>
+                </dialog>
+
+                <dialog id="MsfpWantsDialog" style="min-width:20em">
+                    <h3>Libraries read from <span id="MsfpWantsPeer"></span></h3>
+                    <label style="display:block"><input type="checkbox" id="MsfpWantsAll" /> Every library it offers, those it adds later too</label>
+                    <div id="MsfpWantsList"></div>
+                    <div style="margin-top:1em">
+                        <button is="emby-button" type="button" id="MsfpWantsSave" class="raised button-submit emby-button"><span>Save</span></button>
+                        <button is="emby-button" type="button" id="MsfpWantsCancel" class="raised emby-button"><span>Cancel</span></button>
                     </div>
                 </dialog>
 
@@ -111,8 +133,10 @@
 
             function msfpLoad() {
                 ApiClient.getJSON(ApiClient.getUrl('Msfp/Status')).then(function (s) {
-                    document.querySelector('#MsfpFingerprint').textContent = s.fingerprint;
-                    document.querySelector('#MsfpOwnPins').textContent = (s.certificates || []).join(', ') || 'none';
+                    document.querySelector('#MsfpProblem').textContent = s.on ? '' : (s.problem || 'Federation is off.');
+                    document.querySelector('#MsfpFingerprint').textContent = s.on ? s.fingerprint : '…';
+                    document.querySelector('#MsfpOwnAddress').textContent = s.on ? s.address + (s.waiting ? ' (moving: not reached there yet)' : '') : '…';
+                    document.querySelector('#MsfpNextKey').textContent = s.on ? s.nextKey + (s.nextOnServer ? '' : ' (not on this server)') : '…';
                 });
                 ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers')).then(function (peers) {
                     var list = document.querySelector('#MsfpPeers');
@@ -134,21 +158,30 @@
                         title.textContent = p.name + ' (' + p.address + '): ' + (states[p.state] || p.state);
                         var fp = document.createElement('div');
                         fp.className = 'fieldDescription';
-                        fp.textContent = 'Fingerprint: ' + p.fingerprint;
+                        fp.textContent = 'Fingerprint: ' + p.fingerprint + (p.pending ? '. New key to confirm: ' + p.pending : '');
                         row.appendChild(title);
                         row.appendChild(fp);
-                        var key = encodeURIComponent(p.key);
+                        var key = encodeURIComponent(p.id);
                         if (p.state === 'paired') {
                             var offered = document.createElement('div');
                             offered.className = 'fieldDescription';
-                            offered.textContent = 'Libraries offered: ' + (p.offered.length || 'none');
+                            offered.textContent = 'Libraries offered: ' + (p.offers || 'none') + '; read: ' + (p.wants || 'none') +
+                                '; at most ' + p.limits.streams + ' streams, ' + p.limits.transcodes + ' transcodes here';
                             row.appendChild(offered);
                             row.appendChild(msfpButton('Offers…', function () { msfpOffers(p); }));
+                            row.appendChild(msfpButton('Read…', function () { msfpWants(p); }));
                             row.appendChild(msfpButton('Titles read…', function () { msfpCatalog(p); }));
                         }
                         if (p.state === 'ours') {
                             row.appendChild(msfpButton('Accept', function () {
                                 msfpPost('Msfp/Peers/' + key + '/Accept').then(msfpLoad, msfpLoad);
+                            }));
+                        }
+                        if (p.pending) {
+                            row.appendChild(msfpButton('Confirm the new key', function () {
+                                if (confirm('Confirm ' + p.name + "'s new key " + p.pending + '? Compare it with its operator first.')) {
+                                    msfpPost('Msfp/Peers/' + key + '/Confirm').then(msfpLoad, msfpLoad);
+                                }
                             }));
                         }
                         row.appendChild(msfpButton('Check', function () {
@@ -168,7 +201,7 @@
             function msfpOffers(p) {
                 msfpOffersFor = p;
                 document.querySelector('#MsfpOffersPeer').textContent = p.name;
-                ApiClient.getJSON(ApiClient.getUrl('Msfp/Libraries')).then(function (libs) {
+                ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers/' + encodeURIComponent(p.id) + '/Offers')).then(function (libs) {
                     var list = document.querySelector('#MsfpOffersList');
                     list.textContent = '';
                     libs.forEach(function (l) {
@@ -177,7 +210,7 @@
                         var box = document.createElement('input');
                         box.type = 'checkbox';
                         box.value = l.id;
-                        box.checked = p.offered.indexOf(l.id) >= 0;
+                        box.checked = l.offered;
                         label.appendChild(box);
                         label.appendChild(document.createTextNode(' ' + l.name + (l.kind ? ' (' + l.kind + ')' : '')));
                         list.appendChild(label);
@@ -188,7 +221,7 @@
 
             document.querySelector('#MsfpOffersSave').addEventListener('click', function () {
                 var ids = Array.prototype.map.call(document.querySelectorAll('#MsfpOffersList input:checked'), function (b) { return b.value; });
-                msfpPost('Msfp/Peers/' + encodeURIComponent(msfpOffersFor.key) + '/Offers', { libraries: ids }).then(function () {
+                msfpPost('Msfp/Peers/' + encodeURIComponent(msfpOffersFor.id) + '/Offers', { libraries: ids }).then(function () {
                     document.querySelector('#MsfpOffersDialog').close();
                     msfpLoad();
                 }, function () { msfpMessage('The offer could not be saved.'); });
@@ -197,17 +230,50 @@
                 document.querySelector('#MsfpOffersDialog').close();
             });
 
+            var msfpWantsFor = null;
+            function msfpWants(p) {
+                msfpWantsFor = p;
+                document.querySelector('#MsfpWantsPeer').textContent = p.name;
+                ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers/' + encodeURIComponent(p.id) + '/Theirs')).then(function (r) {
+                    document.querySelector('#MsfpWantsAll').checked = r.all;
+                    var list = document.querySelector('#MsfpWantsList');
+                    list.textContent = '';
+                    r.libraries.forEach(function (l) {
+                        var label = document.createElement('label');
+                        label.style.display = 'block';
+                        var box = document.createElement('input');
+                        box.type = 'checkbox';
+                        box.value = l.id;
+                        box.checked = l.wanted;
+                        label.appendChild(box);
+                        label.appendChild(document.createTextNode(' ' + l.name + (l.kind ? ' (' + l.kind + ')' : '') + (l.gone ? ' (no longer offered)' : '')));
+                        list.appendChild(label);
+                    });
+                    document.querySelector('#MsfpWantsDialog').showModal();
+                }, function () { msfpMessage('Its libraries could not be read.'); });
+            }
+
+            document.querySelector('#MsfpWantsSave').addEventListener('click', function () {
+                var ids = Array.prototype.map.call(document.querySelectorAll('#MsfpWantsList input:checked'), function (b) { return b.value; });
+                msfpPost('Msfp/Peers/' + encodeURIComponent(msfpWantsFor.id) + '/Wants', { all: document.querySelector('#MsfpWantsAll').checked, libraries: ids }).then(function () {
+                    document.querySelector('#MsfpWantsDialog').close();
+                    msfpLoad();
+                }, function () { msfpMessage('The libraries to read could not be saved.'); });
+            });
+            document.querySelector('#MsfpWantsCancel').addEventListener('click', function () {
+                document.querySelector('#MsfpWantsDialog').close();
+            });
+
             var msfpCatalogFor = null;
             function msfpCatalog(p) {
                 msfpCatalogFor = p;
                 document.querySelector('#MsfpCatalogPeer').textContent = p.name;
-                ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers/' + encodeURIComponent(p.key) + '/Catalog')).then(function (c) {
+                ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers/' + encodeURIComponent(p.id) + '/Catalog')).then(function (c) {
                     document.querySelector('#MsfpCatalogSummary').textContent =
-                        c.count + ' titles from ' + c.libraries.length + ' libraries offered' +
-                        (c.readAt ? ', read ' + new Date(c.readAt).toLocaleString() : ', not read yet') +
-                        (c.lastResult ? '. ' + c.lastResult : '');
+                        (c.more ? 'The first 1,000' : c.titles.length) + ' titles, from ' +
+                        c.libraries.filter(function (l) { return l.wanted; }).map(function (l) { return l.name; }).join(', ');
                     document.querySelector('#MsfpCatalogTitles').textContent = c.titles.map(function (t) {
-                        return t.key + '  ' + t.kind + (t.audio.length ? '  audio ' + t.audio.join(',') : '') + (t.subtitles.length ? '  subtitles ' + t.subtitles.join(',') : '');
+                        return t.key + '  ' + t.kind + (t.height ? '  ' + t.height + 'p' : '') + (t.audio.length ? '  audio ' + t.audio.join(',') : '') + (t.subtitles.length ? '  subtitles ' + t.subtitles.join(',') : '');
                     }).join('\n');
                     var d = document.querySelector('#MsfpCatalogDialog');
                     if (!d.open) { d.showModal(); }
@@ -216,7 +282,7 @@
 
             document.querySelector('#MsfpCatalogRead').addEventListener('click', function () {
                 document.querySelector('#MsfpCatalogSummary').textContent = '…';
-                msfpPost('Msfp/Peers/' + encodeURIComponent(msfpCatalogFor.key) + '/Read').then(function () {
+                msfpPost('Msfp/Peers/' + encodeURIComponent(msfpCatalogFor.id) + '/Read').then(function () {
                     msfpCatalog(msfpCatalogFor);
                 }, function () { msfpCatalog(msfpCatalogFor); });
             });
@@ -226,29 +292,42 @@
 
             document.querySelector('#MsfpMakeCode').addEventListener('click', function () {
                 msfpMessage('');
-                msfpPost('Msfp/Codes').then(function (r) {
+                msfpPost('Msfp/Codes', { note: '' }).then(function (r) {
                     var box = document.querySelector('#MsfpCode');
                     box.value = r.code;
                     box.style.display = 'block';
                     box.select();
-                }, function () {
-                    msfpMessage("Set this server's address first, and save.");
-                });
+                }, function (e) { msfpError(e, "Set this server's address first, and save."); });
+            });
+
+            function msfpError(e, fallback) {
+                if (e && e.json) {
+                    e.json().then(function (r) { msfpMessage(r.error || fallback); }, function () { msfpMessage(fallback); });
+                } else {
+                    msfpMessage(fallback);
+                }
+            }
+
+            document.querySelector('#MsfpRotate').addEventListener('click', function () {
+                if (confirm("Change this server's key to its next one? Paired servers are told.")) {
+                    msfpPost('Msfp/Key/Rotate', {}).then(function () { msfpMessage('Key changed; paired servers told.'); msfpLoad(); },
+                        function (e) { msfpError(e, 'The key could not be changed.'); });
+                }
+            });
+            document.querySelector('#MsfpStolen').addEventListener('click', function () {
+                if (confirm("Revoke this server's key? Do this only if it was stolen: paired servers stop trusting it.")) {
+                    msfpPost('Msfp/Key/Stolen', {}).then(function () { msfpMessage('Key revoked; this server moved to its next key.'); msfpLoad(); },
+                        function (e) { msfpError(e, 'The key could not be revoked.'); });
+                }
             });
 
             document.querySelector('#MsfpRedeemButton').addEventListener('click', function () {
                 msfpMessage('…');
                 msfpPost('Msfp/Redeem', { code: document.querySelector('#MsfpRedeem').value }).then(function (r) {
-                    msfpMessage(r.message);
+                    msfpMessage('Waiting for ' + r.name + "'s operator to accept. Its fingerprint: " + r.fingerprint);
                     document.querySelector('#MsfpRedeem').value = '';
                     msfpLoad();
-                }, function (e) {
-                    if (e && e.json) {
-                        e.json().then(function (r) { msfpMessage(r.message); });
-                    } else {
-                        msfpMessage('That code could not be used.');
-                    }
-                });
+                }, function (e) { msfpError(e, 'That code could not be used.'); });
             });
 
             document.querySelector('#MsfpConfigPage')
@@ -260,6 +339,7 @@
                         document.querySelector('#MsfpServerName').value = config.ServerName || '';
                         document.querySelector('#MsfpPins').value = config.CertificatePins || '';
                         document.querySelector('#MsfpAllowLoopback').checked = !!config.AllowLoopback;
+                        document.querySelector('#MsfpDiscovery').checked = !!config.Discovery;
                         Dashboard.hideLoadingMsg();
                     });
                 });
@@ -272,8 +352,10 @@
                         config.ServerName = document.querySelector('#MsfpServerName').value.trim();
                         config.CertificatePins = document.querySelector('#MsfpPins').value.trim();
                         config.AllowLoopback = document.querySelector('#MsfpAllowLoopback').checked;
+                        config.Discovery = document.querySelector('#MsfpDiscovery').checked;
                         ApiClient.updatePluginConfiguration(MsfpConfig.pluginUniqueId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);
+                            setTimeout(msfpLoad, 1500);
                         });
                     });
                     e.preventDefault();

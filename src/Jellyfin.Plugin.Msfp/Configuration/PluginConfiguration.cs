@@ -6,8 +6,9 @@ namespace Jellyfin.Plugin.Msfp.Configuration;
 public class PluginConfiguration : BasePluginConfiguration
 {
     /// <summary>
-    /// This server's own address as peers reach it, for example
-    /// https://media.example.org (MSFP section 5.2). Empty: federation is off.
+    /// This server's own address as peers reach it, https://host[:port]
+    /// (MSFP core section 5.2). Empty: federation is off. Another address
+    /// than before is a move, which the engine announces to the peers.
     /// </summary>
     public string Address { get; set; } = string.Empty;
 
@@ -15,9 +16,9 @@ public class PluginConfiguration : BasePluginConfiguration
     public string ServerName { get; set; } = string.Empty;
 
     /// <summary>
-    /// The pins (MSFP section 3.1) of the certificates this server's address
-    /// serves, one per line. Empty: the plugin reads the certificate served
-    /// at its own address and names that one's pin.
+    /// The pins (MSFP core section 3.2) of the certificates this server's
+    /// address serves, one per line. Empty: the engine reads the certificate
+    /// served at this server's own address and names that one's pin.
     /// </summary>
     public string CertificatePins { get; set; } = string.Empty;
 
@@ -25,7 +26,14 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Whether the plugin may connect, for a peer, to this machine itself
     /// (loopback): only to pair with a server on the same machine. Link-local
     /// (a cloud's metadata service), unspecified, multicast and reserved
-    /// addresses stay refused whatever this says (MSFP section 3.2).
+    /// addresses stay refused whatever this says (MSFP core section 3.3).
     /// </summary>
     public bool AllowLoopback { get; set; }
+
+    /// <summary>
+    /// Serves the discovery document at /.well-known/msfp (MSFP core section
+    /// 11). Off by default: a server that serves it tells anyone it
+    /// federates.
+    /// </summary>
+    public bool Discovery { get; set; }
 }

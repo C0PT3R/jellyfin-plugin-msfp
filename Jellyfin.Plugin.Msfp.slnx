@@ -1,6 +1,4 @@
 <Solution>
-  <Project Path="src/Msfp/Msfp.csproj" />
   <Project Path="src/Jellyfin.Plugin.Msfp/Jellyfin.Plugin.Msfp.csproj" />
-  <Project Path="tests/Msfp.Tests/Msfp.Tests.csproj" />
   <Project Path="tests/Jellyfin.Plugin.Msfp.Tests/Jellyfin.Plugin.Msfp.Tests.csproj" />
 </Solution>

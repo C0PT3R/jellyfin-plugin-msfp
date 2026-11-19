@@ -1,176 +1,199 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Msfp.Federation;
-using Msfp;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
+using Msfp;
+using Msfp.Protocol;
 
 namespace Jellyfin.Plugin.Msfp.Api;
 
 /// <summary>
-/// The federation calls other servers make (MSFP sections 3 and 9), under
-/// the specification's paths: pair, hello, libraries and titles.
+/// The engine's routes on Jellyfin's: the federation calls other servers
+/// make (/api/v1/federation/), the media of their playbacks here
+/// (/api/v1/stream/), and the discovery document (/.well-known/msfp). Every
+/// method and every path under them goes to the engine, which answers what
+/// MSFP says; what it refuses to strangers is Jellyfin's own 404 for a path
+/// that doesn't exist (an empty body, no type), so a prober learns nothing
+/// (MSFP core section 14).
 /// </summary>
 [ApiController]
 [AllowAnonymous]
-[Route("api/v1/federation")]
+[ApiExplorerSettings(IgnoreApi = true)]
 public class FederationController : ControllerBase
 {
-    private readonly FederationService _federation;
+    private readonly EngineHost _host;
 
-    public FederationController(FederationService federation)
+    public FederationController(EngineHost host)
     {
-        _federation = federation;
+        _host = host;
     }
 
-    /// <summary>The pair call (section 9.1).</summary>
-    [HttpPost("pair")]
-    public Task Pair() => Handle("pair");
-
-    /// <summary>The hello call (section 9.2).</summary>
-    [HttpPost("hello")]
-    public Task Hello() => Handle("hello");
-
-    /// <summary>The libraries call (section 9.3).</summary>
-    [HttpPost("libraries")]
-    public Task Libraries() => Handle("libraries");
-
-    /// <summary>The titles call (section 9.4).</summary>
-    [HttpPost("titles")]
-    public Task Titles() => Handle("titles");
-
-    /// <summary>
-    /// Any other method on a federation path, and any other path under it:
-    /// Jellyfin's 404 for a path that doesn't exist (an empty body, no
-    /// type), not the 405 routing would give, so a prober learns nothing
-    /// (section 14). Literal routes above win over this one.
-    /// </summary>
+    /// <summary>A federation call (MSFP core section 9).</summary>
     [AcceptVerbs("GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")]
-    [Route("{**rest}")]
-    public EmptyResult Elsewhere()
+    [Route("api/v1/federation/{**rest}")]
+    public async Task Federation()
+    {
+        NoCompression();
+        if (_host.Engine is not { } engine)
+        {
+            NotFound404();
+            return;
+        }
+
+        var res = await engine.HandleFederationAsync(ToMsfp(Request.Body), HttpContext.RequestAborted).ConfigureAwait(false);
+        await WriteAsync(res).ConfigureAwait(false);
+    }
+
+    /// <summary>The media of a peer's playback here, by its ticket (MSFP media).</summary>
+    [AcceptVerbs("GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")]
+    [Route("api/v1/stream/{**rest}")]
+    public async Task Stream()
+    {
+        NoCompression();
+        if (_host.Engine is not { } engine)
+        {
+            NotFound404();
+            return;
+        }
+
+        var outcome = await engine.HandleStreamAsync(ToMsfp(System.IO.Stream.Null), new Sink(Response), HttpContext.RequestAborted).ConfigureAwait(false);
+        if (outcome != StreamOutcome.Served && !Response.HasStarted)
+        {
+            // Not a ticket of a peer's playback here (Fallback: one of this
+            // server's own viewers', which it has none of), or refused.
+            NotFound404();
+        }
+    }
+
+    /// <summary>The discovery document (MSFP core section 11), when the operator serves it.</summary>
+    [AcceptVerbs("GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")]
+    [Route(".well-known/msfp")]
+    public async Task Discovery()
+    {
+        NoCompression();
+        if (_host.Engine is not { } engine)
+        {
+            NotFound404();
+            return;
+        }
+
+        await WriteAsync(engine.HandleDiscovery(ToMsfp(System.IO.Stream.Null))).ConfigureAwait(false);
+    }
+
+    private MsfpRequest ToMsfp(Stream body)
+    {
+        // The target as it was sent: the signature covers it so.
+        var target = HttpContext.Features.Get<IHttpRequestFeature>()?.RawTarget;
+        if (string.IsNullOrEmpty(target))
+        {
+            target = Request.PathBase.ToString() + Request.Path.ToString() + Request.QueryString.ToString();
+        }
+
+        return new MsfpRequest
+        {
+            Method = Request.Method,
+            Target = target,
+            Headers = new Headers(Request.Headers),
+            Body = body,
+            // Behind a reverse proxy, the proxy's address, unless Jellyfin's
+            // known proxies are set (its forwarded headers then give the
+            // client's).
+            ClientAddress = HttpContext.Connection.RemoteIpAddress,
+        };
+    }
+
+    private async Task WriteAsync(MsfpResponse res)
+    {
+        if (res.PlainNotFound)
+        {
+            NotFound404();
+            return;
+        }
+
+        Response.StatusCode = res.Status;
+        foreach (var (name, value) in res.Headers)
+        {
+            if (string.Equals(name, "Content-Type", StringComparison.OrdinalIgnoreCase))
+            {
+                Response.ContentType = value;
+            }
+            else
+            {
+                Response.Headers.Append(name, value);
+            }
+        }
+
+        Response.Headers.CacheControl = "no-store";
+        Response.ContentLength = res.Body.Length;
+        if (res.Body.Length > 0 && !HttpMethods.IsHead(Request.Method))
+        {
+            await Response.Body.WriteAsync(res.Body, HttpContext.RequestAborted).ConfigureAwait(false);
+        }
+    }
+
+    // Jellyfin's 404 for a path that doesn't exist: no body, no type.
+    private void NotFound404()
     {
         Response.StatusCode = StatusCodes.Status404NotFound;
         Response.ContentLength = 0;
-        return new EmptyResult();
     }
 
-    private async Task Handle(string call)
+    // Answers go out as the bytes signed, never content-coded: Jellyfin's
+    // response compression would otherwise gzip them for a caller that
+    // accepts gzip. The compression middleware reads Accept-Encoding when
+    // the answer starts, so removing it here is enough; the feature covers
+    // HTTPS too.
+    private void NoCompression()
     {
-        // The answer goes out as the bytes signed, never content-coded:
-        // Jellyfin's response compression would otherwise gzip it for a
-        // caller that accepts gzip, and a caller that checks the bytes it
-        // received, or a proxy between, would see other bytes than those
-        // signed (SPEC-GAPS.md, section 6.3). The compression middleware
-        // reads Accept-Encoding when the answer starts, so removing it here
-        // is enough; the feature covers HTTPS too.
         Request.Headers.Remove(HeaderNames.AcceptEncoding);
         if (HttpContext.Features.Get<IHttpsCompressionFeature>() is { } compression)
         {
             compression.Mode = HttpsCompressionMode.DoNotCompress;
         }
-
-        var answer = await Answer(call).ConfigureAwait(false);
-        Response.StatusCode = answer.Status;
-        if (answer.Signature == null && answer.Body.Length == 0)
-        {
-            // The unsigned 404: nothing more than Jellyfin's own.
-            Response.ContentLength = 0;
-            return;
-        }
-
-        if (answer.ContentType != null)
-        {
-            Response.ContentType = answer.ContentType;
-        }
-
-        if (answer.Signature != null)
-        {
-            Response.Headers[SignatureHeaders.SignatureHeader] = answer.Signature;
-        }
-
-        Response.Headers.CacheControl = "no-store";
-        Response.ContentLength = answer.Body.Length;
-        await Response.Body.WriteAsync(answer.Body).ConfigureAwait(false);
     }
 
-    private async Task<Federation.Answer> Answer(string call)
+    /// <summary>ASP.NET Core's request headers, read as MSFP reads headers.</summary>
+    private sealed class Headers(IHeaderDictionary headers) : IHeaderReader
     {
-        // A browser's cross-site request, or no JSON: refused like a path
-        // that doesn't exist (SPEC-GAPS.md, section 3).
-        var site = Request.Headers["Sec-Fetch-Site"].ToString();
-        if (site.Length > 0 && site != "same-origin" && site != "none")
-        {
-            return Federation.Answer.NotFound;
-        }
+        public System.Collections.Generic.IReadOnlyList<string> GetValues(string name) =>
+            headers.TryGetValue(name, out var v) ? [.. v.OfType<string>()] : [];
+    }
 
-        if (!MediaTypeHeaderValue.TryParse(Request.ContentType, out var type)
-            || !type.MediaType.Equals("application/json", StringComparison.OrdinalIgnoreCase))
+    /// <summary>The engine's media answer on ASP.NET Core's response: the status and only the headers MSFP needs.</summary>
+    private sealed class Sink(HttpResponse response) : IResponseSink
+    {
+        public void Start(int status, string contentType, long length, string contentRange)
         {
-            return Federation.Answer.NotFound;
-        }
-
-        // A coded request is never decoded: refused at once (section 3).
-        foreach (var coding in Request.Headers.ContentEncoding)
-        {
-            if (!string.Equals(coding?.Trim(), "identity", StringComparison.OrdinalIgnoreCase))
+            response.StatusCode = status;
+            if (contentType.Length > 0)
             {
-                return Federation.Answer.NotFound;
-            }
-        }
-
-        var body = await ReadBody(Request.Body).ConfigureAwait(false);
-        if (body == null)
-        {
-            return Federation.Answer.NotFound;
-        }
-
-        // The target as it was sent: the signature covers it so.
-        var target = HttpContext.Features.Get<IHttpRequestFeature>()?.RawTarget;
-        if (string.IsNullOrEmpty(target))
-        {
-            target = Request.Path.ToString() + Request.QueryString.ToString();
-        }
-
-        var headers = new SignatureHeaders(
-            Single(SignatureHeaders.KeyHeader),
-            Single(SignatureHeaders.DateHeader),
-            Single(SignatureHeaders.NonceHeader),
-            Single(SignatureHeaders.SignatureHeader));
-        // The network address the request came from, for the limit before
-        // any signature check (section 8.3). Behind a reverse proxy this is
-        // the proxy's, unless Jellyfin's known proxies are set.
-        var remote = HttpContext.Connection.RemoteIpAddress;
-        var from = remote == null ? null : (remote.IsIPv4MappedToIPv6 ? remote.MapToIPv4() : remote).ToString();
-        return await _federation.HandleAsync(call, target, headers, body, HttpContext.RequestAborted, from).ConfigureAwait(false);
-    }
-
-    /// <summary>A header's value when it was sent exactly once.</summary>
-    private string? Single(string name)
-    {
-        var values = Request.Headers[name];
-        return values.Count == 1 ? values[0] : null;
-    }
-
-    /// <summary>The body, or null when it is over 64 KiB.</summary>
-    private static async Task<byte[]?> ReadBody(Stream body)
-    {
-        var ms = new MemoryStream();
-        var buffer = new byte[16384];
-        int n;
-        while ((n = await body.ReadAsync(buffer).ConfigureAwait(false)) > 0)
-        {
-            if (ms.Length + n > FederationService.MaxRequestBody)
-            {
-                return null;
+                response.ContentType = contentType;
             }
 
-            ms.Write(buffer, 0, n);
+            if (length >= 0)
+            {
+                response.ContentLength = length;
+            }
+
+            if (contentRange.Length > 0)
+            {
+                response.Headers.ContentRange = contentRange;
+            }
+
+            if (status is 200 or 206)
+            {
+                response.Headers.AcceptRanges = "bytes";
+            }
+
+            response.Headers.CacheControl = "no-store";
         }
 
-        return ms.ToArray();
+        public ValueTask WriteAsync(ReadOnlyMemory<byte> data, System.Threading.CancellationToken ct) => response.Body.WriteAsync(data, ct);
     }
 }

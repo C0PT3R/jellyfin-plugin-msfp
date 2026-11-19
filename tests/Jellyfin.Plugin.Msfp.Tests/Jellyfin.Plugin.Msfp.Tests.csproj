@@ -13,18 +13,9 @@
     <PackageReference Include="Jellyfin.Model" Version="12.2.0" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Kestrel, for tests over real TLS. -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Jellyfin.Plugin.Msfp/Jellyfin.Plugin.Msfp.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <!-- The protocol tests' helpers and their copy of the vectors, shared
-         with the plugin's tests, not copied. -->
-    <Compile Include="../Msfp.Tests/ManualClock.cs" Link="Shared/ManualClock.cs" />
-    <Compile Include="../Msfp.Tests/TestCertificates.cs" Link="Shared/TestCertificates.cs" />
-    <Compile Include="../Msfp.Tests/Vectors.cs" Link="Shared/Vectors.cs" />
-    <None Include="../Msfp.Tests/vectors/v0.json" Link="vectors/v0.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
