@@ -89,6 +89,30 @@
                     </div>
                 </dialog>
 
+                <dialog id="MsfpLimitsDialog" style="min-width:20em;max-width:32em">
+                    <h3>What <span id="MsfpLimitsPeer"></span> may use here</h3>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="MsfpLimitsStreams">Streams at once</label>
+                        <input id="MsfpLimitsStreams" type="number" is="emby-input" min="0" max="50" step="1" />
+                        <div class="fieldDescription">How many of its viewers may play from this server at the same time (0 to 50; 0: none).</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="MsfpLimitsTranscodes">Transcodes at once</label>
+                        <input id="MsfpLimitsTranscodes" type="number" is="emby-input" min="0" max="50" step="1" />
+                        <div class="fieldDescription">How many of those streams may be converted (the video re-encoded) at the same time; no more than the streams. "Transcodes at once on this server" applies as well.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="MsfpLimitsBitrate">Bitrate cap (kbit/s)</label>
+                        <input id="MsfpLimitsBitrate" type="number" is="emby-input" min="0" max="1000000" step="1" />
+                        <div class="fieldDescription">The most each of its streams may use, in kilobits a second (for example 8000 for 8 Mbit/s); a file above it is converted. 0: no cap.</div>
+                    </div>
+                    <div>From its next play on; what is playing now goes on.</div>
+                    <div id="MsfpLimitsProblem" style="font-weight:bold;margin-top:0.5em"></div>
+                    <div style="margin-top:1em">
+                        <button is="emby-button" type="button" id="MsfpLimitsSave" class="raised button-submit emby-button"><span>Save</span></button>
+                        <button is="emby-button" type="button" id="MsfpLimitsCancel" class="raised emby-button"><span>Cancel</span></button>
+                    </div>
+                </dialog>
                 <dialog id="MsfpWantsDialog" style="min-width:20em">
                     <h3>Libraries read from <span id="MsfpWantsPeer"></span></h3>
                     <label style="display:block"><input type="checkbox" id="MsfpWantsAll" /> Every library it offers, those it adds later too</label>
@@ -120,6 +144,18 @@
                     data: body ? JSON.stringify(body) : undefined,
                     contentType: 'application/json',
                     dataType: 'json'
+                });
+            }
+
+            // The page's dialogs in the theme's colours: Jellyfin sets them on
+            // the root element only, and a dialog is white by default.
+            function msfpThemeDialogs() {
+                var root = getComputedStyle(document.documentElement);
+                document.querySelectorAll('#MsfpConfigPage dialog').forEach(function (d) {
+                    d.style.backgroundColor = root.backgroundColor;
+                    d.style.color = root.color;
+                    d.style.border = '1px solid rgba(128, 128, 128, 0.5)';
+                    d.style.borderRadius = '0.3em';
                 });
             }
 
@@ -176,11 +212,13 @@
                             var offered = document.createElement('div');
                             offered.className = 'fieldDescription';
                             offered.textContent = 'Libraries offered: ' + (p.offers || 'none') + '; read: ' + (p.wants || 'none') +
-                                '; at most ' + p.limits.streams + ' streams, ' + p.limits.transcodes + ' transcodes here';
+                                '; at most ' + p.limits.streams + ' streams, ' + p.limits.transcodes + ' transcodes here' +
+                                (p.limits.bitrateKbps ? ', ' + p.limits.bitrateKbps + ' kbit/s each' : '');
                             row.appendChild(offered);
                             row.appendChild(msfpButton('Offers…', function () { msfpOffers(p); }));
                             row.appendChild(msfpButton('Read…', function () { msfpWants(p); }));
                             row.appendChild(msfpButton('Titles read…', function () { msfpCatalog(p); }));
+                            row.appendChild(msfpButton('Limits…', function () { msfpLimits(p); }));
                         }
                         if (p.state === 'ours') {
                             row.appendChild(msfpButton('Accept', function () {
@@ -274,6 +312,44 @@
                 document.querySelector('#MsfpWantsDialog').close();
             });
 
+            var msfpLimitsFor = null;
+            function msfpLimits(p) {
+                msfpLimitsFor = p;
+                document.querySelector('#MsfpLimitsPeer').textContent = p.name;
+                document.querySelector('#MsfpLimitsStreams').value = p.limits.streams;
+                document.querySelector('#MsfpLimitsTranscodes').value = p.limits.transcodes;
+                document.querySelector('#MsfpLimitsBitrate').value = p.limits.bitrateKbps || 0;
+                document.querySelector('#MsfpLimitsProblem').textContent = '';
+                document.querySelector('#MsfpLimitsDialog').showModal();
+            }
+            // The limits typed, as whole numbers within MSFP's ranges; null when not.
+            function msfpLimitsTyped() {
+                var n = function (sel) {
+                    var v = document.querySelector(sel).value.trim();
+                    return /^[0-9]{1,7}$/.test(v) ? parseInt(v, 10) : -1;
+                };
+                var l = { streams: n('#MsfpLimitsStreams'), transcodes: n('#MsfpLimitsTranscodes'), bitrateKbps: n('#MsfpLimitsBitrate') };
+                if (l.streams < 0 || l.streams > 50 || l.transcodes < 0 || l.transcodes > l.streams || l.bitrateKbps < 0 || l.bitrateKbps > 1000000) {
+                    return null;
+                }
+                return l;
+            }
+            document.querySelector('#MsfpLimitsSave').addEventListener('click', function () {
+                var l = msfpLimitsTyped();
+                var problem = document.querySelector('#MsfpLimitsProblem');
+                if (!l) {
+                    problem.textContent = 'Streams go from 0 to 50, transcodes from 0 to the streams, the bitrate cap from 0 to 1,000,000.';
+                    return;
+                }
+                msfpPost('Msfp/Peers/' + encodeURIComponent(msfpLimitsFor.id) + '/Limits', l).then(function () {
+                    document.querySelector('#MsfpLimitsDialog').close();
+                    msfpLoad();
+                }, function () { problem.textContent = 'The limits could not be saved.'; });
+            });
+            document.querySelector('#MsfpLimitsCancel').addEventListener('click', function () {
+                document.querySelector('#MsfpLimitsDialog').close();
+            });
+
             var msfpCatalogFor = null;
             function msfpCatalog(p) {
                 msfpCatalogFor = p;
@@ -342,6 +418,7 @@
 
             document.querySelector('#MsfpConfigPage')
                 .addEventListener('pageshow', function () {
+                    msfpThemeDialogs();
                     msfpLoad();
                     Dashboard.showLoadingMsg();
                     ApiClient.getPluginConfiguration(MsfpConfig.pluginUniqueId).then(function (config) {

@@ -74,6 +74,9 @@ Then, for each paired server:
 - **Read…** picks which of its libraries you read (by default all of them,
   and the ones it adds later).
 - **Titles read…** shows what you have read from it.
+- **Limits…** sets what it may use on your server at once: streams,
+  conversions, and a bitrate cap per stream (2 streams and 1 conversion
+  by default, no cap).
 - **End pairing** stops sharing with it, both ways.
 
 ## What the other server sees
@@ -84,9 +87,8 @@ languages, and at what picture quality. It never sees your files, folders,
 users or what they watch. When one of its viewers plays a title, your
 server only learns that a viewer of that server is playing it, not who.
 
-Each pairing is limited to 2 streams and 1 conversion at once on your
-server; the page shows those limits (they can't be changed from the page
-yet).
+Each pairing has its own limits on your server (2 streams and 1
+conversion at once by default), which **Limits…** changes.
 
 ## If something goes wrong
 
