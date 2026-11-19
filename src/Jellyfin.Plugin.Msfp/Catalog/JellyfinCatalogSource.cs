@@ -175,24 +175,39 @@ public sealed class JellyfinCatalogSource : ICatalogSource
         }
 
         var height = Math.Max(video.Height.Value, (int)((long)video.Width.Value * 9 / 16));
+        var hdr = HdrOf(video.VideoRangeType.ToString(), video.ColorTransfer);
+        return new Picture { Height = height, Hdr = hdr.Count > 0 ? hdr : null };
+    }
+
+    /// <summary>
+    /// The HDR formats of Jellyfin's range type ("DOVIWithHDR10" gives dv and
+    /// hdr10); a Dolby Vision Jellyfin finds invalid is its base layer, by its
+    /// transfer.
+    /// </summary>
+    internal static List<string> HdrOf(string rangeType, string? transfer)
+    {
+        if (rangeType == "DOVIInvalid")
+        {
+            rangeType = transfer switch { "smpte2084" => "HDR10", "arib-std-b67" => "HLG", _ => "SDR" };
+        }
+
         var hdr = new List<string>();
-        var range = video.VideoRangeType.ToString();
-        if (range.StartsWith("DOVI", StringComparison.Ordinal))
+        if (rangeType.StartsWith("DOVI", StringComparison.Ordinal))
         {
             hdr.Add("dv");
         }
 
-        if (range.Contains("HDR10", StringComparison.Ordinal))
+        if (rangeType.Contains("HDR10", StringComparison.Ordinal))
         {
             hdr.Add("hdr10");
         }
 
-        if (range.Contains("HLG", StringComparison.Ordinal))
+        if (rangeType.Contains("HLG", StringComparison.Ordinal))
         {
             hdr.Add("hlg");
         }
 
-        return new Picture { Height = height, Hdr = hdr.Count > 0 ? hdr : null };
+        return hdr;
     }
 
     private static Dictionary<string, string> OtherIds(BaseItem item)
