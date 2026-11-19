@@ -103,8 +103,15 @@ public sealed class RemotePlays : IHostedService, IDisposable
     /// it, best copy first, and gives the source Jellyfin reads.
     /// </summary>
     /// <exception cref="InvalidOperationException">No paired server could play it now; the message says why.</exception>
-    internal async Task<PairedLiveStream> OpenAsync(BaseItem item, CancellationToken ct)
+    internal async Task<PairedLiveStream> OpenAsync(BaseItem item, (string Audio, string Subtitles) wishes, CancellationToken ct)
     {
+        var request = new PlayRequest
+        {
+            Title = string.Empty,
+            Capabilities = Everything,
+            AudioLanguage = Tag(wishes.Audio),
+            SubtitleLanguage = Tag(wishes.Subtitles),
+        };
         var engine = _host.Engine ?? throw new InvalidOperationException("Federation is off on this server.");
         var key = item.Path![Wanted.PathOf(string.Empty).Length..];
         var copy = _standIns.CopyOf(key) ?? throw new InvalidOperationException("No paired server holds this title now.");
@@ -114,7 +121,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
             RemotePlayback playback;
             try
             {
-                playback = await engine.PlayAsync(holder.Peer, new PlayRequest { Title = key, Capabilities = Everything }, ct).ConfigureAwait(false);
+                playback = await engine.PlayAsync(holder.Peer, request with { Title = key }, ct).ConfigureAwait(false);
             }
             catch (MsfpException e)
             {
@@ -131,6 +138,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
             try
             {
                 await ProbeAsync(source, ct).ConfigureAwait(false);
+                NameAudio(source, playback);
                 AddSubtitles(source, playback, token);
             }
             catch (Exception e) when (e is not OperationCanceledException)
@@ -161,6 +169,25 @@ public sealed class RemotePlays : IHostedService, IDisposable
 
         live.Touched = DateTimeOffset.UtcNow;
         return live;
+    }
+
+    // A tag of the paired server's ("fr") as Jellyfin writes a stream's
+    // language ("fre"), the localization's for a language not listed.
+    private string Three(string tag) =>
+        Identification.Languages.Three(tag) is { Length: > 0 } three ? three
+        : _localization.FindLanguageInfo(tag.Split('-')[0])?.ThreeLetterISOLanguageName ?? tag;
+
+    // A Jellyfin language code ("fre") as a tag MSFP sends ("fr"); "" for none.
+    private string Tag(string code)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            return string.Empty;
+        }
+
+        var info = _localization.FindLanguageInfo(code.Trim());
+        var tag = info?.TwoLetterISOLanguageName is { Length: 2 } two ? two : code.Trim();
+        return tag.Length <= 12 && tag.All(c => char.IsAsciiLetterOrDigit(c) || c == '-') ? tag : string.Empty;
     }
 
     // The source Jellyfin reads: the relay route on its own loopback, probed
@@ -214,6 +241,18 @@ public sealed class RemotePlays : IHostedService, IDisposable
         source.SupportsProbing = false;
     }
 
+    // A converted stream carries one audio track and no language: the one
+    // the play answer says it chose.
+    private void NameAudio(MediaSourceInfo source, RemotePlayback p)
+    {
+        var audio = source.MediaStreams.Where(s => s.Type == MediaStreamType.Audio).ToList();
+        if (audio.Count == 1 && string.IsNullOrEmpty(audio[0].Language)
+            && p.AudioTracks.FirstOrDefault(t => t.Id == p.AudioTrack)?.Language is { Length: > 0 } tag)
+        {
+            audio[0].Language = Three(tag);
+        }
+    }
+
     // The paired server's text subtitles, as external tracks Jellyfin reads
     // whole at the relay (Subtitles.cs), in place of the text tracks found
     // inside a file played as it is (the same, served cleaned). Picture
@@ -231,7 +270,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
             }
 
             var language = t.Language is { Length: > 0 } tag
-                ? _localization.FindLanguageInfo(tag.Split('-')[0])?.ThreeLetterISOLanguageName ?? tag
+                ? Three(tag)
                 : null;
             streams.Add(new MediaStream
             {
@@ -319,6 +358,9 @@ public sealed class RemotePlays : IHostedService, IDisposable
         if (StandIns.Playing.AddOrUpdate(live.Item.Id, 0, (_, n) => n - 1) <= 0)
         {
             StandIns.Playing.TryRemove(live.Item.Id, out _);
+
+            // Its saved source back to what the catalogs say, at the next pass.
+            _standIns.Soon();
         }
 
         try

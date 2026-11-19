@@ -239,3 +239,14 @@ stand-in's source while it plays. Tried live: English and French tracks,
 a cue across two parts kept once, tags removed; shown in jellyfin-web;
 burned in by Jellyfin's ffmpeg (reading the relay) for a device asking
 for it. PGS from the peer not done.
+
+## Audio choice, 2026-11-19
+
+`play` carries the Jellyfin user's audio and subtitle language settings
+(read from the request opening the source). Tried live with a paired
+server capping the bitrate, so that it transcodes: French wished gave its
+French track, English its English one; Jellyfin named the one track from
+the answer. Languages are written as files write them ("fre", not
+"fra"). After a playback, the stand-in's saved source returns to the
+catalog's at the next pass (30 seconds). Also the first live test of a
+converted (HLS) stream from a paired server: it plays.

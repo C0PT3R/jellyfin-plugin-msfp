@@ -659,7 +659,8 @@ public sealed class StandIns : IHostedService, IDisposable
     private string? Three(string tag)
     {
         var two = tag.Split('-')[0];
-        return _localization.FindLanguageInfo(two)?.ThreeLetterISOLanguageName ?? (two.Length == 3 ? two : null);
+        return Identification.Languages.Three(tag) is { Length: > 0 } three ? three
+            : _localization.FindLanguageInfo(two)?.ThreeLetterISOLanguageName ?? (two.Length == 3 ? two : null);
     }
 
     private void Remove(IEnumerable<BaseItem> items)

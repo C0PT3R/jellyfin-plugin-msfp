@@ -150,6 +150,17 @@ internal static class Languages
         };
     }
 
+    /// <summary>
+    /// A language's three-letter code as media files and Jellyfin write it
+    /// (ISO 639-2, the bibliographic one where there are two: "fre", not
+    /// "fra"); "" when it's none of the languages known here.
+    /// </summary>
+    public static string Three(string tag)
+    {
+        var two = Base(tag);
+        return two.Length > 0 ? Codes[two][^1] : string.Empty;
+    }
+
     private static Dictionary<string, string> MakeThreeToTwo()
     {
         var map = new Dictionary<string, string>();

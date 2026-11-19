@@ -22,11 +22,15 @@ public sealed class PairedSources : IMediaSourceProvider
 {
     private readonly ILibraryManager _library;
     private readonly RemotePlays _plays;
+    private readonly Microsoft.AspNetCore.Http.IHttpContextAccessor _http;
+    private readonly IUserManager _users;
 
-    public PairedSources(ILibraryManager library, RemotePlays plays)
+    public PairedSources(ILibraryManager library, RemotePlays plays, Microsoft.AspNetCore.Http.IHttpContextAccessor http, IUserManager users)
     {
         _library = library;
         _plays = plays;
+        _http = http;
+        _users = users;
     }
 
     /// <summary>
@@ -55,7 +59,22 @@ public sealed class PairedSources : IMediaSourceProvider
             throw new ResourceNotFoundException("No such title from a paired server.");
         }
 
-        return await _plays.OpenAsync(item, cancellationToken).ConfigureAwait(false);
+        return await _plays.OpenAsync(item, Wishes(), cancellationToken).ConfigureAwait(false);
+    }
+
+    // The viewer's audio and subtitle languages, from the Jellyfin user
+    // pressing Play (the request opening the source): what a paired server
+    // converting the stream needs to send the right audio track.
+    private (string Audio, string Subtitles) Wishes()
+    {
+        var claim = _http.HttpContext?.User.FindFirst("Jellyfin-UserId")?.Value;
+        if (!Guid.TryParse(claim, out var id) || _users.GetUserById(id) is not { } user)
+        {
+            return (string.Empty, string.Empty);
+        }
+
+        var showSubtitles = user.SubtitleMode is not (Jellyfin.Database.Implementations.Enums.SubtitlePlaybackMode.None);
+        return (user.AudioLanguagePreference ?? string.Empty, showSubtitles ? user.SubtitleLanguagePreference ?? string.Empty : string.Empty);
     }
 
     /// <summary>The open token of a stand-in's source.</summary>

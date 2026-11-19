@@ -225,9 +225,15 @@ them to clients at its own subtitle route, or burns them in for a device
 that can't show them. While a stand-in plays, its saved source is the
 playback's (Jellyfin's subtitle route reads the saved one).
 
+Audio: `play` carries the Jellyfin user's audio and subtitle languages
+(their settings, as Jellyfin's tag), which a paired server converting
+the stream uses to send the right audio track; a converted stream's one
+track is named from the answer. Played as it is, the file brings every
+track and the viewer switches here. Switching the audio of a converted
+stream while it plays isn't built (it needs a new `play`).
+
 Not built yet: the paired server's picture subtitles (PGS) served apart,
-its previews, the
-viewer's audio and subtitle choice passed to `play`, and a clear message
+its previews, and a clear message
 in the client when no server can play (Jellyfin shows a generic
 playback error; the log says why).
 
