@@ -1,0 +1,39 @@
+# Checks every push and pull request: the build (warnings are errors), the
+# tests, and the plugin as Jellyfin loads it (the four DLLs of build.yaml's
+# artifacts). It runs in the .NET 10 SDK's own image, the same one used
+# locally (README, Building).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/dotnet/sdk:10.0.404
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Restore
+        run: dotnet restore Jellyfin.Plugin.Msfp.slnx
+
+      - name: Build
+        run: dotnet build Jellyfin.Plugin.Msfp.slnx --no-restore -c Release
+
+      - name: Tests
+        run: dotnet test Jellyfin.Plugin.Msfp.slnx --no-build -c Release
+
+      - name: The plugin
+        run: |
+          dotnet build src/Jellyfin.Plugin.Msfp --no-restore -c Release -o out
+          for f in $(sed -n 's/^- "\(.*\)"$/\1/p' build.yaml); do
+            test -f "out/$f" || { echo "out/$f is missing" >&2; exit 1; }
+          done
