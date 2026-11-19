@@ -226,3 +226,16 @@ playback fails ("busy" in the log); an abandoned playback ends at both
 ends. Learned: Jellyfin's probe of a live stream keeps one video and one
 audio track only (live TV): the plugin probes the relay itself
 (IMediaEncoder) and hands over every stream.
+
+## Subtitles from paired servers, 2026-11-19
+
+Text tracks from the play answer as external WebVTT tracks, served whole
+at the relay (parts joined, doubles dropped). Learned: Jellyfin hands an
+external stream's own URL to the client when `SupportsExternalStream`
+(the loopback relay, which the client can't reach): off, it serves them
+at its own subtitle route; that route reads the item's saved source, not
+the live stream's, so the plugin saves the playback's streams as the
+stand-in's source while it plays. Tried live: English and French tracks,
+a cue across two parts kept once, tags removed; shown in jellyfin-web;
+burned in by Jellyfin's ffmpeg (reading the relay) for a device asking
+for it. PGS from the peer not done.

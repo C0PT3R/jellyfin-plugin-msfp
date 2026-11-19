@@ -3,6 +3,7 @@ using Jellyfin.Plugin.Msfp.Viewing;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Msfp;
+using Msfp.Protocol;
 
 namespace Jellyfin.Plugin.Msfp.Api;
 
@@ -30,7 +31,32 @@ public class RelayController : ControllerBase
     public async Task Get(string token, string rest)
     {
         if (HttpContext.Connection.RemoteIpAddress is not { } from || !System.Net.IPAddress.IsLoopback(from)
-            || _plays.ByToken(token) is not { } live || _host.Engine is not { } engine || !MediaPath.TryParse(rest ?? string.Empty, out var path))
+            || _plays.ByToken(token) is not { } live || _host.Engine is not { } engine)
+        {
+            Response.StatusCode = 404;
+            return;
+        }
+
+        // A subtitle track whole: subtitles/<track>/all.vtt.
+        var parts = (rest ?? string.Empty).Split('/');
+        if (parts.Length == 3 && parts[0] == "subtitles" && parts[2] == Subtitles.Whole && Media.FileName(parts[1]))
+        {
+            var whole = await live.Subtitles.GetOrAdd(parts[1], track => new System.Lazy<Task<byte[]?>>(() =>
+                Subtitles.WholeAsync(engine, live.Playback.Id, track, live.DurationMs, System.Threading.CancellationToken.None))).Value.ConfigureAwait(false);
+            if (whole is null)
+            {
+                live.Subtitles.TryRemove(parts[1], out _);
+                Response.StatusCode = 404;
+                return;
+            }
+
+            Response.ContentType = "text/vtt; charset=utf-8";
+            Response.Headers.CacheControl = "no-store";
+            await Response.Body.WriteAsync(whole, HttpContext.RequestAborted).ConfigureAwait(false);
+            return;
+        }
+
+        if (!MediaPath.TryParse(rest ?? string.Empty, out var path))
         {
             Response.StatusCode = 404;
             return;

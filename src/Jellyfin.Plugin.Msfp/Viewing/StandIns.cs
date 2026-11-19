@@ -622,8 +622,29 @@ public sealed class StandIns : IHostedService, IDisposable
     // every pass: one saved right after an item was made was lost once.
     private void SaveStreams(BaseItem item, Playable copy)
     {
+        // Playing now: its saved source is the playback's (SavePlaying).
+        if (Playing.ContainsKey(item.Id))
+        {
+            return;
+        }
+
         var streams = Streams.Of(copy, Three);
         _streams.SaveMediaStreams(item.Id, streams, CancellationToken.None);
+        SaveSource(item, streams);
+    }
+
+    /// <summary>The stand-ins playing now: the passes leave their saved source alone.</summary>
+    internal static System.Collections.Concurrent.ConcurrentDictionary<Guid, int> Playing { get; } = new();
+
+    /// <summary>
+    /// A stand-in's saved source while it plays: the playback's streams, its
+    /// subtitle tracks at the relay among them. Jellyfin's subtitle route
+    /// reads the item's saved source, not the live one.
+    /// </summary>
+    internal static void SavePlaying(BaseItem item, List<MediaStream> streams) => SaveSource(item, streams);
+
+    private static void SaveSource(BaseItem item, List<MediaStream> streams)
+    {
         var dir = item.GetInternalMetadataPath();
         Directory.CreateDirectory(dir);
         var file = Path.Combine(dir, "channelmediasourceinfos.json");

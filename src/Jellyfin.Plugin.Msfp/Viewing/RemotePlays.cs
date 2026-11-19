@@ -11,6 +11,8 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.MediaEncoding;
 using MediaBrowser.Controller.Session;
+using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Globalization;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.MediaInfo;
 using Microsoft.Extensions.Hosting;
@@ -52,12 +54,14 @@ public sealed class RemotePlays : IHostedService, IDisposable
     private readonly ISessionManager _sessions;
     private readonly IConfigurationManager _config;
     private readonly IMediaEncoder _encoder;
+    private readonly ILocalizationManager _localization;
     private readonly ILogger<RemotePlays> _log;
     private readonly ConcurrentDictionary<string, Live> _byToken = new(StringComparer.Ordinal);
     private Timer? _sweep;
 
-    public RemotePlays(EngineHost host, StandIns standIns, ISessionManager sessions, IConfigurationManager config, IMediaEncoder encoder, ILogger<RemotePlays> log)
+    public RemotePlays(EngineHost host, StandIns standIns, ISessionManager sessions, IConfigurationManager config, IMediaEncoder encoder, ILocalizationManager localization, ILogger<RemotePlays> log)
     {
+        _localization = localization;
         _encoder = encoder;
         _host = host;
         _standIns = standIns;
@@ -127,6 +131,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
             try
             {
                 await ProbeAsync(source, ct).ConfigureAwait(false);
+                AddSubtitles(source, playback, token);
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
@@ -135,6 +140,9 @@ public sealed class RemotePlays : IHostedService, IDisposable
                 continue;
             }
 
+            live.DurationMs = (source.RunTimeTicks ?? 0) / TimeSpan.TicksPerMillisecond;
+            StandIns.Playing.AddOrUpdate(item.Id, 1, (_, n) => n + 1);
+            StandIns.SavePlaying(item, source.MediaStreams.ToList());
             return new PairedLiveStream(live, source);
         }
 
@@ -206,6 +214,46 @@ public sealed class RemotePlays : IHostedService, IDisposable
         source.SupportsProbing = false;
     }
 
+    // The paired server's text subtitles, as external tracks Jellyfin reads
+    // whole at the relay (Subtitles.cs), in place of the text tracks found
+    // inside a file played as it is (the same, served cleaned). Picture
+    // subtitles inside the file stay as found.
+    private void AddSubtitles(MediaSourceInfo source, RemotePlayback p, string token)
+    {
+        var streams = source.MediaStreams.Where(s => s.Type != MediaStreamType.Subtitle || !s.IsTextSubtitleStream).ToList();
+        var next = streams.Count > 0 ? streams.Max(s => s.Index) + 1 : 0;
+        var relay = source.Path[..(source.Path.IndexOf("/Msfp/Relay/", StringComparison.Ordinal) + "/Msfp/Relay/".Length)] + token + "/subtitles/";
+        foreach (var (t, forced) in p.SubtitleTracks.Select(t => (t, false)).Concat(p.ForcedTracks.Select(t => (t, true))))
+        {
+            if (t.Pictures)
+            {
+                continue;
+            }
+
+            var language = t.Language is { Length: > 0 } tag
+                ? _localization.FindLanguageInfo(tag.Split('-')[0])?.ThreeLetterISOLanguageName ?? tag
+                : null;
+            streams.Add(new MediaStream
+            {
+                Index = next++,
+                Type = MediaStreamType.Subtitle,
+                Codec = "vtt",
+                Language = language,
+                Title = t.Label.Length > 0 ? t.Label : null,
+                IsForced = forced || t.Forced,
+                IsHearingImpaired = t.HearingImpaired,
+                IsDefault = t.Id == (forced ? p.ForcedTrack : p.SubtitleTrack),
+                IsExternal = true,
+                // Served by Jellyfin's own subtitle route, never the relay's
+                // URL itself, which answers this machine only.
+                SupportsExternalStream = false,
+                Path = relay + t.Id + "/" + Subtitles.Whole,
+            });
+        }
+
+        source.MediaStreams = streams;
+    }
+
     private static string? ContainerOf(string mime) => mime switch
     {
         "video/mp4" => "mp4",
@@ -268,6 +316,11 @@ public sealed class RemotePlays : IHostedService, IDisposable
             return;
         }
 
+        if (StandIns.Playing.AddOrUpdate(live.Item.Id, 0, (_, n) => n - 1) <= 0)
+        {
+            StandIns.Playing.TryRemove(live.Item.Id, out _);
+        }
+
         try
         {
             if (_host.Engine is { } engine)
@@ -300,7 +353,13 @@ public sealed class RemotePlays : IHostedService, IDisposable
 
         public long PositionMs { get; set; }
 
+        /// <summary>The copy's length, for its subtitle parts.</summary>
+        public long DurationMs { get; set; }
+
         public DateTimeOffset Touched { get; set; } = DateTimeOffset.UtcNow;
+
+        /// <summary>The subtitle tracks read whole, by track.</summary>
+        public ConcurrentDictionary<string, Lazy<Task<byte[]?>>> Subtitles { get; } = new(StringComparer.Ordinal);
     }
 }
 

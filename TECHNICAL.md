@@ -214,8 +214,19 @@ stop, or Jellyfin closing the source, as `stop`; a playback neither
 reported on nor read for 3 minutes is stopped (some clients never say
 they stopped).
 
-Not built yet: the paired server's subtitles served apart (WebVTT parts;
-those inside a file played as it is come along), its previews, the
+Subtitles: the paired server's text tracks (regular and forced) become
+external WebVTT tracks of the playback. Jellyfin reads each whole at the
+relay, `.../subtitles/<track>/all.vtt`, which the plugin makes from the
+track's 2-minute parts (MSFP video section 6.2), each rebuilt by the
+engine as section 6.3 says, the cues the parts share kept once. They
+replace the text tracks found inside a file played as it is (the same
+tracks, cleaned); picture tracks found inside it stay. Jellyfin serves
+them to clients at its own subtitle route, or burns them in for a device
+that can't show them. While a stand-in plays, its saved source is the
+playback's (Jellyfin's subtitle route reads the saved one).
+
+Not built yet: the paired server's picture subtitles (PGS) served apart,
+its previews, the
 viewer's audio and subtitle choice passed to `play`, and a clear message
 in the client when no server can play (Jellyfin shows a generic
 playback error; the log says why).
