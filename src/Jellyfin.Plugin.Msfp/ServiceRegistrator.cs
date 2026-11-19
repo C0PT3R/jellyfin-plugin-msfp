@@ -1,5 +1,6 @@
 using Jellyfin.Plugin.Msfp.Catalog;
 using Jellyfin.Plugin.Msfp.Federation;
+using Jellyfin.Plugin.Msfp.Identification;
 using Jellyfin.Plugin.Msfp.Playback;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Library;
@@ -14,7 +15,12 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
     /// <inheritdoc />
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
-        serviceCollection.AddSingleton<ICatalogSource>(sp => new JellyfinCatalogSource(sp.GetRequiredService<ILibraryManager>()));
+        serviceCollection.AddSingleton<Identifier>();
+        serviceCollection.AddSingleton<ICatalogSource>(sp =>
+        {
+            var identifier = sp.GetRequiredService<Identifier>();
+            return new JellyfinCatalogSource(sp.GetRequiredService<ILibraryManager>(), () => identifier.Identities);
+        });
         serviceCollection.AddSingleton<HostCatalog>();
         serviceCollection.AddSingleton<JellyfinPlayback>();
         serviceCollection.AddSingleton<EngineHost>();
@@ -22,5 +28,6 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<EngineHost>());
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<WantsKeeper>());
         serviceCollection.AddHostedService<CatalogWatcher>();
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<Identifier>());
     }
 }

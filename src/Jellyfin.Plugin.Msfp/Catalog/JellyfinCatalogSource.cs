@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using Jellyfin.Data.Enums;
+using Jellyfin.Plugin.Msfp.Identification;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
@@ -27,9 +28,14 @@ public sealed class JellyfinCatalogSource : ICatalogSource
 
     private readonly ILibraryManager _library;
 
-    public JellyfinCatalogSource(ILibraryManager library)
+    private readonly Func<Identities?> _identities;
+
+    /// <param name="library">Jellyfin's library.</param>
+    /// <param name="identities">The plugin's identities of the films and series: their keys come from there, never from Jellyfin's IDs.</param>
+    internal JellyfinCatalogSource(ILibraryManager library, Func<Identities?> identities)
     {
         _library = library;
+        _identities = identities;
     }
 
     /// <inheritdoc />
@@ -56,23 +62,13 @@ public sealed class JellyfinCatalogSource : ICatalogSource
     /// <inheritdoc />
     public IEnumerable<CatalogEntry> Entries()
     {
-        var series = new Dictionary<Guid, (long? Tmdb, bool TmdbOrder)>();
-        (long? Tmdb, bool TmdbOrder) SeriesOf(Guid id)
+        var identities = _identities();
+        if (identities is null)
         {
-            if (id == Guid.Empty)
-            {
-                // An episode or season Jellyfin hasn't placed in a series (yet).
-                return (null, false);
-            }
-
-            if (!series.TryGetValue(id, out var info))
-            {
-                info = _library.GetItemById(id) is Series s ? (TmdbId(s.GetProviderId(MetadataProvider.Tmdb)), InTmdbOrder(s.DisplayOrder)) : (null, false);
-                series[id] = info;
-            }
-
-            return info;
+            yield break;
         }
+
+        TitleIdentity? SeriesOf(Guid id) => id == Guid.Empty ? null : identities.Of(id);
 
         foreach (var lib in Libraries())
         {
@@ -85,7 +81,7 @@ public sealed class JellyfinCatalogSource : ICatalogSource
             });
             foreach (var item in items)
             {
-                foreach (var entry in Of(item, lib.Id, SeriesOf))
+                foreach (var entry in Of(item, lib.Id, identities.Of(item.Id), SeriesOf))
                 {
                     yield return entry;
                 }
@@ -105,57 +101,42 @@ public sealed class JellyfinCatalogSource : ICatalogSource
         return n is > 0 and <= 9_999_999_999 ? n : null;
     }
 
-    /// <summary>
-    /// Whether a series' episode numbers in Jellyfin are TMDB's: its default
-    /// order (aired), which Jellyfin's TMDB provider fetched each episode by.
-    /// Another order (DVD, absolute, an episode group) numbers them its own
-    /// way.
-    /// </summary>
-    internal static bool InTmdbOrder(string? displayOrder) =>
-        string.IsNullOrEmpty(displayOrder) || string.Equals(displayOrder, "aired", StringComparison.OrdinalIgnoreCase);
-
-    private static IEnumerable<CatalogEntry> Of(BaseItem item, string library, Func<Guid, (long? Tmdb, bool TmdbOrder)> seriesOf)
+    // An item's entries, keyed by the plugin's identities (MSFP video
+    // section 4): a film or a series taken (sure, or chosen by the owner); a
+    // season or an episode of a series taken. An episode TMDB lists goes by
+    // its TMDB ID and place; one it doesn't, by its numbers.
+    private static IEnumerable<CatalogEntry> Of(BaseItem item, string library, TitleIdentity? own, Func<Guid, TitleIdentity?> seriesOf)
     {
         switch (item)
         {
-            case Movie when TmdbId(item.GetProviderId(MetadataProvider.Tmdb)) is { } id:
-                yield return Copy(item, library, new VideoKey("movie", id), []);
+            case Movie when own?.Taken is { } id:
+                yield return Copy(item, library, new VideoKey("movie", id), []) with { Ids = OtherIds(own) };
                 break;
 
-            case Series when TmdbId(item.GetProviderId(MetadataProvider.Tmdb)) is { } id:
-                yield return new CatalogEntry(library, new VideoKey("series", id).ToString(), "series", null) { Ids = OtherIds(item) };
+            case Series when own?.Taken is { } id:
+                yield return new CatalogEntry(library, new VideoKey("series", id).ToString(), "series", null) { Ids = OtherIds(own) };
                 break;
 
-            case Season season when seriesOf(season.SeriesId).Tmdb is { } id && season.IndexNumber is >= 0 and <= 9999:
-                yield return new CatalogEntry(library, new VideoKey("season", id, season.IndexNumber.Value).ToString(), "season", null);
+            case Season s when seriesOf(s.SeriesId)?.Taken is { } id && s.IndexNumber is >= 0 and <= 9999:
+                yield return new CatalogEntry(library, new VideoKey("season", id, s.IndexNumber.Value).ToString(), "season", null);
                 break;
 
-            case Episode episode when seriesOf(episode.SeriesId) is { Tmdb: { } id } series:
-                if (TmdbId(item.GetProviderId(MetadataProvider.Tmdb)) is { } episodeId)
+            case Episode episode when seriesOf(episode.SeriesId) is { Taken: { } id } series
+                && episode.ParentIndexNumber is >= 0 and <= 9999 && episode.IndexNumber is >= 0 and <= 99999:
+                // A file of several episodes: each of them, with the others
+                // (MSFP video section 4.2).
+                var season = episode.ParentIndexNumber.Value;
+                var first = episode.IndexNumber.Value;
+                var last = episode.IndexNumberEnd is { } end && end > first && end <= 99999 && end - first < 16 ? end : first;
+                var keys = Enumerable.Range(first, last - first + 1).Select(n =>
+                    series.Episodes.TryGetValue(TitleIdentity.EpisodeKey(season, n), out var e)
+                        ? (Key: new VideoKey("episode", id, EpisodeId: e.EpisodeId), Place: (global::Msfp.Place?)new global::Msfp.Place { Season = e.Season, Episode = e.Episode })
+                        : (Key: new VideoKey("episode", id, season, n), Place: null))
+                    .DistinctBy(k => k.Key.ToString())
+                    .ToList();
+                foreach (var k in keys)
                 {
-                    // Keyed by its TMDB ID, with its place in TMDB's numbering
-                    // (MSFP video section 4.1): Jellyfin's numbers when the
-                    // series is in TMDB's order; left out otherwise.
-                    if (series.TmdbOrder && episode.ParentIndexNumber is >= 0 and <= 9999 && episode.IndexNumber is >= 0 and <= 99999)
-                    {
-                        yield return Copy(item, library, new VideoKey("episode", id, EpisodeId: episodeId), []) with
-                        {
-                            Place = new global::Msfp.Place { Season = episode.ParentIndexNumber.Value, Episode = episode.IndexNumber.Value },
-                        };
-                    }
-                }
-                else if (episode.ParentIndexNumber is >= 0 and <= 9999 && episode.IndexNumber is >= 0 and <= 99999)
-                {
-                    // A file holding several episodes: each of them, with the
-                    // others (MSFP video section 4.2).
-                    var season = episode.ParentIndexNumber.Value;
-                    var first = episode.IndexNumber.Value;
-                    var last = episode.IndexNumberEnd is { } end && end > first && end <= 99999 && end - first < 16 ? end : first;
-                    var keys = Enumerable.Range(first, last - first + 1).Select(n => new VideoKey("episode", id, season, n)).ToList();
-                    foreach (var k in keys)
-                    {
-                        yield return Copy(item, library, k, keys.Where(o => o != k).Select(o => o.ToString()).ToList());
-                    }
+                    yield return Copy(item, library, k.Key, keys.Where(o => o.Key != k.Key).Select(o => o.Key.ToString()).Order(StringComparer.Ordinal).ToList()) with { Place = k.Place };
                 }
 
                 break;
@@ -173,7 +154,7 @@ public sealed class JellyfinCatalogSource : ICatalogSource
             Subtitles = Languages(streams.Where(s => s.Type == MediaStreamType.Subtitle && s.IsTextSubtitleStream)),
             Picture = PictureOf(streams.FirstOrDefault(s => s.Type == MediaStreamType.Video)),
             With = with,
-            Ids = OtherIds(item),
+            Ids = new Dictionary<string, string>(),
             CopyName = item.Name ?? string.Empty,
         };
     }
@@ -228,17 +209,19 @@ public sealed class JellyfinCatalogSource : ICatalogSource
         return hdr;
     }
 
-    private static Dictionary<string, string> OtherIds(BaseItem item)
+    // The title's IMDb and TheTVDB IDs, as TMDB gives them for the title
+    // the plugin took (never Jellyfin's, which go with its own match).
+    private static Dictionary<string, string> OtherIds(TitleIdentity t)
     {
         var ids = new Dictionary<string, string>(StringComparer.Ordinal);
-        if (item.GetProviderId(MetadataProvider.Imdb) is { Length: > 0 } imdb && MsfpVideo.OtherId("imdb", imdb))
+        if (t.Imdb.Length > 0 && MsfpVideo.OtherId("imdb", t.Imdb))
         {
-            ids["imdb"] = imdb;
+            ids["imdb"] = t.Imdb;
         }
 
-        if (item.GetProviderId(MetadataProvider.Tvdb) is { Length: > 0 } tvdb && MsfpVideo.OtherId("tvdb", tvdb))
+        if (t.Tvdb.Length > 0 && MsfpVideo.OtherId("tvdb", t.Tvdb))
         {
-            ids["tvdb"] = tvdb;
+            ids["tvdb"] = t.Tvdb;
         }
 
         return ids;

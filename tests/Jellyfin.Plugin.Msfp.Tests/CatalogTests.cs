@@ -67,17 +67,6 @@ public class CatalogTests
         Assert.Null(Assert.IsType<VideoTitle>(page.Titles.Single(t => t.Key == "series/tmdb/1920/s1/e9")).Place);
     }
 
-    [Theory]
-    [InlineData(null, true)]
-    [InlineData("", true)]
-    [InlineData("aired", true)]
-    [InlineData("Aired", true)]
-    [InlineData("dvd", false)]
-    [InlineData("absolute", false)]
-    [InlineData("tmdbgroup:5a8f", false)]
-    public void OnlyTheDefaultOrderIsTmdbs(string? order, bool tmdb) =>
-        Assert.Equal(tmdb, JellyfinCatalogSource.InTmdbOrder(order));
-
     [Fact]
     public async Task OnlyTheLibrariesAskedAndPages()
     {

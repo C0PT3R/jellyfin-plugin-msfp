@@ -44,4 +44,10 @@ public class PluginConfiguration : BasePluginConfiguration
     /// 0: no transcode for peers.
     /// </summary>
     public int TranscodesAtOnce { get; set; } = 2;
+
+    /// <summary>
+    /// A TMDB key of the owner's (an API key or a read access token), used
+    /// instead of the plugin's own to identify titles. Empty: the plugin's.
+    /// </summary>
+    public string TmdbKey { get; set; } = string.Empty;
 }
