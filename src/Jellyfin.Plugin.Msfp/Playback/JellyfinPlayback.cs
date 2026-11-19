@@ -14,6 +14,7 @@ using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.MediaEncoding;
 using MediaBrowser.Controller.Security;
 using MediaBrowser.Controller.Session;
+using MediaBrowser.Controller.Trickplay;
 using MediaBrowser.Model.Entities;
 using Microsoft.Extensions.Logging;
 using Msfp;
@@ -39,16 +40,19 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
     private readonly ITranscodeManager _transcodes;
     private readonly Hls _hls;
     private readonly TranscodeLimit _limit;
+    private readonly Previews _previews;
     private readonly ILogger<JellyfinPlayback> _log;
     private readonly ConcurrentDictionary<string, Live> _live = new(StringComparer.Ordinal);
 
     public JellyfinPlayback(ILibraryManager library, ISubtitleEncoder subtitles, ITranscodeManager transcodes,
-        IServerConfigurationManager server, IAuthenticationManager auth, ISessionManager sessions, ILogger<JellyfinPlayback> log)
+        IServerConfigurationManager server, IAuthenticationManager auth, ISessionManager sessions, ITrickplayManager trickplay,
+        ILogger<JellyfinPlayback> log)
     {
         _library = library;
         _subtitles = subtitles;
         _transcodes = transcodes;
         _hls = new Hls(server, auth);
+        _previews = new Previews(trickplay, library);
         _limit = new TranscodeLimit(() => Plugin.Instance?.Configuration.TranscodesAtOnce ?? 2, () => OwnTranscodes(sessions.Sessions));
         _log = log;
     }
@@ -67,7 +71,7 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
             && s.DeviceId?.StartsWith("msfp-", StringComparison.Ordinal) != true);
 
     /// <inheritdoc />
-    public ValueTask<CopyInfo> DescribeAsync(string copy, CancellationToken ct)
+    public async ValueTask<CopyInfo> DescribeAsync(string copy, CancellationToken ct)
     {
         var item = Item(copy);
         var streams = item.GetMediaStreams();
@@ -103,7 +107,20 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
             }).ToList();
         }
 
-        return ValueTask.FromResult(info);
+        if (item is Video)
+        {
+            try
+            {
+                info.Trickplay = await _previews.ForAsync(item).ConfigureAwait(false);
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                // Previews are optional (MSFP video section 5.5): played without.
+                _log.LogWarning(e, "MSFP: the previews of {Title} couldn't be read", item.Name);
+            }
+        }
+
+        return info;
     }
 
     /// <inheritdoc />
@@ -259,6 +276,11 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
                 return;
             case MediaKind.File when live.Master is null:
                 await FileServing.ServeAsync(live.Path, range, MimeOf(live.Path), output, ct).ConfigureAwait(false);
+                return;
+            case MediaKind.Sheet:
+                var sheet = await _previews.SheetAsync(_library.GetItemById(live.Item) ?? throw new MsfpException(MsfpError.NotFound), path.Sheet, ct).ConfigureAwait(false);
+                output.Start(200, "image/jpeg", sheet.Length, string.Empty);
+                await output.WriteAsync(sheet, ct).ConfigureAwait(false);
                 return;
             case MediaKind.Subtitles:
                 var track = await WebVttAsync(live, path.Track, ct).ConfigureAwait(false);

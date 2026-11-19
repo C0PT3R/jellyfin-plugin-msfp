@@ -180,8 +180,8 @@ tried. MSFP version 1 sends them: a `play` answer may carry `trickplay`,
 and its sheets are fetched under the playback's ticket (video sections 5.5
 and 6.2); the engine relays them re-encoded through an `ISheetEncoder`,
 which the plugin would have to give (SkiaSharp, which Jellyfin ships, is
-one way; not tried). As the owning server, the plugin doesn't send
-Jellyfin's own trickplay yet.
+one way; not tried). As the owning server, the plugin sends Jellyfin's
+own trickplay (since 2026-11-19).
 
 ## Leaning, not a decision
 

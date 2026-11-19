@@ -34,8 +34,8 @@ for the options. Music isn't shared (the parts spoken are catalog,
 playback, media and video).
 
 Tested on 2026-11-19 in a Jellyfin 12.2 container: msfp-spec's
-conformance suite, 119 checks passed, 0 failed, 2 skipped (preview sheets
-and PGS subtitles, which the plugin doesn't serve); and live with Overfin
+conformance suite, 0 failed, preview sheets passing since they are served,
+only PGS subtitles skipped (the plugin doesn't serve them); and live with Overfin
 over HTTPS: pairing, sharing both ways, the plugin's key changed and
 revoked with Overfin following, and Overfin's viewers playing the plugin's
 titles (a film and an episode direct, with WebVTT subtitles; an HEVC film
@@ -138,7 +138,13 @@ the plugin serves it:
   of the playback's own, and rewrites the playlists to the subset MSFP
   allows. Progress keeps Jellyfin's transcode alive; stop ends it.
 - **Subtitles**: the text ones, as WebVTT made by Jellyfin's subtitle
-  encoder. Picture subtitles (PGS) and seek-bar previews aren't served.
+  encoder. Picture subtitles (PGS) aren't served.
+- **Seek-bar previews**: Jellyfin's own trickplay, when it has made some
+  for the copy (trickplay image extraction on for the library, or its
+  "Generate Trickplay Images" task). Of Jellyfin's sets, the one closest
+  to 320 pixels wide within MSFP's bounds (a sheet at most 4,096 pixels
+  each way) is sent; its sheets are served as Jellyfin drew them, JPEGs of
+  at most 8 MiB.
 
 Transcodes also have a limit for the whole server, "Transcodes at once on
 this server" in the plugin's page (2 by default). It counts this server's
