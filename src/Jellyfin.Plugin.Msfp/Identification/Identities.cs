@@ -42,6 +42,9 @@ internal sealed class TitleIdentity
     /// <summary>The TMDB title the owner chose; "" when they didn't.</summary>
     public string Chosen { get; set; } = string.Empty;
 
+    /// <summary>The chosen title's name and year on TMDB, for the page.</summary>
+    public string ChosenName { get; set; } = string.Empty;
+
     /// <summary>The TMDB title's IMDb and TheTVDB IDs, as TMDB gives them.</summary>
     public string Imdb { get; set; } = string.Empty;
 

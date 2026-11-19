@@ -16,11 +16,11 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
         serviceCollection.AddSingleton<Identifier>();
+        // The catalog asks the identifier for its identities when it reads,
+        // not when it's made: the identifier needs the engine, which needs
+        // the catalog.
         serviceCollection.AddSingleton<ICatalogSource>(sp =>
-        {
-            var identifier = sp.GetRequiredService<Identifier>();
-            return new JellyfinCatalogSource(sp.GetRequiredService<ILibraryManager>(), () => identifier.Identities);
-        });
+            new JellyfinCatalogSource(sp.GetRequiredService<ILibraryManager>(), () => sp.GetRequiredService<Identifier>().Identities));
         serviceCollection.AddSingleton<HostCatalog>();
         serviceCollection.AddSingleton<JellyfinPlayback>();
         serviceCollection.AddSingleton<EngineHost>();

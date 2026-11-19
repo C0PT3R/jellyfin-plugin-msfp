@@ -57,6 +57,7 @@ public class IdentificationController : ControllerBase
                     file = p.Value.File,
                     match = p.Value.Tmdb,
                     chosen = p.Value.Chosen,
+                    chosenName = p.Value.ChosenName,
                     reasons = p.Value.Reasons.Select(r => r.Text),
                     candidates = p.Value.Candidates.Select(c => new { tmdb = c.Tmdb, name = c.Name, year = c.Year, originalName = c.OriginalName }),
                 }),

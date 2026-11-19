@@ -354,8 +354,8 @@
                         row.className = 'paperList';
                         row.style.padding = '0.5em 1em';
                         var title = document.createElement('div');
-                        title.textContent = t.name + ' (' + (t.kind === 'series' ? 'series' : 'film') + '): ' +
-                            (t.chosen ? 'TMDB ' + t.chosen + ', your choice' : t.match ? 'to check' : 'not found on TMDB');
+                        title.textContent = (t.folder || t.name) + ' (' + (t.kind === 'series' ? 'series' : 'film') + '): ' +
+                            (t.chosen ? 'your choice, ' + (t.chosenName || 'TMDB ' + t.chosen) : t.match ? 'to check' : 'not found on TMDB');
                         var why = document.createElement('div');
                         why.className = 'fieldDescription';
                         why.textContent = t.chosen ? '' : (t.reasons || []).join(' ');
@@ -368,8 +368,9 @@
             }
             function msfpCheck(t) {
                 msfpCheckFor = t;
-                document.querySelector('#MsfpCheckName').textContent = t.name;
-                document.querySelector('#MsfpCheckWhere').textContent = [t.folder, t.file].filter(function (x) { return x; }).join(' / ');
+                document.querySelector('#MsfpCheckName').textContent = t.folder || t.name;
+                document.querySelector('#MsfpCheckWhere').textContent = [t.folder, t.file].filter(function (x) { return x; }).join(' / ') +
+                    (t.chosen ? '. Your choice: ' + (t.chosenName || '') + ' (TMDB ' + t.chosen + ')' : '') + '.';
                 var reasons = document.querySelector('#MsfpCheckReasons');
                 reasons.textContent = '';
                 (t.reasons || []).forEach(function (text) {
@@ -394,6 +395,8 @@
                     var link = document.createElement('a');
                     link.href = 'https://www.themoviedb.org/' + (t.kind === 'series' ? 'tv' : 'movie') + '/' + encodeURIComponent(c.tmdb);
                     link.target = '_blank';
+                    link.style.color = 'inherit';
+                    link.style.textDecoration = 'underline';
                     link.rel = 'noopener noreferrer';
                     link.textContent = 'TMDB ' + c.tmdb;
                     label.appendChild(link);

@@ -125,14 +125,16 @@ public sealed class Identifier : BackgroundService
         var src = Tmdb() ?? throw new InvalidOperationException("no TMDB key");
         var known = Identities.Of(item) ?? throw new KeyNotFoundException();
         tmdb = tmdb.Trim();
+        TmdbTitle? page = null;
         if (tmdb.Length > 0 && (!int.TryParse(tmdb, NumberStyles.None, CultureInfo.InvariantCulture, out var id) || id <= 0
-            || await src.TitleAsync(known.Kind, id, ct).ConfigureAwait(false) is null))
+            || (page = await src.TitleAsync(known.Kind, id, ct).ConfigureAwait(false)) is null))
         {
             return false;
         }
 
         var t = known.Copy();
-        t.Chosen = tmdb.Length > 0 ? int.Parse(tmdb, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture) : string.Empty;
+        t.Chosen = page is not null ? page.Id.ToString(CultureInfo.InvariantCulture) : string.Empty;
+        t.ChosenName = page is not null ? page.Name + (page.Year > 0 ? " (" + page.Year.ToString(CultureInfo.InvariantCulture) + ")" : string.Empty) : string.Empty;
         var series = _library.GetItemById(item) as Series;
         await CompleteAsync(src, t, series is not null, series is not null ? EpisodeFiles(series) : [], true, ct).ConfigureAwait(false);
         Identities.Put(item, t);
