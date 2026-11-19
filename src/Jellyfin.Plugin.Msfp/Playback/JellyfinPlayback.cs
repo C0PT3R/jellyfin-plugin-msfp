@@ -8,9 +8,11 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Msfp.Catalog;
+using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.MediaEncoding;
+using MediaBrowser.Controller.Security;
 using MediaBrowser.Model.Entities;
 using Microsoft.Extensions.Logging;
 using Msfp;
@@ -26,20 +28,25 @@ namespace Jellyfin.Plugin.Msfp.Playback;
 /// this server describes the copy from Jellyfin's streams and serves its
 /// file as it is (direct play, with byte ranges) when the viewer's device
 /// plays it, and its text subtitles as WebVTT, by Jellyfin's subtitle
-/// encoder. What the device can't play as it is isn't played yet: no HLS
-/// (README, "Playing").
+/// encoder. What the device can't play as it is plays as HLS, Jellyfin
+/// remuxing or transcoding it (<see cref="Hls"/>).
 /// </summary>
 public sealed class JellyfinPlayback : IPlayback, IMedia
 {
     private readonly ILibraryManager _library;
     private readonly ISubtitleEncoder _subtitles;
+    private readonly ITranscodeManager _transcodes;
+    private readonly Hls _hls;
     private readonly ILogger<JellyfinPlayback> _log;
     private readonly ConcurrentDictionary<string, Live> _live = new(StringComparer.Ordinal);
 
-    public JellyfinPlayback(ILibraryManager library, ISubtitleEncoder subtitles, ILogger<JellyfinPlayback> log)
+    public JellyfinPlayback(ILibraryManager library, ISubtitleEncoder subtitles, ITranscodeManager transcodes,
+        IServerConfigurationManager server, IAuthenticationManager auth, ILogger<JellyfinPlayback> log)
     {
         _library = library;
         _subtitles = subtitles;
+        _transcodes = transcodes;
+        _hls = new Hls(server, auth);
         _log = log;
     }
 
@@ -87,43 +94,70 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
     }
 
     /// <inheritdoc />
-    public ValueTask<Started> StartAsync(StartRequest request, CancellationToken ct)
+    public async ValueTask<Started> StartAsync(StartRequest request, CancellationToken ct)
     {
         var item = Item(request.Copy);
         if (request.AudioOnly || request.Parts > 1 || item is not Video video || string.IsNullOrEmpty(video.Path) || !File.Exists(video.Path))
         {
+            // A copy of several files would have to come whole as HLS
+            // (MSFP media section 1); Jellyfin plays its parts apart.
             throw new MsfpException(MsfpError.NotPlayable);
         }
 
         var streams = item.GetMediaStreams();
         var file = FileInfoOf(video, streams);
-        if (!Direct.Plays(file, request))
+        var audio = file.Audio;
+        if (request.AudioTrack.StartsWith('a') && int.TryParse(request.AudioTrack.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out var index))
         {
-            // Not as it is: HLS, Jellyfin remuxing or transcoding it, isn't
-            // built yet.
-            throw new MsfpException(MsfpError.NotPlayable);
+            audio = file.AudioTracks.FirstOrDefault(a => a.Index == index) ?? audio;
         }
 
-        var slot = request.Admit?.Invoke("direct");
         var handle = Base64UrlText.Encode(RandomNumberGenerator.GetBytes(16));
-        _live[handle] = new Live(item.Id, video.Path, request.Peer.Name);
-        _log.LogInformation("MSFP: {Peer} plays {Title} here, direct", request.Peer.Name, request.Title);
-        _ = slot;
-        return ValueTask.FromResult(new Started
+        Started started;
+        Live live;
+        if (Direct.Plays(file, request))
         {
-            Handle = handle,
-            Method = "direct",
-            Protocol = "file",
-            MimeType = file.MimeType,
+            request.Admit?.Invoke("direct");
+            live = new Live(item.Id, video.Path, request.Peer.Name, null);
+            started = new Started { Handle = handle, Method = "direct", Protocol = "file", MimeType = file.MimeType };
+        }
+        else
+        {
+            if (file.Video is null)
+            {
+                throw new MsfpException(MsfpError.NotPlayable);
+            }
+
+            var choice = Hls.Choose(file, audio, request);
+            var slot = request.Admit?.Invoke(choice.Method);
+            try
+            {
+                var master = await _hls.MasterAsync(item.Id, handle, choice, audio?.Index ?? -1, ct).ConfigureAwait(false);
+                live = new Live(item.Id, video.Path, request.Peer.Name, master);
+                started = new Started { Handle = handle, Method = choice.Method, Protocol = "hls" };
+            }
+            catch
+            {
+                slot?.Release();
+                throw;
+            }
+        }
+
+        _live[handle] = live;
+        _log.LogInformation("MSFP: {Peer} plays {Title} here, {Method}", request.Peer.Name, request.Title, started.Method);
+        return started with
+        {
             PositionMs = request.StartMs,
             Info = new PlaybackInfo
             {
-                Container = file.Container,
-                BitrateKbps = file.BitrateKbps,
-                Video = file.Video is { } vs ? new StreamInfo { Codec = vs.Codec, Profile = vs.Profile, Width = vs.Width ?? 0, Height = vs.Height ?? 0, BitDepth = vs.BitDepth ?? 0 } : null,
-                Audio = file.Audio is { } a ? new StreamInfo { Codec = a.Codec, Channels = a.Channels ?? 0, Language = Lang(a.Language) } : null,
+                Container = started.Protocol == "file" ? file.Container : null,
+                BitrateKbps = started.Protocol == "file" ? file.BitrateKbps : 0,
+                Video = started.Method != "transcode" && file.Video is { } vs
+                    ? new StreamInfo { Codec = vs.Codec, Profile = vs.Profile, Width = vs.Width ?? 0, Height = vs.Height ?? 0, BitDepth = vs.BitDepth ?? 0 }
+                    : null,
+                Audio = audio is { } a ? new StreamInfo { Codec = a.Codec, Channels = a.Channels ?? 0, Language = Lang(a.Language) } : null,
             },
-        });
+        };
     }
 
     /// <inheritdoc />
@@ -136,18 +170,41 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
 
         live.PositionMs = positionMs;
         live.Paused = paused;
+        if (live.Master is not null)
+        {
+            // Keeps Jellyfin's transcode alive while the viewer is paused.
+            try
+            {
+                _transcodes.PingTranscodingJob(handle, paused);
+            }
+            catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+            {
+            }
+        }
+
         return ValueTask.CompletedTask;
     }
 
     /// <inheritdoc />
-    public ValueTask StopAsync(string handle, EndReason reason, CancellationToken ct)
+    public async ValueTask StopAsync(string handle, EndReason reason, CancellationToken ct)
     {
-        if (_live.TryRemove(handle, out var live))
+        if (!_live.TryRemove(handle, out var live))
         {
-            _log.LogInformation("MSFP: {Peer}'s playback here ended ({Reason})", live.Peer, reason);
+            return;
         }
 
-        return ValueTask.CompletedTask;
+        _log.LogInformation("MSFP: {Peer}'s playback here ended ({Reason})", live.Peer, reason);
+        if (live.Master is not null)
+        {
+            try
+            {
+                await _transcodes.KillTranscodingJobs("msfp-" + handle, handle, _ => true).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                _log.LogWarning(e, "MSFP: a peer's transcode couldn't be stopped");
+            }
+        }
     }
 
     /// <inheritdoc />
@@ -160,7 +217,16 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
 
         switch (path.Kind)
         {
-            case MediaKind.File:
+            case MediaKind.Master when live.Master is not null:
+                await PlaylistAsync(live, live.Master, true, output, ct).ConfigureAwait(false);
+                return;
+            case MediaKind.Playlist when live.Master is not null && live.Names.TryGetValue(path.Name, out var playlist):
+                await PlaylistAsync(live, playlist, false, output, ct).ConfigureAwait(false);
+                return;
+            case MediaKind.Segment when live.Master is not null && live.Names.TryGetValue(path.Name, out var segment):
+                await _hls.SegmentAsync(live.Item, segment, range, output, ct).ConfigureAwait(false);
+                return;
+            case MediaKind.File when live.Master is null:
                 await FileServing.ServeAsync(live.Path, range, MimeOf(live.Path), output, ct).ConfigureAwait(false);
                 return;
             case MediaKind.Subtitles:
@@ -176,6 +242,13 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
             default:
                 throw new MsfpException(MsfpError.NotFound);
         }
+    }
+
+    private async Task PlaylistAsync(Live live, string url, bool master, IResponseSink output, CancellationToken ct)
+    {
+        var body = await _hls.PlaylistAsync(live.Item, url, master, live.Names, ct).ConfigureAwait(false);
+        output.Start(200, "application/vnd.apple.mpegurl", body.Length, string.Empty);
+        await output.WriteAsync(body, ct).ConfigureAwait(false);
     }
 
     // A text subtitle track of the copy as WebVTT, made once per playback.
@@ -293,8 +366,14 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
         return s.Title is { Length: > 0 } t ? t : s.DisplayTitle ?? "Track " + s.Index.ToString(CultureInfo.InvariantCulture);
     }
 
-    private sealed class Live(Guid item, string path, string peer)
+    private sealed class Live(Guid item, string path, string peer, string? master)
     {
+        /// <summary>Jellyfin's master playlist URL, for HLS; null for the file.</summary>
+        public string? Master { get; } = master;
+
+        /// <summary>The HLS names given in playlists, with Jellyfin's URL of each.</summary>
+        public ConcurrentDictionary<string, string> Names { get; } = new(StringComparer.Ordinal);
+
         public Guid Item { get; } = item;
 
         public string Path { get; } = path;
