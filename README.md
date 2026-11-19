@@ -7,72 +7,86 @@ with Overfin, MSFP's first implementation.
 
 The protocol is specified in
 [github.com/msfp-io/msfp-spec](https://github.com/msfp-io/msfp-spec)
-(version 0). This plugin is built from that specification alone, as an
-independent second implementation. Where the specification is unclear,
-incomplete or wrong, [SPEC-GAPS.md](SPEC-GAPS.md) says so, and says what the
-plugin assumed.
+(version 1). The protocol itself is
+[msfp-dotnet](https://github.com/msfp-io/msfp-dotnet), the MSFP engine for
+.NET: it signs and checks every call, keeps the pairings, keys, addresses
+and limits, and answers peers. This plugin is the engine's host inside
+Jellyfin: its storage, its routes, the operator's page, and Jellyfin's
+libraries and playback. Where the specification is unclear, incomplete or
+wrong, [SPEC-GAPS.md](SPEC-GAPS.md) says so, and says what the plugin
+assumed.
 
 ## Status
 
-**Early, not usable yet.** Built so far: the plugin skeleton and its
-configuration page; encodings, keys and fingerprints; the pairing code
-and addresses; signing and checking requests and answers, with the nonce
-memory; the `pair` and `hello` calls under `/api/v1/federation/`, and
-pairing from the plugin's page (make a code, use one, accept, check, end),
-with peers kept in the plugin's own data folder. Checked against the
-specification's test vectors (`v0.json`, and `v0-strict.json` of the
-corrections of 2026-11-16), paired over HTTP with a real Jellyfin 12.2
-running the plugin, and tested live against a real Overfin over HTTP and
-HTTPS: pairing from either side, ending, re-pairing, `libraries` and
-`titles` both ways (whole, changes, paging), pins and certificate
-renewals, limits and restarts. HTTPS certificates and pins (section 3.1):
-`pair` and `hello` accept any certificate, every other call a publicly
-trusted one or one whose pin the peer named in its latest signed `hello`. Also built: the `libraries`
-and `titles` calls, both sides. The operator picks, per peer, which
-Jellyfin libraries it is offered. Paired peers' catalogs are read every
-30 minutes and kept in the plugin's storage, where the plugin's page
-shows them. Nothing is added to Jellyfin's own library yet; see
-[DESIGN-NOTES.md](DESIGN-NOTES.md) for the options. Playback (`play`,
-`progress`, `stop`) and media are not built.
+**Early.** Built: pairing from the plugin's page (make a code, use one,
+accept, check, end, confirm a peer's new key), this server's key changes
+(to the next key, or revoked when stolen), moves (a new address in the
+page), the `libraries` and `titles` calls both ways, and playback of this
+server's films and episodes by peers (`play`, `progress`, `stop` and the
+media). The operator picks, per peer, which Jellyfin libraries it is
+offered, and which of the peer's are read (by default all, those it adds
+later too). Paired peers' catalogs are read every 30 minutes and kept in
+the plugin's storage, where the plugin's page shows them.
+
+Not built: how peers' titles appear to this server's own users. Nothing
+is added to Jellyfin's own library; see [DESIGN-NOTES.md](DESIGN-NOTES.md)
+for the options. Music isn't shared (the parts spoken are catalog,
+playback, media and video).
+
+Tested on 2026-11-19 in a Jellyfin 12.2 container: msfp-spec's
+conformance suite, 119 checks passed, 0 failed, 2 skipped (preview sheets
+and PGS subtitles, which the plugin doesn't serve); and live with Overfin
+over HTTPS: pairing, sharing both ways, the plugin's key changed and
+revoked with Overfin following, and Overfin's viewers playing the plugin's
+titles (a film and an episode direct, with WebVTT subtitles; an HEVC film
+transcoded to HLS; an H.264 film remuxed to HLS).
 
 ## Building
 
-`src/Msfp` is MSFP itself, a class library with no Jellyfin, MediaBrowser
-or ASP.NET reference, tested on its own by `tests/Msfp.Tests`;
-`src/Jellyfin.Plugin.Msfp` is the plugin around it.
-
-You need the .NET 10 SDK, or a container with it:
+msfp-dotnet must be checked out beside this repository (`../msfp-dotnet`),
+or named with `-p:MsfpDotnet=<path>`: the plugin references its
+`Msfp.Engine` project. You need the .NET 10 SDK, or a container with it:
 
 ```sh
 dotnet test Jellyfin.Plugin.Msfp.slnx
 dotnet build -c Release src/Jellyfin.Plugin.Msfp -o out
 ```
 
-With podman and no SDK on the host:
+With podman and no SDK on the host, from the folder holding both
+repositories:
 
 ```sh
-podman run --rm -v "$PWD":/src:Z -w /src mcr.microsoft.com/dotnet/sdk:10.0 \
+podman run --rm -v "$PWD":/src:Z -w /src/jellyfin-plugin-msfp mcr.microsoft.com/dotnet/sdk:10.0 \
   sh -c 'dotnet test Jellyfin.Plugin.Msfp.slnx && dotnet build -c Release src/Jellyfin.Plugin.Msfp -o out'
 ```
 
-The plugin is every DLL in `out` except Jellyfin's own (`MediaBrowser.*`,
-`Jellyfin.*` other than `Jellyfin.Plugin.Msfp.dll`; `Msfp.dll` is part of it), which
-`ExcludeAssets=runtime` keeps out. Copy them into a folder under Jellyfin's
-`plugins` directory and restart Jellyfin. It targets Jellyfin 12.2.
+The plugin is the four DLLs in `out`: `Jellyfin.Plugin.Msfp.dll`,
+`Msfp.Engine.dll`, `Msfp.Protocol.dll` and `BouncyCastle.Cryptography.dll`
+(Jellyfin's own, and what ASP.NET Core brings, stay out). Copy them into a
+folder under Jellyfin's `plugins` directory and restart Jellyfin. It
+targets Jellyfin 12.2.
 
 ## Running it
 
 Set this server's address in the plugin's page: where other servers reach
-it, `http(s)://host[:port]` with no path. Federation stays off until it is
-set. Peers must reach Jellyfin at that address's root: a Jellyfin with a
-base URL (`/jellyfin`) can't federate, and a reverse proxy must keep the
-path and body unchanged, since the signatures cover them.
+it, `https://host[:port]` with no path. Federation stays off until it is
+set; the page says why it is off. MSFP is HTTPS only: Jellyfin's own HTTPS
+(Dashboard, Networking, a certificate) or a reverse proxy in front. A
+reverse proxy must keep the path and body unchanged, since the signatures
+cover them. Saving another address later moves this server: the engine
+tells its peers once it reaches itself there.
 
-Over `https`, peers that have this plugin or Overfin accept a
-certificate no public authority issued (self-signed, or from a private
-authority), because this server names its pin, signed, in each `hello`.
-By default the plugin connects to its own address, reads the certificate
-served there and names its pin. To name other pins instead (several
+Jellyfin's base URL (`/jellyfin`), when set, is the engine's prefix:
+federation and media are under `/jellyfin/api/v1/`. Peers learn a prefix
+from the discovery document at the address's root (`/.well-known/msfp`,
+MSFP core section 11), which Jellyfin with a base URL doesn't serve there:
+a reverse proxy has to. Not tested live.
+
+Peers that have this plugin, msfp-dotnet or Overfin accept a certificate
+no public authority issued (self-signed, or from a private authority),
+because this server names its pin, signed, in each `hello`. By default
+the engine connects to its own address, reads the certificate served
+there and names its pin. To name other pins instead (several
 certificates, or a server that can't reach its own address), set them in
 the plugin's page, one per line: the SHA-256 of the certificate's
 SubjectPublicKeyInfo, in base64url without padding. With openssl:
@@ -84,58 +98,62 @@ openssl x509 -in cert.pem -pubkey -noout | openssl pkey -pubin -outform der \
 
 What a peer sees of an offered library: the films, series, seasons and
 episodes that have a TMDB ID (of the film, or of the series), keyed by
-that ID, with their audio and subtitle languages. It never sees files,
-paths, or Jellyfin's item or library IDs; libraries are named by IDs the
-plugin makes. The plugin follows changes by reading the catalog again
-and comparing it with the last reading: 30 seconds after Jellyfin's
-library events settle, and every 10 minutes whatever happens. Removed
-titles are remembered for 30 days, so peers can read only what changed.
+that ID, with their audio and subtitle languages, the picture of their
+best copy (its height, stepped, and its HDR formats), and their IMDb and
+TVDB IDs. It never sees files, paths, or Jellyfin's item or library IDs;
+libraries are named by IDs the engine makes. The plugin tells the engine
+when the titles may have changed: 30 seconds after Jellyfin's library
+events settle, and every 10 minutes whatever happens. The engine reads
+the catalog again then and keeps what changed, so peers can read only
+what changed.
 
-Every address a peer gives (in a code, in a `pair` request) is checked
-each time the plugin connects to it, as MSFP section 3.2 says: the name is
-looked up once, every address of the answer must pass, and the connection
-goes to one that was checked. Loopback (this machine), link-local (a
-cloud's metadata service among them), unspecified, multicast and reserved
-addresses are refused, NAT64 (`64:ff9b::/96`, `64:ff9b:1::/48`) and 6to4
-(`2002::/16`) addresses judged as the IPv4 address they carry; private
-ranges are fine. "Allow peers on this
-machine" in the plugin's page allows loopback, and nothing else. No proxy
-from the environment is used. Reading this server's own certificate is
-checked the same way.
+Every address a peer gives is checked each time the engine connects to
+it, as MSFP core section 3.3 says: loopback, link-local (a cloud's
+metadata service among them), unspecified, multicast and reserved
+addresses are refused; private ranges are fine. "Allow peers on this
+machine" in the plugin's page allows loopback, and nothing else.
+Federation calls are limited as MSFP core section 8.3 suggests (the
+engine's defaults). Behind a reverse proxy, set Jellyfin's known proxies
+(Dashboard, Networking), so that the per-address limit counts the client
+address the proxy forwards.
 
-Federation calls are limited as MSFP section 8.3 asks, with Overfin's
-numbers: 50 a second (bursts of 400) per network address before any
-signature check, 20 a second (bursts of 200) per peer, 200 a second
-(bursts of 2,000) for all peers, and 8 requests at once per peer, 64 in
-all. Past a peer's limit it gets a signed `429` with `retryAfter`, past
-all peers' a signed `503`. Behind a reverse proxy, set Jellyfin's known
-proxies (Dashboard, Networking): the per-address limit then counts the
-client address the proxy forwards, from those proxies only, as MSFP
-section 8.3 says; otherwise every request counts as the proxy's. As a
-caller, the plugin holds its calls to a peer that said to wait, backs off
-after a `429` or `503` without `retryAfter`, and tries a call once more,
-a second later, after an unsigned `404` (a peer that just restarted).
+The engine's records are in the plugin's data folder, `msfp/` (JSON
+files, readable by their owner only, the keys sealed with
+`msfp/sealing.key`), with `wants.json` beside it (the peers this server
+reads only some libraries of).
 
-The server's key is made on first start and kept in the plugin's data
-folder (`server-key.seed`, readable by its owner only); peers are in
-`peers.json` beside it, this server's catalog and change log in
-`catalog.json`, and peers' catalogs in `peer-catalogs/`.
+## Playing
 
-Tests of a live server: `MSFP_LIVE_CODE` (a code the live plugin made)
-and `MSFP_LIVE_TOKEN` (a Jellyfin administrator's access token) make
-`LiveJellyfinTests` pair with it, accept, and end. With `MSFP_LIVE_EXPECT`
-(title keys, comma-separated) it also offers every library and checks that
-the catalog read holds exactly those keys. Without them, that test
-does nothing.
+A peer's viewer plays one of this server's films or episodes from the
+libraries offered to that peer; the engine checks the call, the pairing's
+limits (2 streams and 1 transcode at once by default) and the copy, and
+the plugin serves it:
+
+- **Direct**, the file as it is with byte ranges, when the viewer's
+  device plays its container, video codec, audio, HDR, height and
+  bitrate.
+- **HLS** otherwise, made by Jellyfin itself: the video copied (remux)
+  when the device plays its codec, else transcoded to H.264; the audio
+  copied or AAC. The plugin asks Jellyfin's HLS over loopback with an API
+  key it makes, named "MSFP Federation" in Jellyfin's API keys, as a device
+  of the playback's own, and rewrites the playlists to the subset MSFP
+  allows. Progress keeps Jellyfin's transcode alive; stop ends it.
+- **Subtitles**: the text ones, as WebVTT made by Jellyfin's subtitle
+  encoder. Picture subtitles (PGS) and seek-bar previews aren't served.
+
+Not built yet: a copy of several files (refused as not playable), a
+budget of transcodes for all peers together (each pairing's limit is the
+only one), checking that a remux Jellyfin made didn't re-encode the video,
+Jellyfin's own dashboard showing peers' playbacks, and skip markers
+(intro, credits).
 
 ## Ed25519
 
-MSFP signs with Ed25519. .NET 10 has no Ed25519 of its own (only as half of
-its composite ML-DSA algorithms), so the plugin uses
-[BouncyCastle.Cryptography](https://www.bouncycastle.org/) and ships its DLL
-beside its own. It is fully managed code: no native library such as
-libsodium to match to each platform, so the plugin runs wherever Jellyfin
-runs.
+MSFP signs with Ed25519. .NET 10 has no Ed25519 of its own, so
+msfp-dotnet uses [BouncyCastle.Cryptography](https://www.bouncycastle.org/),
+whose DLL the plugin ships beside its own. It is fully managed code: no
+native library to match to each platform, so the plugin runs wherever
+Jellyfin runs.
 
 ## License
 

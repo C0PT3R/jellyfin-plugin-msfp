@@ -1,5 +1,88 @@
 # Gaps in the MSFP specification
 
+Places where the MSFP specification is unclear, incomplete or wrong, found
+while building this plugin. Each entry names the section, the issue, and
+what the plugin assumed.
+
+Since 2026-11-19 the plugin is a host of msfp-dotnet, the MSFP engine for
+.NET, on [MSFP version 1](https://github.com/msfp-io/msfp-spec/tree/main/spec/v1)
+(msfp-spec `9aa6166`): the protocol is the engine's, and gaps in it are
+msfp-dotnet's and msfp-go's to raise. What is left here is what a host
+inside a media server meets: the first section. The second is the plugin's
+own protocol code on version 0, before the engine, kept as history: every
+entry there is closed.
+
+## Version 1: a host inside Jellyfin
+
+### playback 2.3 and 2.6: what a track's position counts
+
+*Open.*
+
+**Issue.** Track IDs `a<n>` and `s<n>` "are positions, not identifiers",
+from 0 to 999. It isn't said positions of what: among the copy's audio
+tracks (the first audio track `a0`), or among all its streams, as media
+servers number them.
+
+**Assumed.** The plugin uses Jellyfin's stream index, the position among
+all of the file's streams (video, audio, embedded and external
+subtitles), as Overfin does: the first audio track of a file whose video
+is stream 0 is `a1`. Either reading gives a stable position for one copy,
+and a viewer's server only passes back IDs from a former answer; the
+conformance suite accepts it.
+
+### playback 6: a server without a transcode budget
+
+*Open.*
+
+**Issue.** A `transcode` needs "a transcode free for the pairing and in the
+server's budget", the server's transcodes "less those it keeps for its
+own people". Jellyfin has no budget of transcodes: it starts as many as
+are asked. Whether a host without one must make one (an operator setting),
+or may have the pairings' limits as the only bound, isn't said.
+
+**Assumed.** No budget: each pairing's `transcodes` is the only limit. A
+setting for the peers' transcodes together is the plugin's to add.
+
+### playback 6: finding that a remux re-encodes the video
+
+*Open.*
+
+**Issue.** "A remux found to re-encode the video counts as a transcode from
+then on." How the owning server finds out is left to it; a host that asks
+its media server to copy the video can't always tell whether it did.
+
+**Assumed.** The plugin asks Jellyfin to copy the video only when the
+viewer's device plays its codec, HDR, height and bitrate, which is when
+Jellyfin copies (its log names the job a remux, checked live). It doesn't
+check afterwards, so a remux Jellyfin turned into a transcode would count
+as a stream only.
+
+### core 11 and media 1: a prefix the discovery document can't announce
+
+*Open.*
+
+**Issue.** A server under a base path (Jellyfin's base URL, `/jellyfin`)
+has a prefix, and peers learn it from the discovery document at the
+address's root. A Jellyfin with a base URL serves nothing at the root, the
+discovery document included, and a pairing code's address has no path.
+
+**Assumed.** The plugin gives the engine Jellyfin's base URL as its
+prefix, and the operator's reverse proxy serves `/.well-known/msfp` at the
+root. Not tested live.
+
+### music 2: Jellyfin's MusicBrainz IDs
+
+*Not a gap; why the plugin has no music yet.*
+
+Jellyfin keeps the IDs music section 2 keys by (`MusicBrainzArtist`,
+`MusicBrainzReleaseGroup` and `MusicBrainzRecording` among an item's
+provider IDs), when the files are tagged with them. So music would map
+simply. It is left out for now: playing a track needs an audio-only path
+(music section 5) the plugin doesn't have, and no peer here shares or
+plays music to test it with (Overfin has none).
+
+## Version 0: the plugin's own protocol code (history, every entry closed)
+
 Places where [MSFP version 0](https://github.com/msfp-io/msfp-spec/blob/main/spec/v0.md)
 is unclear, incomplete or wrong, found while building this plugin from the
 specification alone. Each entry names the section, the issue, and what the
@@ -18,9 +101,9 @@ live test with Overfin of 2026-11-17: 6.3 and 6.6 (a content coding on
 the answer) and the last section. The corrections of 2026-11-17
 (msfp-spec fdc4d3b) answered all of those; their status lines say how.
 
-## Section 2: Encodings
+### Section 2: Encodings
 
-### 2.1 Strict or lenient base64url decoding
+#### 2.1 Strict or lenient base64url decoding
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by section 2.1 (a receiver refuses any other text); the plugin follows it.*
 
@@ -36,7 +119,7 @@ modulo 4. A value then has exactly one text, so the nonce memory, which
 keys on the nonce *text*, can't be fooled by two spellings of one nonce.
 A canonical sender (which every sender must be) is never refused.
 
-### 2.2 Duplicate and differently cased JSON fields
+#### 2.2 Duplicate and differently cased JSON fields
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by section 2.1 (I-JSON, exact member names; a name in another case is an unknown member); the plugin follows it.*
 
@@ -51,9 +134,9 @@ twice is refused like invalid JSON (a `404`). A request two
 implementations would read differently is then refused by at least one
 of them.
 
-## Section 4: Identity and keys
+### Section 4: Identity and keys
 
-### 4.1 Which Ed25519 verification rules
+#### 4.1 Which Ed25519 verification rules
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by section 2.1 (keys and R in the prime-order subgroup, not of small order; S below L). The plugin now makes these checks itself, on top of BouncyCastle's verification; the plugin follows it.*
 
@@ -76,9 +159,9 @@ should name one rule set (for example "as Go's `crypto/ed25519`", or
 RFC 8032 section 5.1.7 with the cofactorless equation), or say that edge
 cases are out of scope.
 
-## Section 5: The pairing code
+### Section 5: The pairing code
 
-### 5.1 Which white space a reader removes
+#### 5.1 Which white space a reader removes
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by section 5.1 (the Unicode `White_Space` property); the plugin follows it.*
 
@@ -89,7 +172,7 @@ too (no-break space, which mail programs like to insert, line separator…).
 **Assumed.** Unicode white space, as .NET's `char.IsWhiteSpace` defines it.
 A code is ASCII, so removing more can't change a valid code.
 
-### 5.1 The 1,168-character limit doesn't match base64url
+#### 5.1 The 1,168-character limit doesn't match base64url
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by section 5.1 (779 characters, 584 bytes); the plugin follows it.*
 
@@ -102,7 +185,7 @@ looks like a slip; 779 would be the exact bound.
 
 **Assumed.** 1,168, as written. The 512-byte check does the rest.
 
-### 5.1 The address bytes' encoding, and expiry values over 2^63
+#### 5.1 The address bytes' encoding, and expiry values over 2^63
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by section 5.1 (ASCII only; an expiry above 2^53 − 1 refused); the plugin follows it.*
 
@@ -114,7 +197,7 @@ don't fit a signed Unix time.
 **Assumed.** A byte at or above 0x80 makes the code invalid. An expiry
 over 2^63 − 1 counts as expired.
 
-### 5.2 Address rules that the host pattern leaves open
+#### 5.2 Address rules that the host pattern leaves open
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by section 5.2's grammar (no trailing `/` either, one text form for IPv4 and IPv6); the plugin follows it.*
 
@@ -146,9 +229,9 @@ address; any `?`, `#` or `@`. It accepts a trailing slash and keeps the
 address as given, but removes a trailing slash from its own configured
 address before using it. It doesn't limit label lengths.
 
-## Section 6: Signing requests and answers
+### Section 6: Signing requests and answers
 
-### 6.4 step 2: what "a decimal integer" allows
+#### 6.4 step 2: what "a decimal integer" allows
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by section 2.1 (`0` or `[1-9][0-9]*`, at most 2^53 − 1; the date positive); the plugin follows it.*
 
@@ -164,7 +247,7 @@ itself), at most 18 digits. That is exactly what a sender writes for a
 Unix time ("decimal ASCII", section 2), so no honest request is refused.
 The specification should give the grammar, for example `0|[1-9][0-9]*`.
 
-### 6.4 and 6.5: a forgotten key on pair while a code is live
+#### 6.4 and 6.5: a forgotten key on pair while a code is live
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 3 (sections 6.5 and 7.1); the plugin follows it.*
 
@@ -180,7 +263,7 @@ ended. On success the key is taken off the forgotten list. On every other
 call, and on `pair` without a live code, a forgotten key gets the signed
 `404`.
 
-### 6.5: when a nonce's 10 minutes start
+#### 6.5: when a nonce's 10 minutes start
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 2 (from acceptance); the plugin follows it.*
 
@@ -192,7 +275,7 @@ accepted. Either works, but not obviously.
 before its date passes out of the window on the other side, so 10 minutes
 from acceptance always outlasts it.
 
-### 6.2: the target the receiver rebuilds
+#### 6.2: the target the receiver rebuilds
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 1 (the target as received; a query refused). Live, the plugin accepted a signed query until 2f03163; the plugin follows it.*
 
@@ -209,7 +292,7 @@ have no query").
 it reached Jellyfin (path and query, percent-encoding as sent). A request
 signed over another spelling of the path fails step 7.
 
-### 6.3 and 6.6: a content coding on the answer
+#### 6.3 and 6.6: a content coding on the answer
 
 *Status at msfp-spec fdc4d3b (the corrections of 2026-11-17): closed by section 3 (no content codings; a coded answer counts as badly signed, a coded request is never decoded). The plugin sends answers uncoded, asks for none, refuses a coded answer, and refuses a coded request with the unsigned 404.*
 
@@ -229,9 +312,9 @@ removes `Accept-Encoding` before Jellyfin's compression sees it), and
 sends no `Accept-Encoding` itself, so the bytes on the wire are the bytes
 signed.
 
-## Section 3: Transport
+### Section 3: Transport
 
-### 3: status codes for a missing Content-Type and for browsers
+#### 3: status codes for a missing Content-Type and for browsers
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 5 (the unsigned 404; Overfin's 415 and 403 are a version 0 note); the plugin follows it.*
 
@@ -246,7 +329,7 @@ avoid. Also unsaid: whether `application/json; charset=utf-8` counts.
 **Assumed.** Both get the unsigned `404` of a failed check. The media type
 is compared without its parameters, so a charset is fine.
 
-### 3 and 14: "the same 404 as a path that doesn't exist" can't hold on Jellyfin
+#### 3 and 14: "the same 404 as a path that doesn't exist" can't hold on Jellyfin
 
 *Status: closed by the corrections of 2026-11-16 (clarification 6): the
 unsigned body is the host's own 404 where it can send it.*
@@ -263,7 +346,7 @@ every other path under `/api/v1/federation/`, gets the same, not the
 `Content-Type`, a cross-site `Sec-Fetch-Site`, `GET` on `hello` and a
 path that doesn't exist all get the same answer.
 
-### 3: a signature header sent twice
+#### 3: a signature header sent twice
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by section 2.1 (each header exactly once, no comma); the plugin follows it.*
 
@@ -272,9 +355,9 @@ headers twice (or a comma-joined value).
 
 **Assumed.** Refused: each header must appear exactly once.
 
-## Section 7: Pairing, step by step
+### Section 7: Pairing, step by step
 
-### 7.1 step 2: a code from a peer that is "gone"
+#### 7.1 step 2: a code from a peer that is "gone"
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 8 (remove the gone peer first; that is an ending); the plugin follows it.*
 
@@ -291,7 +374,7 @@ redeeming; removing a peer in any state is an ending (7.4). Redeeming a
 code, and a successful `pair` on the maker's side, take the key off the
 forgotten list.
 
-### 7.4: the forgotten list has no end
+#### 7.4: the forgotten list has no end
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 9 (entries may go after a year; the plugin keeps them, which is allowed); the plugin follows it.*
 
@@ -302,7 +385,7 @@ list only grows.
 **Assumed.** Kept forever, like the specification implies. Each entry is
 32 bytes, so this is about tidiness, not size.
 
-### 7.4 step 3: what the receiver of `ended` keeps
+#### 7.4 step 3: what the receiver of `ended` keeps
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 10 (it deletes the ender in every state and doesn't record it as forgotten). The plugin now also drops the ender's catalog at once; the plugin follows it.*
 
@@ -314,7 +397,7 @@ state `ours` or `theirs` (a refused waiting pairing) deletes it too.
 
 **Assumed.** Deletes only, in every state.
 
-### 7.2: what "last heard from" counts
+#### 7.2: what "last heard from" counts
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 11; the plugin follows it.*
 
@@ -325,9 +408,9 @@ our own calls counts.
 **Assumed.** It does: a `hello` received, a successful `pair`, and any
 answer to our own `pair` or `hello` whose signature verified.
 
-## Section 9: The calls
+### Section 9: The calls
 
-### 9.1: "the `address` field's bytes, exactly as sent"
+#### 9.1: "the `address` field's bytes, exactly as sent"
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by section 9.1 (the value after JSON decoding, as UTF-8); the plugin follows it.*
 
@@ -340,7 +423,7 @@ decoded string. They differ whenever the sender escapes a character.
 what gets stored and compared. A sender that never escapes inside the
 address (no valid address needs it) can't tell the difference.
 
-### 9.1: the order of the 404 and 409 checks, and the code after a 409
+#### 9.1: the order of the 404 and 409 checks, and the code after a 409
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 12; the plugin follows it.*
 
@@ -353,7 +436,7 @@ the code?
 code or proof that doesn't check out, and `409` only with a valid code
 and proof. A `409` leaves the code live.
 
-### 9.1: cleaning names
+#### 9.1: cleaning names
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 13 (white space first, then Cc and Cf); the plugin follows it.*
 
@@ -373,7 +456,7 @@ then other Cc and Cf removed; both ends trimmed; cut to 80 code points
 without leaving a trailing space; the fallback is the host with its port,
 as in the request message (`192.0.2.10:8096`).
 
-### 9.2: a hello without a `state`
+#### 9.2: a hello without a `state`
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 15; the plugin follows it.*
 
@@ -385,9 +468,9 @@ Is `{}`, or `{"state":1}`, refused or answered like `waiting`?
 **Assumed.** Refused: a signed `404`, as for a body that isn't JSON. An
 unknown string value is answered like `waiting`, as written.
 
-## Section 3.1: HTTPS certificates (new at 9b15c83)
+### Section 3.1: HTTPS certificates (new at 9b15c83)
 
-### 3.1: one pin read, several certificates served
+#### 3.1: one pin read, several certificates served
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 24; the plugin follows it.*
 
@@ -402,7 +485,7 @@ get another are refused on every call but `pair` and `hello`.
 several certificates sets them all in the plugin's configuration (the
 "certificate pins" field), which replaces the reading.
 
-### 3.1: what to send as SNI when reading one's own certificate
+#### 3.1: what to send as SNI when reading one's own certificate
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 25; the plugin follows it.*
 
@@ -413,7 +496,7 @@ name that means SNI with that name; for an IP address there is no SNI
 **Assumed.** SNI with the host name; none for an IP address, as a peer's
 TLS client would do.
 
-### 3.1: a failed reading of one's own certificate
+#### 3.1: a failed reading of one's own certificate
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 26; the plugin follows it.*
 
@@ -427,7 +510,7 @@ never one); the next attempt comes a minute later. The answer waits for
 the reading, which has 10 seconds. An operator whose server can't reach
 itself sets the pins by hand.
 
-### 3.1 and 9.2: a `certificates` field that isn't a list
+#### 3.1 and 9.2: a `certificates` field that isn't a list
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 27; the plugin follows it.*
 
@@ -440,7 +523,7 @@ a field that is not an array at all (`"certificates":"…"`).
 answer: taken as no pins (the field can't be ignored without keeping
 older pins than the latest hello's). The specification should pick one.
 
-### 3.1: which 8, and duplicates
+#### 3.1: which 8, and duplicates
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 28; the plugin follows it.*
 
@@ -449,7 +532,7 @@ ones? Does a duplicate count?
 
 **Assumed.** The first 8 valid entries, each pin once, in the order sent.
 
-### 3.1: "the latest signed hello", when two cross
+#### 3.1: "the latest signed hello", when two cross
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 29 (latest by arrival); the plugin follows it.*
 
@@ -464,7 +547,7 @@ before it.
 window is refused anyway, so stale pins last at most until the next
 hello. The specification could say "by arrival" outright.
 
-### 3.1: when pins "differ"
+#### 3.1: when pins "differ"
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 30 (compared as sets; the plugin compared lists until this round); the plugin follows it.*
 
@@ -475,7 +558,7 @@ a set?
 **Assumed.** As a list: a reordering causes one retry that fails like
 the first. Harmless either way.
 
-### 3.1: connections opened under pins that were since removed
+#### 3.1: connections opened under pins that were since removed
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 31; the plugin follows it.*
 
@@ -488,7 +571,7 @@ was accepted for a pin the peer has since removed. The text says what
 current pins only: when its pins change, the plugin drops the old
 connections.
 
-### 3.1: a signed `404` to `hello` and pins
+#### 3.1: a signed `404` to `hello` and pins
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 32; the plugin follows it.*
 
@@ -498,9 +581,9 @@ kept for a peer marked `gone`?
 
 **Assumed.** Kept. A `gone` peer gets no calls but `hello` anyway.
 
-## Section 10: Fetching the media (new at 9b15c83)
+### Section 10: Fetching the media (new at 9b15c83)
 
-### 10: one hello per refused media fetch
+#### 10: one hello per refused media fetch
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 33 (one such `hello` to a peer at a time, its result shared); the plugin follows it.*
 
@@ -512,9 +595,9 @@ unnamed certificate would then get one hello per segment.
 **Plan.** When media is built: at most one hello per peer at a time, and
 fetches waiting on it share its result.
 
-## Section 9.5: play (new at 9b15c83, not built)
+### Section 9.5: play (new at 9b15c83, not built)
 
-### 9.5: `not-playable` and `stream-limit-reached`
+#### 9.5: `not-playable` and `stream-limit-reached`
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 7 and section 8.2 (the `type` tells them apart); `play` isn't built; the plugin follows it.*
 
@@ -525,9 +608,9 @@ plugin builds no `play` yet. No gap found in the new text, except that
 "a body without one" (no `type`) also covers a body that isn't JSON,
 which a reader should not try to parse further.
 
-## Section 14: Security considerations (new at 9b15c83)
+### Section 14: Security considerations (new at 9b15c83)
 
-### 14: reading one's own certificate trusts the path to oneself
+#### 14: reading one's own certificate trusts the path to oneself
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by section 14 (operator pins avoid it) and clarification 34 (split-horizon names); the plugin follows it.*
 
@@ -543,9 +626,9 @@ fail with no clear reason.
 names, so an operator can compare them with what peers see, and set the
 right ones by hand.
 
-## Section 9.3: libraries (new in the libraries and titles round)
+### Section 9.3: libraries (new in the libraries and titles round)
 
-### 9.3 and 12: library IDs are the media server's item IDs
+#### 9.3 and 12: library IDs are the media server's item IDs
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by proposal 2 (opaque IDs chosen by the owning server, 1 to 64 characters of `A–Z a–z 0–9 _ -`). The plugin's IDs already were a keyed MAC; as a reader it now skips IDs outside that form; the plugin follows it.*
 
@@ -561,7 +644,7 @@ kept in the plugin's data folder, cut to 12 bytes, in base64url
 across readings and restarts, and it can't be linked to anything in
 Jellyfin.
 
-### 9.3: "names are made plain text"
+#### 9.3: "names are made plain text"
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 14; the plugin follows it.*
 
@@ -573,7 +656,7 @@ bidirectional overrides…
 collapsed, Cc and Cf removed, cut to 80 code points, `?` when empty. Nothing
 else, since the text is shown as text and never as markup.
 
-### 9.3: duplicate IDs, the `mixed` kind, and a bad body
+#### 9.3: duplicate IDs, the `mixed` kind, and a bad body
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 17; the plugin follows it.*
 
@@ -589,9 +672,9 @@ else, since the text is shown as text and never as markup.
 without a collection type, and `""` for types outside the list (for
 example playlists). (3) A signed `404`, as `titles` does for a bad body.
 
-## Section 9.4: titles (new in the libraries and titles round)
+### Section 9.4: titles (new in the libraries and titles round)
 
-### 9.4: a changes reading after the caller's wants changed
+#### 9.4: a changes reading after the caller's wants changed
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 18; the plugin follows it.*
 
@@ -607,7 +690,7 @@ one changes", but the text doesn't say that reading must be a whole one.
 asks for exactly the libraries of its last reading; otherwise it reads the
 whole list. The specification should make that a rule for callers.
 
-### 9.4: which library a title names, when several hold it
+#### 9.4: which library a title names, when several hold it
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by section 9.4 (the requested library whose ID comes first in byte order); the plugin follows it.*
 
@@ -621,7 +704,7 @@ as changed, with the library that holds it now, never as `gone` while
 another requested library holds it. Its languages are those of all its
 copies in the requested libraries.
 
-### 9.4: does `gone` count toward the 5,000?
+#### 9.4: does `gone` count toward the 5,000?
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 19; the plugin follows it.*
 
@@ -632,7 +715,7 @@ also hold any number of `gone` keys?
 one byte order. `next` is the last key of the page when more changes
 follow.
 
-### 9.4: what a bad `since` is
+#### 9.4: what a bad `since` is
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 20 (and section 2.1's one form for integers); the plugin follows it.*
 
@@ -643,7 +726,7 @@ said: a negative value, a fraction, a string, a value over int64.
 invalid (signed `404`, like the other bad bodies of 9.4). A negative value
 is answered with the whole list, like 0.
 
-### 9.4: language tags: their form, "each once", and what "skipped" skips
+#### 9.4: language tags: their form, "each once", and what "skipped" skips
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 21; the plugin follows it.*
 
@@ -661,7 +744,7 @@ is answered with the whole list, like 0.
 `mul`, `zxx` and the like. (2) Case-insensitive: one tag. (3) The tag
 only; the title is kept.
 
-### 9.4: languages of series and seasons
+#### 9.4: languages of series and seasons
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 22. As a reader, the plugin now drops languages a peer sends for a series or a season; the plugin follows it.*
 
@@ -671,9 +754,9 @@ languages?
 
 **Assumed.** No: series and seasons carry no tags; films and episodes do.
 
-## Section 11: How titles are identified (new in the libraries and titles round)
+### Section 11: How titles are identified (new in the libraries and titles round)
 
-### 11: a file holding several episodes
+#### 11: a file holding several episodes
 
 *Status on 2026-11-17: closed by proposal 5 (v1 catalog 4.3: one key per episode, each with `with`; v1 playback 2.2: `play` of any of them plays the file). What was left, the second episode's key when Jellyfin keeps one TMDB episode ID per item, is the plugin's to do, decided by the owner: the plugin looks up the missing episode IDs in TMDB (the season's details), and leaves the episode out when TMDB can't be reached. The spec stays: the `s<n>/e<m>` form is only for episodes TMDB doesn't list. Not built yet.*
 
@@ -687,7 +770,7 @@ episode in the range, all pointing to the same copy. An episode keyed by a
 TMDB episode ID gets that one key only: Jellyfin keeps one TMDB ID per
 item. To settle when `play` is built.
 
-### 11: episode 0, and which order is "the owning server's order"
+#### 11: episode 0, and which order is "the owning server's order"
 
 *Status on 2026-11-17: closed by proposal 5. (1) `e0` is valid (v1 catalog 4). (2) Keys use TMDB's own numbering of the series, whatever order a server shows (v1 catalog 4.1): the numbers Jellyfin stores are right when they are TMDB's aired order; an episode numbered another way is mapped to TMDB's numbers or left out.*
 
@@ -703,7 +786,7 @@ item. To settle when `play` is built.
 items (`ParentIndexNumber`, `IndexNumber`), whatever display order is
 picked.
 
-### 11: TMDB season IDs aren't used
+#### 11: TMDB season IDs aren't used
 
 *Status at 4adb10b (the corrections of 2026-11-16): closed by clarification 23; the plugin follows it.*
 
@@ -712,7 +795,7 @@ of TMDB series 1399 carried its own TMDB ID). MSFP keys seasons by the
 series' ID and the season's number only. The plugin does so and ignores
 the season ID.
 
-### 11 and 9.4: items without a TMDB ID
+#### 11 and 9.4: items without a TMDB ID
 
 *Status: not a gap: the specification says it.*
 
@@ -721,9 +804,9 @@ keeps only titles "identified by TMDB". So the plugin leaves out films and
 series without a TMDB ID, and the seasons and episodes of series without
 one. This was checked live: a film whose NFO had no TMDB ID was not sent.
 
-## Section 12: What the owning server enforces (new in the libraries and titles round)
+### Section 12: What the owning server enforces (new in the libraries and titles round)
 
-### 12: limits before play exists
+#### 12: limits before play exists
 
 *Status: a note, not a gap; it closes when the plugin builds `play`.*
 
@@ -732,9 +815,9 @@ it sends no `limits` rather than announce caps it doesn't enforce. When
 `play` comes, the defaults of section 12 (2 streams, 1 transcode, no
 bitrate cap) will be sent and enforced.
 
-## Section 9.5: previews (new in the libraries and titles round)
+### Section 9.5: previews (new in the libraries and titles round)
 
-### 9.5: no way to share seek-bar previews
+#### 9.5: no way to share seek-bar previews
 
 *Status on 2026-11-17: closed by v1: the `play` answer carries `trickplay` (v1 playback 2.4), and the sheets are fetched under the ticket and re-encoded by the viewer's server (v1 media 3). Not covered: previews without a playback (a call keyed by title), an idea for later.*
 
@@ -752,9 +835,9 @@ size, interval and count, and tile URLs under `/api/v1/stream/<ticket>/`,
 checked like subtitle URLs. Or a separate signed call keyed by title, so
 previews don't need a playback. Until then the plugin makes none.
 
-## Found in the live test with Overfin (2026-11-17, spec at 4adb10b)
+### Found in the live test with Overfin (2026-11-17, spec at 4adb10b)
 
-### 9.3 and 9.4: a member of the wrong JSON type in an answer
+#### 9.3 and 9.4: a member of the wrong JSON type in an answer
 
 *Status at msfp-spec fdc4d3b (the corrections of 2026-11-17): closed by the section 9 introduction, 9.3 and 9.4: entries inside lists are skipped (or a member counts as absent), a top-level member of the wrong type fails the answer, `limits` excepted. The plugin now fails the answer for a wrong-typed `libraries`, top-level `name`, `titles`, `gone`, `next`, `changes` or `seq`; what it assumed before (absent) is gone.*
 
@@ -770,7 +853,7 @@ an entry that isn't an object is skipped; a bad tag is skipped, not the
 title. Only a body that isn't an I-JSON object, or a `seq` that isn't an
 integer in its one form, fails the answer.
 
-### 9.4: `libraries` in a titles request
+#### 9.4: `libraries` in a titles request
 
 *Status at msfp-spec fdc4d3b (the corrections of 2026-11-17): closed by section 9.4's refusals, which now name it. The plugin already refused it.*
 
@@ -781,7 +864,7 @@ refusals doesn't name it. Live, Overfin answers `{}` and
 
 **Assumed.** Refused, with the signed `404` of 9.4's other bad bodies.
 
-### 3.1: a renewal right after a hello
+#### 3.1: a renewal right after a hello
 
 *Status at msfp-spec fdc4d3b (the corrections of 2026-11-17): closed by section 3.1 (a hello's answer names the certificate served when it answers). The plugin now reads its own certificate again for each hello it answers when its last reading is 2 seconds old or more; a failed reading still waits a minute.*
 
@@ -795,7 +878,7 @@ call. Seen live with Overfin as the renewed side.
 retry). As the renewed side, it reads its own certificate as the section
 says.
 
-### 8.3: the limit per network address behind a reverse proxy
+#### 8.3: the limit per network address behind a reverse proxy
 
 *Status at msfp-spec fdc4d3b (the corrections of 2026-11-17): closed by section 8.3's implementation note. The plugin counts by the address Jellyfin gives the request. Checked live with Jellyfin 12.2: with `KnownProxies` set, a request from a known proxy counts as the rightmost `X-Forwarded-For` address (not a spoofed one further left), and a request from any other source as its own address, whatever it forwards; IPv6 counts by its `/64`.*
 

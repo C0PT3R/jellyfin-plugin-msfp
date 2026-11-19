@@ -1,7 +1,8 @@
 # Design notes: showing peer titles in Jellyfin
 
 Notes only. Nothing here is built. The plugin reads paired peers' catalogs
-(`libraries` and `titles`) and keeps them in its own storage. How
+(`libraries` and `titles`), and the engine (msfp-dotnet) keeps them in the
+plugin's storage. How
 Jellyfin's users would then see and play those titles is still an open
 question. These notes list the options, with what was checked against
 Jellyfin 12.2.
@@ -9,8 +10,9 @@ Jellyfin 12.2.
 ## What every option has to deal with
 
 - **A peer's catalog carries keys, not metadata.** A title is
-  `movie/tmdb/949` plus a kind, a library and language tags: no name, no
-  overview, no artwork. The names and pictures have to come from TMDB,
+  `movie/tmdb/949` plus a kind, a library, language tags, its best copy's
+  height and HDR, and IMDb and TVDB IDs: no name, no overview, no
+  artwork. The names and pictures have to come from TMDB,
   which Jellyfin's own TMDb provider already knows how to do from a TMDB
   ID.
 - **Playing is a call, not a file.** MSFP `play` starts a playback on the
@@ -20,9 +22,10 @@ Jellyfin 12.2.
   Anything that reads the media without calling `play` can't work. Anything
   that calls `play` for something other than a person watching uses up the
   peer's limits.
-- **Previews.** MSFP version 0 drops `trickplay` from play answers
-  (section 9.5), and media isn't signed. Seek-bar previews made on the
-  viewer's side would need the whole video read. See the last section.
+- **Previews.** MSFP version 1 has preview sheets (video sections 5.5
+  and 7): the engine relays a peer's, re-encoded, but only with an
+  `ISheetEncoder` (.NET has no JPEG codec), which the plugin doesn't give
+  yet. See the last section.
 
 ## Option 1: `.strm` and `.nfo` stand-ins in a normal library
 
@@ -128,8 +131,8 @@ Trade-offs:
 
 A separate process mounts a file system in which each peer title is a
 real-looking file (`Film (2000).mkv`). Each read becomes an HTTP range
-request on the owning server's stream (MSFP's `file` protocol, section
-10). Jellyfin sees ordinary files in an ordinary library. The owner
+request on the owning server's stream (MSFP's `file` protocol, media
+section 1). Jellyfin sees ordinary files in an ordinary library. The owner
 accepts Linux only.
 
 Trade-offs:
@@ -163,7 +166,7 @@ Trade-offs:
   - **Latency.** Every seek is a range request across the internet, and
     kernel read-ahead and page-cache sizes interact badly with that.
 
-## Previews from the owning server (a possible protocol addition)
+## Previews from the owning server
 
 Jellyfin.Controller 12.2's public `ITrickplayManager` has
 `GetTrickplayDirectory(item, tileWidth, tileHeight, width, saveWithMedia)`,
@@ -173,9 +176,12 @@ which makes tiles with ffmpeg. From that surface it looks possible for a
 plugin to write tiles it got from elsewhere into the item's trickplay
 directory and register them with `SaveTrickplayInfo`. That would give a
 stand-in item seek-bar previews without reading its video. It wasn't
-tried. MSFP version 0 has no way to send tiles: `play` answers drop
-`trickplay` (section 9.5), and `/api/v1/stream/` serves only the stream
-and subtitles. See SPEC-GAPS.md, section 9.5.
+tried. MSFP version 1 sends them: a `play` answer may carry `trickplay`,
+and its sheets are fetched under the playback's ticket (video sections 5.5
+and 6.2); the engine relays them re-encoded through an `ISheetEncoder`,
+which the plugin would have to give (SkiaSharp, which Jellyfin ships, is
+one way; not tried). As the owning server, the plugin doesn't send
+Jellyfin's own trickplay yet.
 
 ## Leaning, not a decision
 
