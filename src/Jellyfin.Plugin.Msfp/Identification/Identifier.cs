@@ -33,10 +33,10 @@ internal sealed record EpisodeFile(int Season, int Episode, string Imdb, string 
 public sealed class Identifier : BackgroundService
 {
     /// <summary>
-    /// The plugin's own TMDB key, used when the owner sets none. Empty until
-    /// one is registered for the plugin.
+    /// The plugin's own TMDB key (a read access token), used when the owner
+    /// sets none, as Jellyfin ships its own.
     /// </summary>
-    internal const string BuiltInTmdbKey = "";
+    internal const string BuiltInTmdbKey = "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiIyOGQ5MzFmOGMzMmY4YWUyNzNjYzRjNTQ4ZjM1ZTIxOCIsIm5iZiI6MTc4ODc0NDUzMi4zMjQsInN1YiI6IjZhOWUxMzU0M2FhNzQ3NzgzMDVhZmRkZCIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.yl0eJ2BGWB5_uMOvIVBZXDunulV9Y9oRKh684wYE8TQ";
 
     private static readonly TimeSpan Every = TimeSpan.FromHours(6);
     private static readonly TimeSpan Settle = TimeSpan.FromMinutes(1);
