@@ -26,11 +26,9 @@ offered, and which of the peer's are read (by default all, those it adds
 later too). Paired peers' catalogs are read every 30 minutes and kept in
 the plugin's storage, where the plugin's page shows them.
 
-Not built: how peers' titles appear to this server's own users. Nothing
-is added to Jellyfin's own library yet; the way chosen (stand-ins in the
-plugin's own channel, opened at play time) is planned, see
-[DESIGN-NOTES.md](DESIGN-NOTES.md). Music isn't shared (the parts spoken are catalog,
-playback, media and video).
+Peers' titles in this server's Jellyfin (since 2026-11-19, not playable
+yet): see "Paired servers' titles" below. Music isn't shared (the parts
+spoken are catalog, playback, media and video).
 
 Tested on 2026-11-19 in a Jellyfin 12.2 container: msfp-spec's
 conformance suite, 0 failed, preview sheets passing since they are served,
@@ -157,6 +155,46 @@ transcodes in use now.
 Not built yet: a copy of several files (refused as not playable), checking that a remux Jellyfin made didn't re-encode the video,
 Jellyfin's own dashboard showing peers' playbacks, and skip markers
 (intro, credits).
+
+## Paired servers' titles
+
+The plugin makes two libraries, "Films from paired servers" and "Series
+from paired servers" (named in the server's language; a name changed by
+the owner stays), over folders in its data folder that hold only a
+README. In them, a stand-in for each film and episode read of a paired
+server:
+
+- **No file.** Its path is `msfp://paired/` and its MSFP key
+  (`msfp://paired/movie/tmdb/949`, `.../series/tmdb/1920/e127683`), so
+  the same title always comes back as the same Jellyfin item, with its
+  watched state. It belongs to the plugin's empty channel "Paired
+  servers": Jellyfin takes a channel's items for remote ones, which
+  clients offer to play (an item with no file would be virtual, with no
+  Play button). The channel shows as a tile in My Media.
+- **Metadata from Jellyfin's TMDb provider**, from the TMDB ID in the
+  key: a film's, a series' (episodes are placed by the `place` the
+  catalog gives, TMDB's numbering, never the peer's).
+- **Streams from the catalog:** the best picture's height and every
+  audio and subtitle language of the copies, saved as the item's streams
+  at each pass. Codecs aren't known before play.
+- **One source of its own,** saved where Jellyfin keeps a channel item's
+  (`channelmediasourceinfos.json`), which must be opened: opening it will
+  be MSFP `play`, closing it `stop`. Not built yet: opening fails.
+
+One stand-in per title, whatever the number of peers holding it. None
+for a film this server holds itself, nor for an episode of a series it
+holds (by TMDB's episode ID where the plugin's identification mapped it,
+by its numbers otherwise): a series held in part shows in both places.
+A stand-in goes when no paired server lists the title any more (the
+pairing ended, the library stopped being read, the title gone), when
+this server gets the title itself, or after 7 days without hearing from
+its servers (back at their next reading). Federation off empties both
+libraries, which stay. A library its owner removes isn't made again
+until the page's "Make the libraries again".
+
+Kept in step 30 seconds after a reading of a peer's catalog, the end of a
+pairing, or a change to this server's films and series settles, and every
+hour. The two libraries are never offered to peers.
 
 ## Ed25519
 

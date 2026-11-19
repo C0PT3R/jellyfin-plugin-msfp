@@ -2,6 +2,7 @@ using Jellyfin.Plugin.Msfp.Catalog;
 using Jellyfin.Plugin.Msfp.Federation;
 using Jellyfin.Plugin.Msfp.Identification;
 using Jellyfin.Plugin.Msfp.Playback;
+using Jellyfin.Plugin.Msfp.Viewing;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Plugins;
@@ -29,5 +30,11 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<WantsKeeper>());
         serviceCollection.AddHostedService<CatalogWatcher>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<Identifier>());
+        // The paired servers' titles: their channel (registered here, as
+        // Jellyfin finds a plugin's channels among its services), and the
+        // stand-ins' keeper.
+        serviceCollection.AddSingleton<MediaBrowser.Controller.Channels.IChannel, PairedChannel>();
+        serviceCollection.AddSingleton<StandIns>();
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<StandIns>());
     }
 }

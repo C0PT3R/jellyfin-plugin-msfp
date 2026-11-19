@@ -58,6 +58,9 @@ public sealed class EngineHost : IHostedService, IDisposable
     /// <summary>Why federation is off, for the operator; empty while it is on.</summary>
     public string Problem { get; private set; } = string.Empty;
 
+    /// <summary>The engine's events, as they happen (a reading of a peer's catalog ended, a pairing ended, ...).</summary>
+    public event Action<MsfpEvent>? Events;
+
     /// <summary>The prefix the routes are under: Jellyfin's base URL, "" without one.</summary>
     public string Prefix { get; private set; } = string.Empty;
 
@@ -177,7 +180,7 @@ public sealed class EngineHost : IHostedService, IDisposable
             Discovery = config.Discovery,
             Pins = pins.Count > 0 ? pins : null,
             AllowLoopback = config.AllowLoopback,
-            Notifier = new LogNotifier(_loggers.CreateLogger("Jellyfin.Plugin.Msfp.Events")),
+            Notifier = new LogNotifier(_loggers.CreateLogger("Jellyfin.Plugin.Msfp.Events"), e => Events?.Invoke(e)),
             Logger = _loggers.CreateLogger("Jellyfin.Plugin.Msfp.Engine"),
             Parts = Parts,
             Catalog = _catalog,
@@ -239,9 +242,20 @@ public sealed class EngineHost : IHostedService, IDisposable
         _ => e.Message,
     };
 
-    /// <summary>The engine's events, in Jellyfin's log.</summary>
-    private sealed class LogNotifier(ILogger log) : INotifier
+    /// <summary>The engine's events, in Jellyfin's log, then to the plugin's parts that follow them.</summary>
+    private sealed class LogNotifier(ILogger log, Action<MsfpEvent> then) : INotifier
     {
-        public void Notify(MsfpEvent e) => log.LogInformation("MSFP: {Event}", e.ToString());
+        public void Notify(MsfpEvent e)
+        {
+            log.LogInformation("MSFP: {Event}", e.ToString());
+            try
+            {
+                then(e);
+            }
+            catch (Exception ex)
+            {
+                log.LogError(ex, "MSFP: an event's follower failed");
+            }
+        }
     }
 }

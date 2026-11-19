@@ -24,9 +24,13 @@ with Overfin and with other servers that speak MSFP.
   at once on your server, your own users and paired servers together. Your
   own users are never refused.
 
-**Not yet:** your own users can't see or play the other servers' titles
-from Jellyfin. Those titles are listed on the plugin's page, but they
-don't appear in your libraries yet. That is the next big step.
+- **See the other servers' titles** in two libraries the plugin makes,
+  "Films from paired servers" and "Series from paired servers", with
+  their names, pictures and summaries. A title you have yourself isn't
+  repeated there.
+
+**Not yet:** your users can't play the other servers' titles. That is the
+next step.
 
 Music isn't shared.
 

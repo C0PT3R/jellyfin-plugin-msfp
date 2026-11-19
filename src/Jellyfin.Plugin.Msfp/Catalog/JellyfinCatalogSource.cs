@@ -42,7 +42,8 @@ public sealed class JellyfinCatalogSource : ICatalogSource
     public IReadOnlyList<Library> Libraries()
     {
         return _library.GetVirtualFolders()
-            .Where(f => Guid.TryParse(f.ItemId, out _))
+            // The plugin's own two hold other servers' titles: never offered.
+            .Where(f => Guid.TryParse(f.ItemId, out _) && !Viewing.StandIns.IsOurs(f))
             .Select(f => new Library { Id = Guid.Parse(f.ItemId).ToString("N"), Name = f.Name ?? string.Empty, Kind = Kind(f.CollectionType?.ToString()) })
             .ToList();
     }
@@ -79,7 +80,7 @@ public sealed class JellyfinCatalogSource : ICatalogSource
                 IsVirtualItem = false,
                 AncestorIds = [Guid.ParseExact(lib.Id, "N")],
             });
-            foreach (var item in items)
+            foreach (var item in items.Where(i => !Viewing.PairedSources.IsStandIn(i)))
             {
                 foreach (var entry in Of(item, lib.Id, identities.Of(item.Id), SeriesOf))
                 {

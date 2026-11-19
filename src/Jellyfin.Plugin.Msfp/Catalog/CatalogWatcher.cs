@@ -74,6 +74,12 @@ public sealed class CatalogWatcher : IHostedService, IDisposable
 
     private void Changed(object? sender, ItemChangeEventArgs e)
     {
+        // The paired servers' titles aren't this server's.
+        if (Viewing.PairedSources.IsStandIn(e.Item))
+        {
+            return;
+        }
+
         // Files changed: identified again where needed, then read.
         _identifier.Poke();
         Soon();

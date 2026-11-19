@@ -190,3 +190,24 @@ source from `play`) looks like the best fit: library integration, TMDB
 metadata for free, `play` called only at playback. Option 2 is the
 simplest to get right, and the furthest from how users browse. Option 3
 fights MSFP's play model.
+
+## Step 1 built, 2026-11-19
+
+Stand-ins as decided (msfp:// paths, the plugin's channel, a saved source
+of their own, streams from the catalog), in the two libraries the plugin
+makes; see TECHNICAL.md, "Paired servers' titles". Tried live with two
+Jellyfin 12.2 servers running the plugin:
+- films and episodes appear with TMDB's names, pictures and summaries,
+  in search and in the "Recently Added" rows; episodes at TMDB's place;
+- nothing for a film or an episode the server holds; a series held in
+  part shows in both libraries;
+- a title gone from the peer goes, and comes back as the same item,
+  watched state kept; a copy got locally replaces the stand-in;
+- federation off empties the libraries, back on fills them.
+Learned: on a new server the channel's item doesn't exist until Jellyfin
+lists its channels, and refreshing a stand-in fails without it: the
+plugin asks the channel manager first. A season gets its name from its
+path unless given one. Streams saved before the first refresh of an
+episode were lost again once; the next pass saves them again.
+Not done: playing (step 2); a stand-in's watched state doesn't carry
+over to a local copy that replaces it.

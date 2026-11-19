@@ -91,6 +91,11 @@
                     </div>
                 </dialog>
 
+                <h3>Titles from paired servers</h3>
+                <p id="MsfpPaired">…</p>
+                <div class="fieldDescription">The plugin keeps two libraries of the paired servers' films and series, apart from yours. A title you have yourself isn't in them; for a series, only the episodes you don't have are. Users with access to all libraries see them; for the others, tick them in each user's library access. Playing them comes in a later version.</div>
+                <button is="emby-button" type="button" id="MsfpPairedAgain" class="raised emby-button" style="display:none"><span>Make the libraries again</span></button>
+
                 <h3>Pair with another server</h3>
                 <div>
                     <button is="emby-button" type="button" id="MsfpMakeCode" class="raised emby-button"><span>Make a pairing code</span></button>
@@ -203,6 +208,7 @@
 
             function msfpLoad() {
                 msfpIdentification();
+                msfpPaired();
                 ApiClient.getJSON(ApiClient.getUrl('Msfp/Status')).then(function (s) {
                     document.querySelector('#MsfpProblem').textContent = s.on ? '' : (s.problem || 'Federation is off.');
                     document.querySelector('#MsfpFingerprint').textContent = s.on ? s.fingerprint : '…';
@@ -339,6 +345,24 @@
             });
             document.querySelector('#MsfpWantsCancel').addEventListener('click', function () {
                 document.querySelector('#MsfpWantsDialog').close();
+            });
+
+            function msfpPaired() {
+                ApiClient.getJSON(ApiClient.getUrl('Msfp/Paired')).then(function (r) {
+                    function lib(state, name, fallback, count) {
+                        if (state === 'removed') return fallback + ': removed';
+                        if (state === 'making') return (name || fallback) + ': being made';
+                        if (state === 'ready') return (name || fallback) + ': ' + count;
+                        return fallback + ': not made yet';
+                    }
+                    document.querySelector('#MsfpPaired').textContent =
+                        lib(r.Films, r.FilmsName, 'Films from paired servers', r.FilmCount + (r.FilmCount === 1 ? ' film' : ' films')) + '. ' +
+                        lib(r.Series, r.SeriesName, 'Series from paired servers', r.SeriesCount + ' series, ' + r.EpisodeCount + (r.EpisodeCount === 1 ? ' episode' : ' episodes')) + '.';
+                    document.querySelector('#MsfpPairedAgain').style.display = r.Films === 'removed' || r.Series === 'removed' ? '' : 'none';
+                }, function () { document.querySelector('#MsfpPaired').textContent = "The paired servers' titles could not be read."; });
+            }
+            document.querySelector('#MsfpPairedAgain').addEventListener('click', function () {
+                msfpPost('Msfp/Paired/MakeAgain').then(msfpPaired, msfpPaired);
             });
 
             var msfpCheckFor = null;
