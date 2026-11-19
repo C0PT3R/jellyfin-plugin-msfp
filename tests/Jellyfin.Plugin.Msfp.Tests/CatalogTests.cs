@@ -56,6 +56,29 @@ public class CatalogTests
     }
 
     [Fact]
+    public async Task AnEpisodeKeyedByItsTmdbIdCarriesItsPlace()
+    {
+        var c = Catalog(out _,
+            new CatalogEntry("cccc", "series/tmdb/1920/e127615", "episode", "i5") { Place = new Place { Season = 1, Episode = 1 } },
+            new CatalogEntry("cccc", "series/tmdb/1920/s1/e9", "episode", "i6"));
+        var page = await c.TitlesAsync(["cccc"], "", 10, default);
+        var byId = Assert.IsType<VideoTitle>(page.Titles.Single(t => t.Key == "series/tmdb/1920/e127615"));
+        Assert.Equal(new Place { Season = 1, Episode = 1 }, byId.Place);
+        Assert.Null(Assert.IsType<VideoTitle>(page.Titles.Single(t => t.Key == "series/tmdb/1920/s1/e9")).Place);
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("", true)]
+    [InlineData("aired", true)]
+    [InlineData("Aired", true)]
+    [InlineData("dvd", false)]
+    [InlineData("absolute", false)]
+    [InlineData("tmdbgroup:5a8f", false)]
+    public void OnlyTheDefaultOrderIsTmdbs(string? order, bool tmdb) =>
+        Assert.Equal(tmdb, JellyfinCatalogSource.InTmdbOrder(order));
+
+    [Fact]
     public async Task OnlyTheLibrariesAskedAndPages()
     {
         var c = Catalog(out _,

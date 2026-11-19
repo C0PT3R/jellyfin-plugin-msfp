@@ -56,22 +56,22 @@ public sealed class JellyfinCatalogSource : ICatalogSource
     /// <inheritdoc />
     public IEnumerable<CatalogEntry> Entries()
     {
-        var series = new Dictionary<Guid, long?>();
-        long? SeriesTmdb(Guid id)
+        var series = new Dictionary<Guid, (long? Tmdb, bool TmdbOrder)>();
+        (long? Tmdb, bool TmdbOrder) SeriesOf(Guid id)
         {
             if (id == Guid.Empty)
             {
                 // An episode or season Jellyfin hasn't placed in a series (yet).
-                return null;
+                return (null, false);
             }
 
-            if (!series.TryGetValue(id, out var tmdb))
+            if (!series.TryGetValue(id, out var info))
             {
-                tmdb = _library.GetItemById(id) is { } s ? TmdbId(s.GetProviderId(MetadataProvider.Tmdb)) : null;
-                series[id] = tmdb;
+                info = _library.GetItemById(id) is Series s ? (TmdbId(s.GetProviderId(MetadataProvider.Tmdb)), InTmdbOrder(s.DisplayOrder)) : (null, false);
+                series[id] = info;
             }
 
-            return tmdb;
+            return info;
         }
 
         foreach (var lib in Libraries())
@@ -85,7 +85,7 @@ public sealed class JellyfinCatalogSource : ICatalogSource
             });
             foreach (var item in items)
             {
-                foreach (var entry in Of(item, lib.Id, SeriesTmdb))
+                foreach (var entry in Of(item, lib.Id, SeriesOf))
                 {
                     yield return entry;
                 }
@@ -105,7 +105,16 @@ public sealed class JellyfinCatalogSource : ICatalogSource
         return n is > 0 and <= 9_999_999_999 ? n : null;
     }
 
-    private static IEnumerable<CatalogEntry> Of(BaseItem item, string library, Func<Guid, long?> seriesTmdb)
+    /// <summary>
+    /// Whether a series' episode numbers in Jellyfin are TMDB's: its default
+    /// order (aired), which Jellyfin's TMDB provider fetched each episode by.
+    /// Another order (DVD, absolute, an episode group) numbers them its own
+    /// way.
+    /// </summary>
+    internal static bool InTmdbOrder(string? displayOrder) =>
+        string.IsNullOrEmpty(displayOrder) || string.Equals(displayOrder, "aired", StringComparison.OrdinalIgnoreCase);
+
+    private static IEnumerable<CatalogEntry> Of(BaseItem item, string library, Func<Guid, (long? Tmdb, bool TmdbOrder)> seriesOf)
     {
         switch (item)
         {
@@ -117,14 +126,23 @@ public sealed class JellyfinCatalogSource : ICatalogSource
                 yield return new CatalogEntry(library, new VideoKey("series", id).ToString(), "series", null) { Ids = OtherIds(item) };
                 break;
 
-            case Season season when seriesTmdb(season.SeriesId) is { } id && season.IndexNumber is >= 0 and <= 9999:
+            case Season season when seriesOf(season.SeriesId).Tmdb is { } id && season.IndexNumber is >= 0 and <= 9999:
                 yield return new CatalogEntry(library, new VideoKey("season", id, season.IndexNumber.Value).ToString(), "season", null);
                 break;
 
-            case Episode episode when seriesTmdb(episode.SeriesId) is { } id:
+            case Episode episode when seriesOf(episode.SeriesId) is { Tmdb: { } id } series:
                 if (TmdbId(item.GetProviderId(MetadataProvider.Tmdb)) is { } episodeId)
                 {
-                    yield return Copy(item, library, new VideoKey("episode", id, EpisodeId: episodeId), []);
+                    // Keyed by its TMDB ID, with its place in TMDB's numbering
+                    // (MSFP video section 4.1): Jellyfin's numbers when the
+                    // series is in TMDB's order; left out otherwise.
+                    if (series.TmdbOrder && episode.ParentIndexNumber is >= 0 and <= 9999 && episode.IndexNumber is >= 0 and <= 99999)
+                    {
+                        yield return Copy(item, library, new VideoKey("episode", id, EpisodeId: episodeId), []) with
+                        {
+                            Place = new global::Msfp.Place { Season = episode.ParentIndexNumber.Value, Episode = episode.IndexNumber.Value },
+                        };
+                    }
                 }
                 else if (episode.ParentIndexNumber is >= 0 and <= 9999 && episode.IndexNumber is >= 0 and <= 99999)
                 {

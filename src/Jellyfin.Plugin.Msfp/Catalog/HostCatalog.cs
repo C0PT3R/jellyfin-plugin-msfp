@@ -24,6 +24,12 @@ public sealed record CatalogEntry(string Library, string Key, string Kind, strin
     /// <summary>The copy's picture; null when unknown.</summary>
     public Picture? Picture { get; init; }
 
+    /// <summary>
+    /// For an episode keyed by its TMDB ID: its place in TMDB's numbering
+    /// (MSFP video section 4.1); null leaves the episode out.
+    /// </summary>
+    public Place? Place { get; init; }
+
     /// <summary>The other episodes the copy holds (a file of several episodes).</summary>
     public IReadOnlyList<string> With { get; init; } = [];
 
@@ -192,6 +198,7 @@ public sealed class HostCatalog : ICatalog
                 t.Audio = Union(t.Audio, e.Audio);
                 t.Subtitles = Union(t.Subtitles, e.Subtitles);
                 t.With = Union(t.With, e.With);
+                t.Place ??= e.Place;
                 if (e.Picture is { } p)
                 {
                     (t.Pictures ??= []).Add(p);
