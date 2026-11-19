@@ -79,6 +79,12 @@ public sealed class Identifier : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (Plugin.Instance is { } plugin)
+        {
+            // A new TMDB key: a pass with it.
+            plugin.ConfigurationChanged += (_, _) => Poke();
+        }
+
         await Wait(Settle, stoppingToken).ConfigureAwait(false);
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -106,6 +112,32 @@ public sealed class Identifier : BackgroundService
                 await Wait(Settle, stoppingToken).ConfigureAwait(false);
             }
         }
+    }
+
+    /// <summary>
+    /// The owner's choice for a title: a TMDB ID ("" to go back to the
+    /// match), checked at TMDB and completed at once (its other IDs, a
+    /// series' episodes). Never undone by a later match.
+    /// </summary>
+    /// <returns>false when TMDB has no such title.</returns>
+    internal async Task<bool> ChooseAsync(Guid item, string tmdb, CancellationToken ct)
+    {
+        var src = Tmdb() ?? throw new InvalidOperationException("no TMDB key");
+        var known = Identities.Of(item) ?? throw new KeyNotFoundException();
+        tmdb = tmdb.Trim();
+        if (tmdb.Length > 0 && (!int.TryParse(tmdb, NumberStyles.None, CultureInfo.InvariantCulture, out var id) || id <= 0
+            || await src.TitleAsync(known.Kind, id, ct).ConfigureAwait(false) is null))
+        {
+            return false;
+        }
+
+        var t = known.Copy();
+        t.Chosen = tmdb.Length > 0 ? int.Parse(tmdb, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture) : string.Empty;
+        var series = _library.GetItemById(item) as Series;
+        await CompleteAsync(src, t, series is not null, series is not null ? EpisodeFiles(series) : [], true, ct).ConfigureAwait(false);
+        Identities.Put(item, t);
+        _log.LogInformation("MSFP: the owner chose TMDB {Kind} {Tmdb} for {Name}", t.Kind, t.Chosen.Length > 0 ? t.Chosen : "(the match)", t.Name);
+        return true;
     }
 
     /// <summary>One pass: every film and series of the offered libraries, matched where needed.</summary>

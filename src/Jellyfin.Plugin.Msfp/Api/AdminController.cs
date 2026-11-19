@@ -67,13 +67,15 @@ public class AdminController : ControllerBase
     private readonly HostCatalog _catalog;
     private readonly WantsKeeper _wants;
     private readonly JellyfinPlayback _playback;
+    private readonly Identification.Identifier _identifier;
 
-    public AdminController(EngineHost host, HostCatalog catalog, WantsKeeper wants, JellyfinPlayback playback)
+    public AdminController(EngineHost host, HostCatalog catalog, WantsKeeper wants, JellyfinPlayback playback, Identification.Identifier identifier)
     {
         _host = host;
         _catalog = catalog;
         _wants = wants;
         _playback = playback;
+        _identifier = identifier;
     }
 
     /// <summary>This server: its fingerprint, address, keys and parts; why federation is off.</summary>
@@ -190,6 +192,8 @@ public class AdminController : ControllerBase
         }
 
         await e.SetOffersAsync(id, request.Libraries, ct).ConfigureAwait(false);
+        // A library newly offered: its titles are identified before they're listed.
+        _identifier.Poke();
         return View(await e.PeerAsync(id, ct).ConfigureAwait(false));
     });
 
