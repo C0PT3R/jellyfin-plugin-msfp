@@ -24,13 +24,11 @@ with Overfin and with other servers that speak MSFP.
   at once on your server, your own users and paired servers together. Your
   own users are never refused.
 
-- **See the other servers' titles** in two libraries the plugin makes,
-  "Films from paired servers" and "Series from paired servers", with
-  their names, pictures and summaries. A title you have yourself isn't
-  repeated there.
-
-**Not yet:** your users can't play the other servers' titles. That is the
-next step.
+- **See and play the other servers' titles** in two libraries the plugin
+  makes, "Films from paired servers" and "Series from paired servers",
+  with their names, pictures and summaries. A title you have yourself
+  isn't repeated there. When several servers hold a title, the best copy
+  is asked first, and the next server when one is busy.
 
 Music isn't shared.
 

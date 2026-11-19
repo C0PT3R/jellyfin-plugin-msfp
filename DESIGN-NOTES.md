@@ -211,3 +211,18 @@ path unless given one. Streams saved before the first refresh of an
 episode were lost again once; the next pass saves them again.
 Not done: playing (step 2); a stand-in's watched state doesn't carry
 over to a local copy that replaces it.
+
+## Step 2 built, 2026-11-19
+
+Playing a stand-in: MSFP `play` on the holders best copy first, the next
+on a refusal; the source handed to Jellyfin is the plugin's loopback
+relay (`FetchAsync`), probed by the plugin; progress and stop from
+Jellyfin's events and the source's close; 3 idle minutes stop it. Tried
+live with three Jellyfin 12.2 servers: a film and an episode played
+direct from the peer and remuxed to HLS by Jellyfin for the client;
+jellyfin-web plays; stop and close reach the peer; a peer at its stream
+limit is skipped for the next one (480p copy); with none left, the
+playback fails ("busy" in the log); an abandoned playback ends at both
+ends. Learned: Jellyfin's probe of a live stream keeps one video and one
+audio track only (live TV): the plugin probes the relay itself
+(IMediaEncoder) and hands over every stream.

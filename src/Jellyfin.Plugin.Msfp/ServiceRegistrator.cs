@@ -36,5 +36,7 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<MediaBrowser.Controller.Channels.IChannel, PairedChannel>();
         serviceCollection.AddSingleton<StandIns>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<StandIns>());
+        serviceCollection.AddSingleton<RemotePlays>();
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<RemotePlays>());
     }
 }

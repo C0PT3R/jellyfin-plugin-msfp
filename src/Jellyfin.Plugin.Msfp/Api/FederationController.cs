@@ -166,7 +166,7 @@ public class FederationController : ControllerBase
     }
 
     /// <summary>The engine's media answer on ASP.NET Core's response: the status and only the headers MSFP needs.</summary>
-    private sealed class Sink(HttpResponse response) : IResponseSink
+    internal sealed class Sink(HttpResponse response) : IResponseSink
     {
         public void Start(int status, string contentType, long length, string contentRange)
         {

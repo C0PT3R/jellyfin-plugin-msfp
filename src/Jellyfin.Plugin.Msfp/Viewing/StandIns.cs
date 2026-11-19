@@ -97,6 +97,25 @@ public sealed class StandIns : IHostedService, IDisposable
         Series,
     }
 
+    private volatile Wanted? _wanted;
+
+    /// <summary>
+    /// A film's or an episode's copies, by its key, as the last pass found
+    /// them: the paired servers holding it, best copy first; null when none.
+    /// </summary>
+    internal Playable? CopyOf(string key)
+    {
+        var w = _wanted;
+        if (w is null || !global::Msfp.Protocol.VideoKey.TryParse(key, out var k))
+        {
+            return null;
+        }
+
+        return k.Kind == "movie"
+            ? w.Films.TryGetValue(k.Tmdb, out var f) ? f.Copy : null
+            : w.Series.TryGetValue(k.Tmdb, out var s) && s.Episodes.TryGetValue(key, out var e) ? e.Copy : null;
+    }
+
     /// <summary>What the page shows: the libraries and what is in them.</summary>
     public StandInStatus Status { get; private set; } = new();
 
@@ -225,6 +244,7 @@ public sealed class StandIns : IHostedService, IDisposable
                 await _channels.GetChannelsInternalAsync(new MediaBrowser.Model.Channels.ChannelQuery()).ConfigureAwait(false);
             }
 
+            _wanted = wanted;
             var films = Library(plugin, Shelf.Films);
             var series = Library(plugin, Shelf.Series);
             var counts = new StandInStatus

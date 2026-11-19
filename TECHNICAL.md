@@ -26,8 +26,8 @@ offered, and which of the peer's are read (by default all, those it adds
 later too). Paired peers' catalogs are read every 30 minutes and kept in
 the plugin's storage, where the plugin's page shows them.
 
-Peers' titles in this server's Jellyfin (since 2026-11-19, not playable
-yet): see "Paired servers' titles" below. Music isn't shared (the parts
+Peers' titles in this server's Jellyfin, played through MSFP (since
+2026-11-19): see "Paired servers' titles" below. Music isn't shared (the parts
 spoken are catalog, playback, media and video).
 
 Tested on 2026-11-19 in a Jellyfin 12.2 container: msfp-spec's
@@ -178,8 +178,8 @@ server:
   audio and subtitle language of the copies, saved as the item's streams
   at each pass. Codecs aren't known before play.
 - **One source of its own,** saved where Jellyfin keeps a channel item's
-  (`channelmediasourceinfos.json`), which must be opened: opening it will
-  be MSFP `play`, closing it `stop`. Not built yet: opening fails.
+  (`channelmediasourceinfos.json`), which must be opened when someone
+  presses Play.
 
 One stand-in per title, whatever the number of peers holding it. None
 for a film this server holds itself, nor for an episode of a series it
@@ -195,6 +195,30 @@ until the page's "Make the libraries again".
 Kept in step 30 seconds after a reading of a peer's catalog, the end of a
 pairing, or a change to this server's films and series settles, and every
 hour. The two libraries are never offered to peers.
+
+Playing one: opening its source sends MSFP `play` to the paired servers
+holding it, best copy first (height, then HDR), the next one when a
+server refuses or is busy. The plugin asks for everything MSFP lists
+(containers, codecs, HDR) so that the paired server sends its copy as it
+is whenever it can, which costs it least; Jellyfin converts it here when
+the viewer's device needs it, as it does a local file (that conversion
+counts in "Transcodes at once on this server"). Jellyfin reads the
+playback at the plugin's relay route on its own loopback,
+`/Msfp/Relay/<random token>/file` or `.../master.m3u8`, open to this
+machine only; the engine fetches each piece from the paired server with
+the playback's ticket, which never leaves it. The plugin reads the
+streams itself through the relay before handing the source over:
+Jellyfin's own probe of such a source keeps one audio track only.
+Jellyfin's playback reports go to the paired server as `progress`; its
+stop, or Jellyfin closing the source, as `stop`; a playback neither
+reported on nor read for 3 minutes is stopped (some clients never say
+they stopped).
+
+Not built yet: the paired server's subtitles served apart (WebVTT parts;
+those inside a file played as it is come along), its previews, the
+viewer's audio and subtitle choice passed to `play`, and a clear message
+in the client when no server can play (Jellyfin shows a generic
+playback error; the log says why).
 
 ## Ed25519
 
