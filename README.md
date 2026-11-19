@@ -43,20 +43,19 @@ transcoded to HLS; an H.264 film remuxed to HLS).
 
 ## Building
 
-msfp-dotnet must be checked out beside this repository (`../msfp-dotnet`),
-or named with `-p:MsfpDotnet=<path>`: the plugin references its
-`Msfp.Engine` project. You need the .NET 10 SDK, or a container with it:
+The plugin uses msfp-dotnet's packages from nuget.org (`Msfp.Engine`,
+which brings `Msfp.Protocol`). You need the .NET 10 SDK, or a container
+with it:
 
 ```sh
 dotnet test Jellyfin.Plugin.Msfp.slnx
 dotnet build -c Release src/Jellyfin.Plugin.Msfp -o out
 ```
 
-With podman and no SDK on the host, from the folder holding both
-repositories:
+With podman and no SDK on the host, from this repository:
 
 ```sh
-podman run --rm -v "$PWD":/src:Z -w /src/jellyfin-plugin-msfp mcr.microsoft.com/dotnet/sdk:10.0 \
+podman run --rm -v "$PWD":/src:Z -w /src mcr.microsoft.com/dotnet/sdk:10.0 \
   sh -c 'dotnet test Jellyfin.Plugin.Msfp.slnx && dotnet build -c Release src/Jellyfin.Plugin.Msfp -o out'
 ```
 

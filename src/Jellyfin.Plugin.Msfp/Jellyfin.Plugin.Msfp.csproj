@@ -9,14 +9,9 @@
     <AssemblyVersion>0.2.0.0</AssemblyVersion>
     <FileVersion>0.2.0.0</FileVersion>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
-    <!-- Copy package DLLs (BouncyCastle) next to the plugin's on build, so
-         the output folder is the plugin as Jellyfin loads it (the engine's
-         DLLs, project references, are copied anyway). -->
+    <!-- Copy package DLLs (MSFP, BouncyCastle) next to the plugin's on
+         build, so the output folder is the plugin as Jellyfin loads it. -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <!-- msfp-dotnet, the MSFP engine, checked out beside this repository
-         (github.com/msfp-io/msfp-dotnet); another place with
-         -p:MsfpDotnet=<path>. -->
-    <MsfpDotnet Condition="'$(MsfpDotnet)' == ''">$(MSBuildThisFileDirectory)../../../msfp-dotnet</MsfpDotnet>
   </PropertyGroup>
   <ItemGroup>
     <!-- Jellyfin's own, at the version of the Jellyfin it's built for;
@@ -25,10 +20,11 @@
     <PackageReference Include="Jellyfin.Model" Version="12.2.0" ExcludeAssets="runtime" />
   </ItemGroup>
   <ItemGroup>
-    <!-- MSFP itself: the engine and the protocol (Msfp.Engine.dll,
-         Msfp.Protocol.dll), with their Ed25519 (BouncyCastle); all three
+    <!-- MSFP itself, msfp-dotnet's packages (github.com/msfp-io/msfp-dotnet):
+         the engine, which brings the protocol (Msfp.Engine.dll,
+         Msfp.Protocol.dll) and their Ed25519 (BouncyCastle); all three
          shipped with the plugin. -->
-    <ProjectReference Include="$(MsfpDotnet)/src/Msfp.Engine/Msfp.Engine.csproj" />
+    <PackageReference Include="Msfp.Engine" Version="0.1.0-preview" />
   </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
