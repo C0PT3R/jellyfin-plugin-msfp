@@ -93,6 +93,15 @@ and install and update from the catalog. Tried with Jellyfin 12.4 and
 a local copy of that manifest: listed, installed, Active after the
 restart.
 
+`tools/update-path.py IMAGE FROM TO` tries an update from that
+repository: a fresh Jellyfin installs FROM, gets settings, a pairing
+code and its libraries, then installs TO over it and restarts. 0.3.0 to
+0.4.0 passed on 2026-11-19 with Jellyfin 12.2 and 12.4: Jellyfin
+replaced the old version's folder, 0.4.0 alone Active, settings, the
+server's key, the code and the libraries kept (the engine's state lives
+in the plugin's data folder, apart from the version's folder), no error
+in the log.
+
 ## Running it
 
 Set this server's address in the plugin's page: where other servers reach
