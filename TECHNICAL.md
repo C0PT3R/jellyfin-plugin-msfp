@@ -39,6 +39,15 @@ revoked with Overfin following, and Overfin's viewers playing the plugin's
 titles (a film and an episode direct, with WebVTT subtitles; an HEVC film
 transcoded to HLS; an H.264 film remuxed to HLS).
 
+`tools/conformance.py` runs that suite (from msfp-spec, beside this
+repository or `$MSFP_CONFORMANCE`) against a Jellyfin with the plugin,
+playing the server's operator through the plugin's API: it accepts the
+pairings, offers the films, reads the suite's catalog, confirms an
+address change, and changes the server's key twice (rotation, then
+"stolen"), so use a test server. With `--media` (a films folder on that
+machine) and the suite's `--watch-changes`, it also adds and removes a
+film for the catalog's change check. RESULTS_PLACEHOLDER
+
 ## Building
 
 The plugin uses msfp-dotnet's packages from nuget.org (`Msfp.Engine`,
@@ -287,8 +296,18 @@ the playback's ticket, which never leaves it. The plugin reads the
 streams itself through the relay before handing the source over:
 Jellyfin's own probe of such a source keeps one audio track only.
 Jellyfin's playback reports go to the paired server as `progress`; its
-stop, or Jellyfin closing the source, as `stop`; a playback neither
-reported on nor read for 3 minutes is stopped (some clients never say
+stop, or Jellyfin closing the source, as `stop`. Every minute, a
+playback a Jellyfin session is still on (by its live stream) is
+reported too, paused or not: some clients report seldom while paused
+(Kodi's add-on every 250 seconds), past the paired server's 2 minutes
+without news and the plugin's own 3. Jellyfin ends a session's playback
+itself when its client hasn't reported for 5 minutes (checked every 5),
+or, when its operator set one, after a pause longer than the
+inactive-session limit; the paired server's playback ends with it. A
+playback the paired server's side ends (its operator, the pairing, its
+library no longer offered) is forgotten here as soon as the engine
+learns it, at the next `progress`. A playback no session is on, neither
+reported on nor read for 3 minutes, is stopped (some clients never say
 they stopped).
 
 Subtitles: the paired server's text tracks (regular and forced) become

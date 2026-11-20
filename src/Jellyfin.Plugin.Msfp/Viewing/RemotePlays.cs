@@ -83,6 +83,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
         _sessions.PlaybackProgress += Progress;
         _sessions.PlaybackStart += Progress;
         _sessions.PlaybackStopped += Stopped;
+        _host.Events += Event;
         _sweep = new Timer(_ => Sweep(), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
 
         // Playbacks' PGS files left by a stop of Jellyfin.
@@ -107,6 +108,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
         _sessions.PlaybackProgress -= Progress;
         _sessions.PlaybackStart -= Progress;
         _sessions.PlaybackStopped -= Stopped;
+        _host.Events -= Event;
         _sweep?.Change(Timeout.Infinite, Timeout.Infinite);
         foreach (var live in _byToken.Values.ToList())
         {
@@ -355,6 +357,18 @@ public sealed class RemotePlays : IHostedService, IDisposable
         }
     }
 
+    // A playback the paired server's side ended (its operator, expiry, the
+    // pairing ended or suspended, its library no longer offered): forgotten
+    // here at once, or a session still on the title would keep it.
+    private void Event(MsfpEvent e)
+    {
+        if (e is RemotePlaybackEnded ended && _byToken.Values.FirstOrDefault(l => l.Playback.Id == ended.Playback) is { } live)
+        {
+            _log.LogInformation("MSFP: a playback of {Key} ended on the paired server's side ({Reason})", live.Playback.Title, ended.Reason);
+            _ = EndAsync(live, live.PositionMs);
+        }
+    }
+
     private void Stopped(object? sender, PlaybackStopEventArgs e)
     {
         if (Of(e) is { } live)
@@ -373,9 +387,15 @@ public sealed class RemotePlays : IHostedService, IDisposable
             return null;
         }
 
-        var stream = e.Session?.PlayState?.LiveStreamId;
-        var lives = _byToken.Values.Where(l => l.Item.Id == item.Id).ToList();
-        return lives.FirstOrDefault(l => SameStream(stream, l.StreamId)) ?? (lives.Count == 1 ? lives[0] : null);
+        return LiveOf(item.Id, e.Session?.PlayState?.LiveStreamId);
+    }
+
+    // A stand-in's playback by the live stream a session names, else its
+    // one playback: some clients (Kodi's add-on) don't name it.
+    private Live? LiveOf(Guid item, string? liveStreamId)
+    {
+        var lives = _byToken.Values.Where(l => l.Item.Id == item).ToList();
+        return lives.FirstOrDefault(l => SameStream(liveStreamId, l.StreamId)) ?? (lives.Count == 1 ? lives[0] : null);
     }
 
     /// <summary>
@@ -387,13 +407,40 @@ public sealed class RemotePlays : IHostedService, IDisposable
         jellyfinId is { Length: > 0 } id && ours.Length > 0
         && (id == ours || id.EndsWith("_" + ours, StringComparison.Ordinal));
 
+    // Every minute. A playback a Jellyfin session is still on is kept and
+    // reported to the paired server, paused or not: some clients report
+    // seldom while paused (Kodi's add-on: every 250 seconds), past the
+    // paired server's 2 minutes without news (MSFP playback 6.3) and this
+    // server's Idle. Jellyfin ends a session's playback itself when the
+    // client is gone. Others, neither reported on nor read for Idle: stopped.
     private void Sweep()
     {
         var now = DateTimeOffset.UtcNow;
-        foreach (var live in _byToken.Values.Where(l => now - l.Touched > Idle).ToList())
+        var kept = new HashSet<Live>();
+        foreach (var session in _sessions.Sessions)
         {
-            _log.LogInformation("MSFP: a playback of {Key} neither reported on nor read for {Idle}: stopped", live.Playback.Title, Idle);
-            _ = EndAsync(live, live.PositionMs);
+            if (session.NowPlayingItem is not { } item || LiveOf(item.Id, session.PlayState?.LiveStreamId) is not { } live
+                || _host.Engine is not { } engine || !kept.Add(live))
+            {
+                continue;
+            }
+
+            live.Touched = now;
+            if (session.PlayState?.PositionTicks is { } ticks)
+            {
+                live.PositionMs = ticks / TimeSpan.TicksPerMillisecond;
+            }
+
+            engine.Progress(live.Playback.Id, live.PositionMs, session.PlayState?.IsPaused ?? false);
+        }
+
+        foreach (var live in _byToken.Values.Where(l => !kept.Contains(l)).ToList())
+        {
+            if (now - live.Touched > Idle)
+            {
+                _log.LogInformation("MSFP: a playback of {Key} neither reported on nor read for {Idle}: stopped", live.Playback.Title, Idle);
+                _ = EndAsync(live, live.PositionMs);
+            }
         }
     }
 
