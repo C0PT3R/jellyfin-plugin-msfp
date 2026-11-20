@@ -307,7 +307,11 @@ the playback's ticket, which never leaves it. The plugin reads the
 streams itself through the relay before handing the source over:
 Jellyfin's own probe of such a source keeps one audio track only.
 Jellyfin's playback reports go to the paired server as `progress`; its
-stop, or Jellyfin closing the source, as `stop`. Every minute, a
+stop, or Jellyfin closing the source, as `stop`. A report is matched to
+its playback by the live stream the session names; some clients (Kodi's
+add-on) name none, so a session is also bound, as it starts playing, to
+the title's newest playback no session has, which tells apart two such
+viewers of one title. Every minute, a
 playback a Jellyfin session is still on (by its live stream) is
 reported too, paused or not: some clients report seldom while paused
 (Kodi's add-on every 250 seconds), past the paired server's 2 minutes

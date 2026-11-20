@@ -81,7 +81,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
     public Task StartAsync(CancellationToken cancellationToken)
     {
         _sessions.PlaybackProgress += Progress;
-        _sessions.PlaybackStart += Progress;
+        _sessions.PlaybackStart += Started;
         _sessions.PlaybackStopped += Stopped;
         _host.Events += Event;
         _sweep = new Timer(_ => Sweep(), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
@@ -106,7 +106,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _sessions.PlaybackProgress -= Progress;
-        _sessions.PlaybackStart -= Progress;
+        _sessions.PlaybackStart -= Started;
         _sessions.PlaybackStopped -= Stopped;
         _host.Events -= Event;
         _sweep?.Change(Timeout.Infinite, Timeout.Infinite);
@@ -347,9 +347,13 @@ public sealed class RemotePlays : IHostedService, IDisposable
     };
 
     // Where the viewer is, from Jellyfin's reports on a stand-in.
-    private void Progress(object? sender, PlaybackProgressEventArgs e)
+    private void Started(object? sender, PlaybackProgressEventArgs e) => Report(e, starting: true);
+
+    private void Progress(object? sender, PlaybackProgressEventArgs e) => Report(e, starting: false);
+
+    private void Report(PlaybackProgressEventArgs e, bool starting)
     {
-        if (Of(e) is { } live && _host.Engine is { } engine)
+        if (Of(e, starting) is { } live && _host.Engine is { } engine)
         {
             live.Touched = DateTimeOffset.UtcNow;
             live.PositionMs = (e.PlaybackPositionTicks ?? 0) / TimeSpan.TicksPerMillisecond;
@@ -380,22 +384,34 @@ public sealed class RemotePlays : IHostedService, IDisposable
 
     // The playback a report is about: by the live stream the session plays,
     // else the one playback of that stand-in.
-    private Live? Of(PlaybackProgressEventArgs e)
+    private Live? Of(PlaybackProgressEventArgs e, bool starting = false)
     {
         if (e.Item is not { } item || !PairedSources.IsStandIn(item))
         {
             return null;
         }
 
-        return LiveOf(item.Id, e.Session?.PlayState?.LiveStreamId);
+        return LiveOf(item.Id, e.Session?.PlayState?.LiveStreamId, e.Session?.Id, starting);
     }
 
-    // A stand-in's playback by the live stream a session names, else its
-    // one playback: some clients (Kodi's add-on) don't name it.
-    private Live? LiveOf(Guid item, string? liveStreamId)
+    // A stand-in's playback for a session: by the live stream it names,
+    // else the one it was bound to, else the title's only one, else, as a
+    // session starts playing, the newest one no session has: some clients
+    // (Kodi's add-on) don't name the live stream, and two of them may play
+    // the same title. The session is bound to the playback found.
+    private Live? LiveOf(Guid item, string? liveStreamId, string? sessionId, bool starting = false)
     {
         var lives = _byToken.Values.Where(l => l.Item.Id == item).ToList();
-        return lives.FirstOrDefault(l => SameStream(liveStreamId, l.StreamId)) ?? (lives.Count == 1 ? lives[0] : null);
+        var live = lives.FirstOrDefault(l => SameStream(liveStreamId, l.StreamId))
+            ?? lives.FirstOrDefault(l => sessionId is not null && l.SessionId == sessionId)
+            ?? (lives.Count == 1 ? lives[0] : null)
+            ?? (starting ? lives.Where(l => l.SessionId is null).OrderByDescending(l => l.Opened).FirstOrDefault() : null);
+        if (live is not null && sessionId is not null)
+        {
+            live.SessionId ??= sessionId;
+        }
+
+        return live;
     }
 
     /// <summary>
@@ -419,7 +435,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
         var kept = new HashSet<Live>();
         foreach (var session in _sessions.Sessions)
         {
-            if (session.NowPlayingItem is not { } item || LiveOf(item.Id, session.PlayState?.LiveStreamId) is not { } live
+            if (session.NowPlayingItem is not { } item || LiveOf(item.Id, session.PlayState?.LiveStreamId, session.Id) is not { } live
                 || _host.Engine is not { } engine || !kept.Add(live))
             {
                 continue;
@@ -490,6 +506,12 @@ public sealed class RemotePlays : IHostedService, IDisposable
         public BaseItem Item { get; } = item;
 
         public string StreamId { get; set; } = string.Empty;
+
+        /// <summary>The Jellyfin session playing it, once known (<see cref="LiveOf"/>).</summary>
+        public string? SessionId { get; set; }
+
+        /// <summary>When it was opened: the newest goes to a session starting without naming its live stream.</summary>
+        public DateTimeOffset Opened { get; } = DateTimeOffset.UtcNow;
 
         public long PositionMs { get; set; }
 
