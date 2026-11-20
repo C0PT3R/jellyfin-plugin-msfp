@@ -250,6 +250,11 @@ limits."). It touches only that one exception of the plugin's. Other
 failures (no server holds it now, unreachable) stay Jellyfin's generic
 playback error ("Please try again later").
 
+Kodi (Jellyfin for Kodi 2.2.0) syncs and plays these titles, but as
+live TV: the add-on treats every source that must be closed after play
+as a live channel, so there is no total time and no seeking, and one
+audio track. That rule is the add-on's (see DESIGN-NOTES, "Kodi").
+
 Not built yet: the paired server's picture subtitles (PGS) served
 apart.
 

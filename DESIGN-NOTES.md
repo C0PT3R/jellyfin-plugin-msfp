@@ -272,3 +272,21 @@ with PlaybackInfoResponse { ErrorCode = RateLimitExceeded }: jellyfin-web
 shows "This media cannot be played at this time due to rate limits." (fr:
 "Ce média ne peut pas être lu à cause de la limite de débit."). Tried
 live with both holders at 0 streams. Other clients: not tried.
+
+## Kodi, 2026-11-19 (Jellyfin for Kodi 2.2.0, Kodi 21)
+
+Tried live against the stand-ins of step 2: Kodi syncs both libraries
+(films, a series split between the server's own library and the paired
+one), plays a film and an episode from the paired server; Kodi's stop
+reaches the paired server about 2 seconds later (Jellyfin's
+playback-stopped event; the spike's lost stop doesn't recur).
+Limit: the add-on treats every source that requires closing as live TV
+(`playutils.py`: RequiresClosing -> Protocol "LiveTV" -> `live.m3u8`):
+no total time, no seeking (`canseek` false), one audio track. Without
+RequiresClosing it would direct play the source's path instead, the
+plugin's loopback relay, which a Kodi elsewhere can't reach. So nothing
+to change on the plugin's side; the fix belongs in the add-on (tell a
+channel item's opened source from live TV). A 12-second episode failed
+in Kodi (Jellyfin's live HLS of a clip shorter than its segments); a
+60-second one played. Kodi itself crashed twice on its known "two
+concurrent busydialogs" bug when driven over JSON-RPC.
