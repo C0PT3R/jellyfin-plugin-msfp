@@ -19,8 +19,10 @@ JSON_OUT    where the suite writes its report
 
 The suite comes from $MSFP_CONFORMANCE, else ../msfp-spec/conformance.
 It makes two pairing codes, pairs twice (the second as a server that
-can't be called), and changes the server's key twice (rotation, then
-"stolen"): use a test server, never one paired with servers that matter."""
+can't be called), offers every films library, confirms the titles held
+"to check" there with their match, and changes the server's key twice
+(rotation, then "stolen"): use a test server, never one paired with
+servers that matter."""
 import json
 import os
 import shutil
@@ -83,6 +85,25 @@ def confirm_identification(path, timeout=120):
         time.sleep(3)
 
 
+def confirm_held(wait=60):
+    """Titles of the libraries just offered are identified first; those
+    held "to check" with a match are confirmed, as their owner would."""
+    # Identification starts a little after the offer: the whole window is
+    # watched, each held title confirmed as it shows.
+    deadline = time.time() + wait
+    confirmed = False
+    while time.time() < deadline:
+        time.sleep(5)
+        st, ident = call("GET", "/Msfp/Identification")
+        for t in ident.get("titles", []) if st == 200 else []:
+            if not t.get("chosen") and t.get("match"):
+                print("  [operator] %s (%s) confirmed: %s" % (t.get("name"), t.get("folder"), call("POST", "/Msfp/Identification/%s/Choose" % t["item"], {"Tmdb": t["match"]})[0]))
+                confirmed = True
+    if confirmed:
+        # The plugin's catalog takes a change 30 seconds after it settles.
+        time.sleep(40)
+
+
 class Operator:
     """The suite's operator steps, through the plugin's API."""
 
@@ -118,6 +139,7 @@ class Operator:
             libraries = call("GET", "/Msfp/Peers/%s/Offers" % pid)[1]
             films = [x["id"] for x in libraries if x["kind"] == "movies"] or [x["id"] for x in libraries]
             print("  [operator] offered: %s" % call("POST", "/Msfp/Peers/%s/Offers" % pid, {"Libraries": films})[0])
+            confirm_held()
 
     def op_accept2(self):
         self.accept(True)
