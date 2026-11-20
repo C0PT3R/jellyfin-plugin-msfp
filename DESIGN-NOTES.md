@@ -286,7 +286,11 @@ no total time, no seeking (`canseek` false), one audio track. Without
 RequiresClosing it would direct play the source's path instead, the
 plugin's loopback relay, which a Kodi elsewhere can't reach. So nothing
 to change on the plugin's side; the fix belongs in the add-on (tell a
-channel item's opened source from live TV). A 12-second episode failed
+channel item's opened source from live TV). Tried 2026-11-20: in the
+add-on's `transcode()`, `live` only when the source is also
+`IsInfiniteStream` (the "LiveTV" protocol stays, which keeps it from
+direct playing the loopback path): Kodi gets `master.m3u8`, the total
+time, and seeks. Not yet proposed upstream. A 12-second episode failed
 in Kodi (Jellyfin's live HLS of a clip shorter than its segments); a
 60-second one played. Kodi itself crashed twice on its known "two
 concurrent busydialogs" bug when driven over JSON-RPC.
