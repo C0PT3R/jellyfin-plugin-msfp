@@ -44,6 +44,7 @@ public sealed class EngineHost : IHostedService, IDisposable
     {
         _catalog = catalog;
         _playback = playback;
+        _playback.Engine = () => Engine;
         _server = server;
         _loggers = loggers;
         _log = loggers.CreateLogger("Jellyfin.Plugin.Msfp");

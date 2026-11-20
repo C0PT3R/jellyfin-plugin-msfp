@@ -28,9 +28,16 @@ internal static class Subtitles
 
     public static string PictureFile(string token, string track) => System.IO.Path.Combine(PictureFolder(token), track + ".sup");
 
-    /// <summary>A PGS track, fetched whole in the background and written for Jellyfin to read.</summary>
-    public static void FetchPictures(MsfpEngine engine, RemotePlays.Live live, string track, Microsoft.Extensions.Logging.ILogger log) =>
-        _ = Task.Run(async () =>
+    /// <summary>
+    /// A playback's PGS tracks, fetched whole and written for Jellyfin to
+    /// read, all at once, waited for at most wait: the tracks ready then.
+    /// One not ready keeps being fetched for nothing; it's left out.
+    /// </summary>
+    public static async Task<IReadOnlySet<string>> FetchPicturesAsync(MsfpEngine engine, RemotePlays.Live live, IReadOnlyList<string> tracks,
+        TimeSpan wait, Microsoft.Extensions.Logging.ILogger log)
+    {
+        var ready = new System.Collections.Concurrent.ConcurrentDictionary<string, bool>(StringComparer.Ordinal);
+        var all = Task.WhenAll(tracks.Select(track => Task.Run(async () =>
         {
             try
             {
@@ -44,12 +51,16 @@ internal static class Subtitles
                 Directory.CreateDirectory(System.IO.Path.GetDirectoryName(file)!);
                 await File.WriteAllBytesAsync(file + ".tmp", whole).ConfigureAwait(false);
                 File.Move(file + ".tmp", file, true);
+                ready[track] = true;
             }
             catch (Exception e)
             {
                 Microsoft.Extensions.Logging.LoggerExtensions.LogInformation(log, e, "MSFP: picture subtitles {Track} of {Key} couldn't be fetched", track, live.Playback.Title);
             }
-        });
+        })));
+        await Task.WhenAny(all, Task.Delay(wait)).ConfigureAwait(false);
+        return new HashSet<string>(ready.Keys, StringComparer.Ordinal);
+    }
 
     /// <summary>A playback's PGS files, gone with it.</summary>
     public static void ForgetPictures(string token)

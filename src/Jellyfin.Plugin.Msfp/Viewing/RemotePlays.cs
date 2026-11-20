@@ -157,7 +157,14 @@ public sealed class RemotePlays : IHostedService, IDisposable
             {
                 await ProbeAsync(source, ct).ConfigureAwait(false);
                 NameAudio(source, playback);
-                AddSubtitles(source, playback, token);
+                live.DurationMs = (source.RunTimeTicks ?? 0) / TimeSpan.TicksPerMillisecond;
+
+                // PGS tracks are fetched before Jellyfin has the source: it
+                // may burn one in from its first segment. One not ready in
+                // 15 seconds is left out of this playback.
+                var pictures = playback.SubtitleTracks.Concat(playback.ForcedTracks).Where(t => t.Pictures).Select(t => t.Id).Distinct().ToList();
+                var ready = await Subtitles.FetchPicturesAsync(engine, live, pictures, TimeSpan.FromSeconds(15), _log).ConfigureAwait(false);
+                AddSubtitles(source, playback, token, ready);
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
@@ -166,7 +173,6 @@ public sealed class RemotePlays : IHostedService, IDisposable
                 continue;
             }
 
-            live.DurationMs = (source.RunTimeTicks ?? 0) / TimeSpan.TicksPerMillisecond;
             StandIns.Playing.AddOrUpdate(item.Id, 1, (_, n) => n + 1);
             StandIns.SavePlaying(item, source.MediaStreams.ToList());
             // The skip markers before Jellyfin hands the source over: clients ask for them as playing starts.
@@ -181,10 +187,6 @@ public sealed class RemotePlays : IHostedService, IDisposable
             }
 
             _previews.Fetch(engine, item, playback);
-            foreach (var t in playback.SubtitleTracks.Concat(playback.ForcedTracks).Where(t => t.Pictures))
-            {
-                Subtitles.FetchPictures(engine, live, t.Id, _log);
-            }
             return new PairedLiveStream(live, source);
         }
 
@@ -294,13 +296,18 @@ public sealed class RemotePlays : IHostedService, IDisposable
     // external tracks Jellyfin reads whole at the relay (Subtitles.cs), in
     // place of the subtitle tracks found inside a file played as it is
     // (the same tracks, checked by the engine).
-    private void AddSubtitles(MediaSourceInfo source, RemotePlayback p, string token)
+    private void AddSubtitles(MediaSourceInfo source, RemotePlayback p, string token, IReadOnlySet<string> picturesReady)
     {
         var streams = source.MediaStreams.Where(s => s.Type != MediaStreamType.Subtitle).ToList();
         var next = streams.Count > 0 ? streams.Max(s => s.Index) + 1 : 0;
         var relay = source.Path[..(source.Path.IndexOf("/Msfp/Relay/", StringComparison.Ordinal) + "/Msfp/Relay/".Length)] + token + "/subtitles/";
         foreach (var (t, forced) in p.SubtitleTracks.Select(t => (t, false)).Concat(p.ForcedTracks.Select(t => (t, true))))
         {
+            if (t.Pictures && !picturesReady.Contains(t.Id))
+            {
+                continue;
+            }
+
             var language = t.Language is { Length: > 0 } tag
                 ? Three(tag)
                 : null;

@@ -890,3 +890,15 @@ unless the server trusts the proxy's forwarded address.
 
 **Assumed.** The plugin takes the address Jellyfin gives the request,
 which follows Jellyfin's "known proxies" setting. The README says so.
+
+### Playback section 6: a remux found to re-encode, with no transcode left (2026-11-20, spec at 2ab01bf)
+
+**Issue.** Section 6.2 says a remux found to re-encode the video counts
+as a transcode from then on. When the pairing (or the server) has no
+transcode left, the owning server can only end the playback, and none
+of the end reasons fits: `stopped`, `expired`, `tooLong`,
+`pairingEnded`, `notOffered`, `operator`.
+
+**Assumed.** The plugin ends it with `operator`, the closest. A reason
+of its own (`transcodeLimit`, say) would tell the viewer's server it may
+ask again for a version that copies, or later.

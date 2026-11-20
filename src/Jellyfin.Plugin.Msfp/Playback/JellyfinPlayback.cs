@@ -33,7 +33,7 @@ namespace Jellyfin.Plugin.Msfp.Playback;
 /// encoder. What the device can't play as it is plays as HLS, Jellyfin
 /// remuxing or transcoding it (<see cref="Hls"/>).
 /// </summary>
-public sealed class JellyfinPlayback : IPlayback, IMedia
+public sealed partial class JellyfinPlayback : IPlayback, IMedia
 {
     private readonly ILibraryManager _library;
     private readonly ISubtitleEncoder _subtitles;
@@ -208,8 +208,12 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
             {
                 slot = request.Admit?.Invoke(choice.Method);
                 var master = await _hls.MasterAsync(item.Id, handle, choice, audio?.Index ?? -1, ct).ConfigureAwait(false);
-                live = new Live(item.Id, video.Path, request.Peer.Name, master, transcode);
+                live = new Live(item.Id, video.Path, request.Peer.Name, master, transcode) { Slot = slot };
                 started = new Started { Handle = handle, Method = choice.Method, Protocol = "hls" };
+                if (!transcode)
+                {
+                    WatchRemux(handle, request.Title);
+                }
             }
             catch
             {
@@ -427,6 +431,68 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
     private static IEnumerable<MediaStream> PgsSubtitles(IEnumerable<MediaStream> streams) =>
         streams.Where(s => s.Type == MediaStreamType.Subtitle && s.IsPgsSubtitleStream && s.Index is >= 0 and <= 999);
 
+    [System.Text.RegularExpressions.GeneratedRegex(@"-codec:v:0 (\S+)")]
+    private static partial System.Text.RegularExpressions.Regex VideoCodecArgument();
+
+    /// <summary>The video encoder in Jellyfin's ffmpeg command ("copy" when copied); null when it names none.</summary>
+    internal static string? VideoCodecOf(string arguments) =>
+        VideoCodecArgument().Match(arguments) is { Success: true } m ? m.Groups[1].Value : null;
+
+    /// <summary>The engine, to stop a playback from here; set by EngineHost.</summary>
+    internal Func<MsfpEngine?>? Engine { get; set; }
+
+    // A remux asked of Jellyfin copies the video, but Jellyfin may re-encode
+    // it anyway (its own rules: a stream whose bitrate the file doesn't
+    // say, among others). Watched in Jellyfin's report on the playback's
+    // device while it starts: found re-encoding, it counts as a transcode
+    // from then on (MSFP playback section 6.2), for the pairing and the
+    // server; with none left, it's stopped.
+    private void WatchRemux(string handle, string title) => _ = Task.Run(async () =>
+    {
+        for (var i = 0; i < 60 && _live.TryGetValue(handle, out var live); i++)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+            // Jellyfin's ffmpeg for this playback (its play session is the
+            // handle): the video copied, or encoded by another codec.
+            string arguments;
+            try
+            {
+                arguments = _transcodes.GetTranscodingJob(handle)?.Process?.StartInfo.Arguments ?? string.Empty;
+            }
+            catch (InvalidOperationException)
+            {
+                continue;
+            }
+
+            var video = VideoCodecOf(arguments);
+            if (video is null)
+            {
+                continue;
+            }
+
+            if (video == "copy")
+            {
+                return;
+            }
+
+            var counted = live.Slot?.Transcoding() != false && _limit.TryTake();
+            if (counted)
+            {
+                live.Transcode = true;
+                _log.LogInformation("MSFP: {Peer}'s remux of {Title} re-encodes the video: counted as a transcode", live.Peer, title);
+                return;
+            }
+
+            _log.LogInformation("MSFP: {Peer}'s remux of {Title} re-encodes the video, and no transcode is left: stopped", live.Peer, title);
+            if (Engine?.Invoke() is { } engine && engine.Playbacks().FirstOrDefault(p => p.Handle == handle) is { } playback)
+            {
+                engine.StopPlayback(playback.Id, EndReason.Operator);
+            }
+
+            return;
+        }
+    });
+
     // A copy of several files, joined here (Joined): its own playlists and segments.
     private static async Task ServeJoinedAsync(Joined joined, MediaPath path, ByteRange? range, IResponseSink output, CancellationToken ct)
     {
@@ -575,8 +641,11 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
 
     private sealed class Live(Guid item, string path, string peer, string? master, bool transcode)
     {
-        /// <summary>A transcode, counted by the server-wide limit.</summary>
-        public bool Transcode { get; } = transcode;
+        /// <summary>A transcode, counted by the server-wide limit (a remux found to re-encode becomes one).</summary>
+        public bool Transcode { get; set; } = transcode;
+
+        /// <summary>The engine's count of this playback, for a remux found to re-encode; null outside the engine.</summary>
+        public ISlot? Slot { get; init; }
 
         /// <summary>Jellyfin's master playlist URL, for HLS; null for the file.</summary>
         public string? Master { get; } = master;

@@ -194,8 +194,16 @@ viewer's device plays them as they are; otherwise the copy is refused
 can't play parts as one, and a conversion outside it would miss its
 settings (hardware acceleration) and its dashboard.
 
-Not built yet: checking that a remux Jellyfin made didn't re-encode the
-video, and Jellyfin's own dashboard showing peers' playbacks.
+A remux asked of Jellyfin (the video copied) is watched while it starts:
+Jellyfin may re-encode the video anyway, by its own rules. The plugin
+reads the video encoder in Jellyfin's ffmpeg command for that playback;
+re-encoding, the playback counts as a transcode from then on (MSFP
+playback section 6.2), for the pairing and against "Transcodes at once
+on this server", and with none left it is stopped (reason `operator`:
+MSFP has no closer one, SPEC-GAPS). With the plugin's requests this is
+rare: Jellyfin works out a stream's bitrate the file doesn't give.
+
+Not built yet: Jellyfin's own dashboard showing peers' playbacks.
 
 ## Paired servers' titles
 
