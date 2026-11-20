@@ -8,72 +8,147 @@
     <div id="MsfpConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-textarea">
         <div data-role="content">
             <div class="content-primary">
-                <h2>MSFP Federation</h2>
-                <p>Early. <span id="MsfpProblem" style="font-weight:bold"></span></p>
-                <form id="MsfpConfigForm">
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="MsfpAddress">This server's address</label>
-                        <input id="MsfpAddress" name="MsfpAddress" type="text" is="emby-input" placeholder="https://media.example.org" />
-                        <div class="fieldDescription">Where peers reach this server: https, a host and an optional port, no path (Jellyfin's base URL, if any, is added by itself). Empty: federation is off. Changing it moves this server: paired servers are told.</div>
+                <style>
+                    #MsfpConfigPage .msfpTabs { margin: 0 0 1.5em; border-bottom: 1px solid rgba(128, 128, 128, 0.3); }
+                    #MsfpConfigPage .msfpTabs .emby-tabs-slider { display: flex; overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+                    @media (max-width: 40em) { #MsfpConfigPage .msfpTabs .emby-tab-button { padding-left: 0.8em; padding-right: 0.8em; } }
+                    #MsfpConfigPage .msfpPanel { max-width: 54em; }
+                    #MsfpConfigPage .msfpPanel[hidden] { display: none; }
+                    #MsfpConfigPage .msfpNotice { padding: 0.8em 1em; margin: 0 0 1.5em; border-radius: 0.3em; background: rgba(0, 164, 220, 0.15); border-left: 0.25em solid #00a4dc; }
+                    #MsfpConfigPage .msfpNotice:empty { display: none; }
+                    #MsfpConfigPage .msfpCard { padding: 1em 1.2em; margin: 0 0 1em; border-radius: 0.3em; background: rgba(128, 128, 128, 0.1); }
+                    #MsfpConfigPage .msfpCard h3 { margin: 0 0 0.4em; }
+                    #MsfpConfigPage .msfpCard .fieldDescription { margin: 0.2em 0; }
+                    #MsfpConfigPage .msfpActions { display: flex; flex-wrap: wrap; gap: 0.5em; margin-top: 0.8em; }
+                    #MsfpConfigPage .msfpActions .emby-button { margin: 0; }
+                    #MsfpConfigPage .msfpFacts { display: grid; grid-template-columns: max-content 1fr; gap: 0.4em 1.5em; margin: 0 0 1em; }
+                    #MsfpConfigPage .msfpFacts dt { opacity: 0.7; }
+                    #MsfpConfigPage .msfpFacts dd { margin: 0; overflow-wrap: anywhere; }
+                    #MsfpConfigPage .msfpMono { font-family: monospace; }
+                    #MsfpConfigPage details.msfpAdvanced { margin: 1.5em 0; }
+                    #MsfpConfigPage details.msfpAdvanced summary { cursor: pointer; font-size: 1.1em; padding: 0.5em 0; }
+                    #MsfpConfigPage .msfpDanger { margin-top: 2em; padding-top: 1em; border-top: 1px solid rgba(128, 128, 128, 0.3); }
+                    #MsfpConfigPage .msfpSaveBar { margin-top: 2em; }
+                    #MsfpConfigPage dialog .emby-button { margin: 0; }
+                </style>
+                <h2 class="sectionTitle">MSFP Federation</h2>
+                <div class="emby-tabs msfpTabs" role="tablist">
+                    <div class="emby-tabs-slider">
+                        <button is="emby-button" type="button" class="emby-tab-button" data-tab="peers" role="tab"><div class="emby-button-foreground">Peers</div></button>
+                        <button is="emby-button" type="button" class="emby-tab-button" data-tab="settings" role="tab"><div class="emby-button-foreground">Settings</div></button>
+                        <button is="emby-button" type="button" class="emby-tab-button" data-tab="server" role="tab"><div class="emby-button-foreground">This server</div></button>
+                        <button is="emby-button" type="button" class="emby-tab-button" data-tab="titles" role="tab"><div class="emby-button-foreground">Titles</div></button>
                     </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="MsfpServerName">This server's name</label>
-                        <input id="MsfpServerName" name="MsfpServerName" type="text" is="emby-input" maxlength="80" />
-                        <div class="fieldDescription">The name peers show. Empty: the address's host.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="MsfpPins">Certificate pins (optional)</label>
-                        <textarea id="MsfpPins" is="emby-textarea" rows="2" style="width:100%;font-family:monospace"></textarea>
-                        <div class="fieldDescription">Over https, peers accept this server's certificate when it is publicly trusted or named by its pin: the SHA-256 of its public key info, base64url. Empty: the plugin reads the certificate served at this server's address and names it. Set pins here, one per line, to name exactly these instead.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="MsfpTranscodes">Transcodes at once on this server</label>
-                        <input id="MsfpTranscodes" name="MsfpTranscodes" type="number" is="emby-input" min="0" max="100" step="1" />
-                        <div class="fieldDescription">Your users' transcodes and paired servers' together. At the limit, a paired server's viewer is told this server is busy; your own users are never refused. Direct play and remux (the video copied) don't count. 0: paired servers get no transcodes. Each pairing's own limits apply as well.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="MsfpTmdbKey">Your TMDB key (optional)</label>
-                        <input id="MsfpTmdbKey" name="MsfpTmdbKey" type="password" is="emby-input" autocomplete="off" />
-                        <div class="fieldDescription">The plugin identifies the titles you share against TMDB itself, before paired servers see them. It uses its own TMDB key; to use yours instead (an API key or a read access token from your TMDB account's settings), enter it here.</div>
-                    </div>
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label>
-                            <input id="MsfpAllowLoopback" name="MsfpAllowLoopback" type="checkbox" is="emby-checkbox" />
-                            <span>Allow peers on this machine</span>
-                        </label>
-                        <div class="fieldDescription checkboxFieldDescription">Off by default: the plugin never connects, for a peer, to this machine itself (loopback), nor to link-local addresses (a cloud's metadata service among them), unspecified, multicast or reserved ones. Private ranges (a LAN) are fine. Turn this on only to pair with a server on this same machine; link-local stays refused.</div>
-                    </div>
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label>
-                            <input id="MsfpDiscovery" name="MsfpDiscovery" type="checkbox" is="emby-checkbox" />
-                            <span>Serve the discovery document</span>
-                        </label>
-                        <div class="fieldDescription checkboxFieldDescription">Off by default: /.well-known/msfp tells anyone who asks that this server federates.</div>
-                    </div>
-                    <div>
-                        <button is="emby-button" type="submit" class="raised button-submit block emby-button">
-                            <span>Save</span>
-                        </button>
-                    </div>
-                </form>
+                </div>
+                <div id="MsfpProblem" class="msfpNotice"></div>
+                <div id="MsfpMessage" class="msfpNotice"></div>
 
-                <h3>This server</h3>
-                <p>Fingerprint: <strong id="MsfpFingerprint">…</strong></p>
-                <p>Address: <code id="MsfpOwnAddress">…</code>; next key: <code id="MsfpNextKey">…</code></p>
-                <p>Paired servers' viewers playing here: <span id="MsfpPlaying">…</span>; transcodes now: <span id="MsfpTranscoding">…</span></p>
-                <div class="fieldDescription">Compare fingerprints with the other server's operator, by phone or another channel you trust, before you accept a pairing.</div>
-                <div>
-                    <button is="emby-button" type="button" id="MsfpRotate" class="raised emby-button"><span>Change to the next key</span></button>
-                    <button is="emby-button" type="button" id="MsfpStolen" class="raised emby-button"><span>This server's key was stolen</span></button>
-                    <div class="fieldDescription">Changing keys tells paired servers, which follow without anything to do. A stolen key is revoked: paired servers stop trusting it, and follow to the next key.</div>
+                <div class="msfpPanel" data-panel="peers">
+                    <div class="msfpCard">
+                        <h3>Pair with another server</h3>
+                        <div class="fieldDescription">Send a pairing code to the other operator. It works once, for 24 hours.</div>
+                        <div class="msfpActions">
+                            <button is="emby-button" type="button" id="MsfpMakeCode" class="raised emby-button"><span>Make a pairing code</span></button>
+                        </div>
+                        <textarea id="MsfpCode" is="emby-textarea" class="emby-textarea msfpMono" readonly rows="3" style="width:100%;display:none;margin-top:0.8em"></textarea>
+                        <div class="inputContainer" style="margin:1.5em 0 0">
+                            <label class="inputLabel inputLabelUnfocused" for="MsfpRedeem">Or paste a code another operator sent</label>
+                            <textarea id="MsfpRedeem" is="emby-textarea" class="emby-textarea msfpMono" rows="3" style="width:100%"></textarea>
+                        </div>
+                        <div class="msfpActions">
+                            <button is="emby-button" type="button" id="MsfpRedeemButton" class="raised emby-button"><span>Use this code</span></button>
+                        </div>
+                    </div>
+                    <h3>Paired servers</h3>
+                    <div id="MsfpPeers"></div>
                 </div>
 
-                <h3>Identification</h3>
-                <p id="MsfpIdentified">…</p>
-                <div class="fieldDescription">Before a film or a series is shared, the plugin checks which title it is on TMDB, from its folder and file names, its length or its seasons, and its audio. Only titles clearly identified, or that you chose, are shared; the others wait for you here.</div>
-                <div id="MsfpToCheck"></div>
-                <div class="fieldDescription">This product uses the TMDB API but is not endorsed or certified by TMDB.</div>
-                <dialog id="MsfpCheckDialog" style="min-width:20em;max-width:40em">
+                <div class="msfpPanel" data-panel="settings" hidden>
+                    <form id="MsfpConfigForm">
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="MsfpAddress">This server's address</label>
+                            <input id="MsfpAddress" name="MsfpAddress" type="text" is="emby-input" placeholder="https://media.example.org" />
+                            <div class="fieldDescription">Where paired servers reach this one: https, a host and an optional port. Empty: federation is off.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="MsfpServerName">This server's name</label>
+                            <input id="MsfpServerName" name="MsfpServerName" type="text" is="emby-input" maxlength="80" />
+                            <div class="fieldDescription">The name paired servers show. Empty: the address's host.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="MsfpTranscodes">Transcodes at once</label>
+                            <input id="MsfpTranscodes" name="MsfpTranscodes" type="number" is="emby-input" min="0" max="100" step="1" />
+                            <div class="fieldDescription">Your users' and paired servers' together. At the limit, paired servers are told this server is busy; your own users are never refused. 0: no transcodes for paired servers.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="MsfpTmdbKey">Your TMDB key (optional)</label>
+                            <input id="MsfpTmdbKey" name="MsfpTmdbKey" type="password" is="emby-input" autocomplete="off" />
+                            <div class="fieldDescription">Used to identify the titles you share. Empty: the plugin's own key.</div>
+                        </div>
+                        <details class="msfpAdvanced">
+                            <summary>Advanced</summary>
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="MsfpPins">Certificate pins</label>
+                                <textarea id="MsfpPins" is="emby-textarea" class="emby-textarea msfpMono" rows="2" style="width:100%"></textarea>
+                                <div class="fieldDescription">One SHA-256 public key pin (base64url) per line. Empty: the plugin pins the certificate served at this server's address.</div>
+                            </div>
+                            <div class="checkboxContainer checkboxContainer-withDescription">
+                                <label>
+                                    <input id="MsfpAllowLoopback" name="MsfpAllowLoopback" type="checkbox" is="emby-checkbox" />
+                                    <span>Allow paired servers on this machine</span>
+                                </label>
+                                <div class="fieldDescription checkboxFieldDescription">Only to pair with a server on this same machine. Link-local addresses stay refused.</div>
+                            </div>
+                            <div class="checkboxContainer checkboxContainer-withDescription">
+                                <label>
+                                    <input id="MsfpDiscovery" name="MsfpDiscovery" type="checkbox" is="emby-checkbox" />
+                                    <span>Serve the discovery document</span>
+                                </label>
+                                <div class="fieldDescription checkboxFieldDescription">/.well-known/msfp tells anyone who asks that this server federates.</div>
+                            </div>
+                        </details>
+                        <div class="msfpSaveBar">
+                            <button is="emby-button" type="submit" class="raised button-submit block emby-button"><span>Save</span></button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="msfpPanel" data-panel="server" hidden>
+                    <dl class="msfpFacts">
+                        <dt>Fingerprint</dt><dd><strong id="MsfpFingerprint" class="msfpMono"></strong></dd>
+                        <dt>Address</dt><dd id="MsfpOwnAddress"></dd>
+                        <dt>Next key</dt><dd id="MsfpNextKey" class="msfpMono"></dd>
+                        <dt>Playing here</dt><dd id="MsfpPlaying"></dd>
+                        <dt>Transcodes now</dt><dd id="MsfpTranscoding"></dd>
+                    </dl>
+                    <div class="fieldDescription">Compare fingerprints with the other operator, by phone or another channel you trust, before you accept a pairing.</div>
+                    <div class="msfpActions">
+                        <button is="emby-button" type="button" id="MsfpRotate" class="raised emby-button"><span>Change to the next key</span></button>
+                    </div>
+                    <div class="fieldDescription">Paired servers are told, and follow by themselves.</div>
+                    <div class="msfpDanger">
+                        <button is="emby-button" type="button" id="MsfpStolen" class="raised button-delete emby-button"><span>This server's key was stolen</span></button>
+                        <div class="fieldDescription">Revokes the key: paired servers stop trusting it and follow to the next one.</div>
+                    </div>
+                </div>
+
+                <div class="msfpPanel" data-panel="titles" hidden>
+                    <div class="msfpCard">
+                        <h3>Titles from paired servers</h3>
+                        <p id="MsfpPaired"></p>
+                        <div class="fieldDescription">Two libraries of their films and series, without the titles you have yourself. Users with access to all libraries see them; for the others, tick them in each user's library access.</div>
+                        <div class="msfpActions">
+                            <button is="emby-button" type="button" id="MsfpPairedAgain" class="raised emby-button" style="display:none"><span>Make the libraries again</span></button>
+                        </div>
+                    </div>
+                    <div class="msfpCard">
+                        <h3>Identification</h3>
+                        <p id="MsfpIdentified"></p>
+                        <div class="fieldDescription">Before a film or a series is shared, the plugin checks which TMDB title it is. Only titles clearly identified, or that you chose, are shared; the others wait for you below.</div>
+                    </div>
+                    <div id="MsfpToCheck"></div>
+                    <div class="fieldDescription" style="margin-top:1.5em">This product uses the TMDB API but is not endorsed or certified by TMDB.</div>
+                    <dialog id="MsfpCheckDialog" style="min-width:20em;max-width:40em">
                     <h3 id="MsfpCheckName"></h3>
                     <div id="MsfpCheckWhere" class="fieldDescription"></div>
                     <ul id="MsfpCheckReasons"></ul>
@@ -90,27 +165,7 @@
                         <button is="emby-button" type="button" id="MsfpCheckCancel" class="raised emby-button"><span>Cancel</span></button>
                     </div>
                 </dialog>
-
-                <h3>Titles from paired servers</h3>
-                <p id="MsfpPaired">…</p>
-                <div class="fieldDescription">The plugin keeps two libraries of the paired servers' films and series, apart from yours. A title you have yourself isn't in them; for a series, only the episodes you don't have are. Users with access to all libraries see them; for the others, tick them in each user's library access. When several servers hold a title, the best copy is played, or the next server's when one is busy.</div>
-                <button is="emby-button" type="button" id="MsfpPairedAgain" class="raised emby-button" style="display:none"><span>Make the libraries again</span></button>
-
-                <h3>Pair with another server</h3>
-                <div>
-                    <button is="emby-button" type="button" id="MsfpMakeCode" class="raised emby-button"><span>Make a pairing code</span></button>
-                    <div class="fieldDescription">Send the code to the other operator. It works once, for 24 hours.</div>
-                    <textarea id="MsfpCode" readonly rows="3" style="width:100%;display:none;font-family:monospace"></textarea>
                 </div>
-                <div class="inputContainer">
-                    <label class="inputLabel inputLabelUnfocused" for="MsfpRedeem">A code another operator sent</label>
-                    <textarea id="MsfpRedeem" is="emby-textarea" rows="3" style="width:100%;font-family:monospace"></textarea>
-                </div>
-                <button is="emby-button" type="button" id="MsfpRedeemButton" class="raised emby-button"><span>Use this code</span></button>
-                <p id="MsfpMessage"></p>
-
-                <h3>Peers</h3>
-                <div id="MsfpPeers"></div>
 
                 <dialog id="MsfpOffersDialog" style="min-width:20em">
                     <h3>Libraries offered to <span id="MsfpOffersPeer"></span></h3>
@@ -198,87 +253,125 @@
                 document.querySelector('#MsfpMessage').textContent = text || '';
             }
 
-            function msfpButton(label, onClick) {
+            function msfpButton(label, onClick, danger) {
                 var b = document.createElement('button');
                 b.setAttribute('is', 'emby-button');
                 b.type = 'button';
-                b.className = 'raised emby-button';
+                b.className = 'raised emby-button' + (danger ? ' button-delete' : '');
                 b.textContent = label;
                 b.addEventListener('click', onClick);
                 return b;
             }
+
+            // A card: a title, lines of description, and a row of buttons.
+            function msfpCard(title, lines, buttons) {
+                var card = document.createElement('div');
+                card.className = 'msfpCard';
+                var h = document.createElement('h3');
+                h.textContent = title;
+                card.appendChild(h);
+                lines.forEach(function (text) {
+                    if (!text) return;
+                    var d = document.createElement('div');
+                    d.className = 'fieldDescription';
+                    d.textContent = text;
+                    card.appendChild(d);
+                });
+                if (buttons.length) {
+                    var row = document.createElement('div');
+                    row.className = 'msfpActions';
+                    buttons.forEach(function (b) { row.appendChild(b); });
+                    card.appendChild(row);
+                }
+                return card;
+            }
+
+            // The tabs: one panel shown at a time.
+            function msfpTab(name) {
+                document.querySelectorAll('#MsfpConfigPage .msfpTabs .emby-tab-button').forEach(function (b) {
+                    var on = b.getAttribute('data-tab') === name;
+                    b.classList.toggle('emby-tab-button-active', on);
+                    b.setAttribute('aria-selected', on ? 'true' : 'false');
+                });
+                document.querySelectorAll('#MsfpConfigPage .msfpPanel').forEach(function (p) {
+                    p.hidden = p.getAttribute('data-panel') !== name;
+                });
+            }
+            document.querySelectorAll('#MsfpConfigPage .msfpTabs .emby-tab-button').forEach(function (b) {
+                b.addEventListener('click', function () { msfpTab(b.getAttribute('data-tab')); });
+            });
+            var msfpTabChosen = false;
 
             function msfpLoad() {
                 msfpIdentification();
                 msfpPaired();
                 ApiClient.getJSON(ApiClient.getUrl('Msfp/Status')).then(function (s) {
                     document.querySelector('#MsfpProblem').textContent = s.on ? '' : (s.problem || 'Federation is off.');
-                    document.querySelector('#MsfpFingerprint').textContent = s.on ? s.fingerprint : '…';
-                    document.querySelector('#MsfpOwnAddress').textContent = s.on ? s.address + (s.waiting ? ' (moving: not reached there yet)' : '') : '…';
-                    document.querySelector('#MsfpNextKey').textContent = s.on ? s.nextKey + (s.nextOnServer ? '' : ' (not on this server)') : '…';
-                    document.querySelector('#MsfpPlaying').textContent = s.on ? String(s.playing) : '…';
+                    document.querySelector('#MsfpFingerprint').textContent = s.on ? s.fingerprint : '—';
+                    document.querySelector('#MsfpOwnAddress').textContent = s.on ? s.address + (s.waiting ? ' (moving: not reached there yet)' : '') : '—';
+                    document.querySelector('#MsfpNextKey').textContent = s.on ? s.nextKey + (s.nextOnServer ? '' : ' (not on this server)') : '—';
+                    document.querySelector('#MsfpPlaying').textContent = s.on ? s.playing + (s.playing === 1 ? " paired server's viewer" : " paired servers' viewers") : '—';
                     document.querySelector('#MsfpTranscoding').textContent = s.on && s.transcodes
                         ? (s.transcodes.own + s.transcodes.peers) + ' of ' + s.transcodes.most + ' (your users ' + s.transcodes.own + ', paired servers ' + s.transcodes.peers + ')'
-                        : '…';
+                        : '—';
+                    document.querySelector('#MsfpRotate').disabled = !s.on;
+                    document.querySelector('#MsfpStolen').disabled = !s.on;
+                    // First shown: the peers, or the settings while federation is off.
+                    if (!msfpTabChosen) {
+                        msfpTabChosen = true;
+                        msfpTab(s.on ? 'peers' : 'settings');
+                    }
                 });
                 ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers')).then(function (peers) {
                     var list = document.querySelector('#MsfpPeers');
                     list.textContent = '';
                     if (!peers.length) {
-                        list.textContent = 'None yet.';
+                        list.innerHTML = '<div class="fieldDescription">None yet. Make a pairing code, or use one another operator sent.</div>';
                     }
                     var states = {
-                        ours: 'used your code; waiting for you to accept',
-                        theirs: 'waiting for its operator to accept',
-                        paired: 'paired',
-                        gone: 'no longer knows this server'
+                        ours: 'Used your code; waiting for you to accept',
+                        theirs: 'Waiting for its operator to accept',
+                        paired: 'Paired',
+                        gone: 'No longer knows this server'
                     };
                     peers.forEach(function (p) {
-                        var row = document.createElement('div');
-                        row.className = 'paperList';
-                        row.style.padding = '0.5em 1em';
-                        var title = document.createElement('div');
-                        title.textContent = p.name + ' (' + p.address + '): ' + (states[p.state] || p.state);
-                        var fp = document.createElement('div');
-                        fp.className = 'fieldDescription';
-                        fp.textContent = 'Fingerprint: ' + p.fingerprint + (p.pending ? '. New key to confirm: ' + p.pending : '');
-                        row.appendChild(title);
-                        row.appendChild(fp);
                         var key = encodeURIComponent(p.id);
+                        var lines = [(states[p.state] || p.state) + ' · ' + p.address,
+                            'Fingerprint: ' + p.fingerprint + (p.pending ? '. New key to confirm: ' + p.pending : '')];
+                        var buttons = [];
                         if (p.state === 'paired') {
-                            var offered = document.createElement('div');
-                            offered.className = 'fieldDescription';
-                            offered.textContent = 'Libraries offered: ' + (p.offers || 'none') + '; read: ' + (p.wants || 'none') +
-                                '; at most ' + p.limits.streams + ' streams, ' + p.limits.transcodes + ' transcodes here' +
-                                (p.limits.bitrateKbps ? ', ' + p.limits.bitrateKbps + ' kbit/s each' : '');
-                            row.appendChild(offered);
-                            row.appendChild(msfpButton('Offers…', function () { msfpOffers(p); }));
-                            row.appendChild(msfpButton('Read…', function () { msfpWants(p); }));
-                            row.appendChild(msfpButton('Titles read…', function () { msfpCatalog(p); }));
-                            row.appendChild(msfpButton('Limits…', function () { msfpLimits(p); }));
+                            lines.push('Offered: ' + (p.offers || 'nothing') + ' · Read: ' + (p.wants || 'nothing'));
+                            lines.push('Here, at most ' + p.limits.streams + ' streams and ' + p.limits.transcodes + ' transcodes' +
+                                (p.limits.bitrateKbps ? ', ' + p.limits.bitrateKbps + ' kbit/s each' : ''));
+                            buttons.push(msfpButton('Offered…', function () { msfpOffers(p); }));
+                            buttons.push(msfpButton('Read…', function () { msfpWants(p); }));
+                            buttons.push(msfpButton('Titles read…', function () { msfpCatalog(p); }));
+                            buttons.push(msfpButton('Limits…', function () { msfpLimits(p); }));
                         }
                         if (p.state === 'ours') {
-                            row.appendChild(msfpButton('Accept', function () {
+                            buttons.push(msfpButton('Accept', function () {
                                 msfpPost('Msfp/Peers/' + key + '/Accept').then(msfpLoad, msfpLoad);
                             }));
                         }
                         if (p.pending) {
-                            row.appendChild(msfpButton('Confirm the new key', function () {
+                            buttons.push(msfpButton('Confirm the new key', function () {
                                 if (confirm('Confirm ' + p.name + "'s new key " + p.pending + '? Compare it with its operator first.')) {
                                     msfpPost('Msfp/Peers/' + key + '/Confirm').then(msfpLoad, msfpLoad);
                                 }
                             }));
                         }
-                        row.appendChild(msfpButton('Check', function () {
+                        buttons.push(msfpButton('Check', function () {
                             msfpPost('Msfp/Peers/' + key + '/Hello').then(msfpLoad, msfpLoad);
                         }));
-                        row.appendChild(msfpButton(p.state === 'paired' ? 'End pairing' : 'Remove', function () {
+                        buttons.push(msfpButton(p.state === 'paired' ? 'End pairing' : 'Remove', function () {
                             if (confirm('End the pairing with ' + p.name + '? Only a new code can start it again.')) {
                                 msfpPost('Msfp/Peers/' + key + '/End').then(msfpLoad, msfpLoad);
                             }
-                        }));
-                        list.appendChild(row);
+                        }, true));
+                        var row = msfpCard(p.name, lines, buttons);
                     });
+                }, function () {
+                    document.querySelector('#MsfpPeers').innerHTML = '<div class="fieldDescription">None yet.</div>';
                 });
             }
 
@@ -370,25 +463,16 @@
             var msfpCheckFor = null;
             function msfpIdentification() {
                 ApiClient.getJSON(ApiClient.getUrl('Msfp/Identification')).then(function (r) {
-                    var keys = { own: 'with your TMDB key', plugin: "with the plugin's TMDB key", none: 'not possible yet: no TMDB key (set yours above)' };
+                    var keys = { own: 'with your TMDB key', plugin: "with the plugin's TMDB key", none: 'not possible yet: no TMDB key (set yours in Settings)' };
                     document.querySelector('#MsfpIdentified').textContent = 'Identified and shared: ' + r.taken + '; waiting for you: ' + r.toCheck +
                         '. Identification ' + (keys[r.key] || r.key) + (r.running ? '; identifying now…' : '.');
                     var list = document.querySelector('#MsfpToCheck');
                     list.textContent = '';
                     r.titles.forEach(function (t) {
-                        var row = document.createElement('div');
-                        row.className = 'paperList';
-                        row.style.padding = '0.5em 1em';
-                        var title = document.createElement('div');
-                        title.textContent = (t.folder || t.name) + ' (' + (t.kind === 'series' ? 'series' : 'film') + '): ' +
-                            (t.chosen ? 'your choice, ' + (t.chosenName || 'TMDB ' + t.chosen) : t.match ? 'to check' : 'not found on TMDB');
-                        var why = document.createElement('div');
-                        why.className = 'fieldDescription';
-                        why.textContent = t.chosen ? '' : (t.reasons || []).join(' ');
-                        row.appendChild(title);
-                        row.appendChild(why);
-                        row.appendChild(msfpButton('Check…', function () { msfpCheck(t); }));
-                        list.appendChild(row);
+                        list.appendChild(msfpCard((t.folder || t.name) + (t.kind === 'series' ? ' (series)' : ' (film)'),
+                            [t.chosen ? 'Your choice: ' + (t.chosenName || 'TMDB ' + t.chosen) : t.match ? 'To check' : 'Not found on TMDB',
+                                t.chosen ? '' : (t.reasons || []).join(' ')],
+                            [msfpButton('Check…', function () { msfpCheck(t); })]));
                     });
                 }, function () { document.querySelector('#MsfpIdentified').textContent = 'The identification could not be read.'; });
             }
