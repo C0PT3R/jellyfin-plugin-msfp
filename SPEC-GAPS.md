@@ -16,7 +16,7 @@ entry there is closed.
 
 ### playback 2.3 and 2.6: what a track's position counts
 
-*Open.*
+*Closed on 2026-11-20 (msfp-spec proposal 1, adopted): the owning server's own stable number for the track in the copy, a stream index for example; the plugin follows it.*
 
 **Issue.** Track IDs `a<n>` and `s<n>` "are positions, not identifiers",
 from 0 to 999. It isn't said positions of what: among the copy's audio
@@ -32,7 +32,7 @@ conformance suite accepts it.
 
 ### playback 3: how often a viewer's server sends progress
 
-*Open (msfp-spec proposal 6).*
+*Closed on 2026-11-20 (msfp-spec proposal 6, adopted): no more often than every 45 seconds, never 2 minutes without one, paused too; the plugin follows it.*
 
 **Issue.** "The viewer's server should send `progress` at most every 45
 seconds while the viewer watches." That caps how often; nothing says it
@@ -48,7 +48,7 @@ ended as expired); proposal 6 words it so.
 
 ### playback 6: a server without a transcode budget
 
-*Open.*
+*Closed on 2026-11-20 (msfp-spec proposal 2, adopted): such a server makes one; the plugin's setting is that.*
 
 **Issue.** A `transcode` needs "a transcode free for the pairing and in the
 server's budget", the server's transcodes "less those it keeps for its
@@ -63,7 +63,7 @@ own users are never refused. The pairings' `transcodes` apply as well.
 
 ### playback 6: finding that a remux re-encodes the video
 
-*Open.*
+*Closed on 2026-11-20 (msfp-spec proposals 3 and 4, adopted): counted as a transcode when the owning server can tell, ended when none is left; the plugin follows it.*
 
 **Issue.** "A remux found to re-encode the video counts as a transcode from
 then on." How the owning server finds out is left to it; a host that asks
@@ -79,7 +79,7 @@ of this section for the reason it gives).
 
 ### core 11 and media 1: a prefix the discovery document can't announce
 
-*Open.*
+*Closed on 2026-11-20 (msfp-spec proposal 5, adopted): the discovery document is served at the address's root, by the reverse proxy when the media server serves nothing there; the plugin's assumption.*
 
 **Issue.** A server under a base path (Jellyfin's base URL, `/jellyfin`)
 has a prefix, and peers learn it from the discovery document at the
