@@ -4,6 +4,13 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
+## 0.5.3 (2026-11-20)
+
+### Added
+
+- The plugin has a logo, the MSFP logo: in Jellyfin's plugin catalog and
+  among the installed plugins.
+
 ## 0.5.2 (2026-11-20)
 
 ### Changed
