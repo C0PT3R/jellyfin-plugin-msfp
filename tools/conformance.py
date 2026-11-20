@@ -144,9 +144,6 @@ class Operator:
     def op_accept2(self):
         self.accept(True)
 
-    def op_paired(self):
-        pass
-
     def op_want(self):
         pid = self.suite(False, ("paired",))
         print("  [operator] reads all: %s" % call("POST", "/Msfp/Peers/%s/Wants" % pid, {"All": True, "Libraries": []})[0])
