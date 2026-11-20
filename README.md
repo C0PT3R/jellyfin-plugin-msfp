@@ -19,7 +19,8 @@ with Overfin and with other servers that speak MSFP.
   sees.
 - **Let their viewers play** your films and episodes. Your server sends
   the file as it is when their device can play it, or converts it on the
-  fly when it can't. Text subtitles and seek-bar previews come along.
+  fly when it can't. Subtitles (text and picture ones) and seek-bar
+  previews come along.
 - **Keep your server's load in hand**: a limit on how many conversions run
   at once on your server, your own users and paired servers together. Your
   own users are never refused.
