@@ -5,12 +5,17 @@ TO_VERSION the way an admin does (install over it, restart). Checks the
 new version is Active alone, settings, the server's key, its pairing
 codes and its libraries kept, and no error of the plugin's in the log.
 
-usage: update-path.py IMAGE FROM_VERSION TO_VERSION [--keep]
+usage: update-path.py IMAGE FROM_VERSION TO [--keep]
 e.g. update-path.py jellyfin/jellyfin:12.4.20261026-211555 0.3.0.0 0.4.0.0
-Both versions come from the public repository. The container is removed
-at the end unless --keep is given."""
-import json, subprocess, sys, time, urllib.error, urllib.request, urllib.parse
+FROM_VERSION comes from the public repository. TO is a version there
+too, or a package made by package.py (a .zip, say of a build about to be
+released, with a version above FROM's): Jellyfin is stopped, the
+package unpacked as Jellyfin's own update does (a folder of its version,
+the old one removed), and started again. The container is removed at
+the end unless --keep is given."""
+import io, json, os, subprocess, sys, tempfile, time, urllib.error, urllib.request, urllib.parse, zipfile
 IMAGE, FROM, TO = sys.argv[1], sys.argv[2], sys.argv[3]
+LOCAL = TO.endswith(".zip")
 REPO = "https://github.com/C0PT3R/jellyfin-plugin-msfp/releases/latest/download/manifest.json"
 PID = "505184bfb92c487fa406bf6b3570fb7f"
 port = 18196; name = "msfp-upd"; base = "http://127.0.0.1:%d" % port
@@ -50,6 +55,23 @@ def libraries():
         if all(l in names for l in LIBS): break
         time.sleep(5)
     return names
+def install_local(path):
+    """Unpacks a package as Jellyfin's update does; gives its version."""
+    with zipfile.ZipFile(path) as z:
+        version = json.loads(z.read("meta.json"))["version"]
+        stage = tempfile.mkdtemp()
+        z.extractall(os.path.join(stage, "MSFP Federation_" + version))
+    old = [d for d in docker("exec", name, "ls", "/config/plugins").split("\n") if d.startswith("MSFP Federation_")]
+    # Removed while Jellyfin runs (it has them loaded), then stopped: as
+    # its update leaves it, the old version gone at the next start.
+    for d in old:
+        docker("exec", name, "rm", "-rf", "/config/plugins/" + d)
+    docker("stop", name)
+    docker("cp", os.path.join(stage, "MSFP Federation_" + version), name + ":/config/plugins/")
+    expect(True, "package %s unpacked in place of %s" % (version, ", ".join(old)))
+    docker("start", name)
+    healthy()
+    return version
 def install(v):
     q = urllib.parse.urlencode({"assemblyGuid": PID, "version": v, "repositoryUrl": REPO})
     st, _ = call("POST", "/Packages/Installed/" + urllib.parse.quote("MSFP Federation") + "?" + q)
@@ -79,10 +101,15 @@ try:
     codes_before = call("GET", "/Msfp/Codes")[1]
     folders_before = libraries()
     expect(all(l in folders_before for l in LIBS), "%s made its libraries" % FROM)
-    install(TO)
+    if LOCAL:
+        # The version Jellyfin shows is the assembly's: a test package may
+        # carry another in meta.json; one copy Active is what counts.
+        TO = install_local(TO)
+    else:
+        install(TO)
     print("folders on disk:", docker("exec", name, "ls", "/config/plugins").split())
     restart()
-    p = ours(); expect(len(p) == 1 and p[0]["Version"] == TO and p[0]["Status"] == "Active", "%s Active alone: %s" % (TO, [(x["Version"], x["Status"]) for x in p]))
+    p = ours(); expect(len(p) == 1 and p[0]["Status"] == "Active" and (LOCAL or p[0]["Version"] == TO), "%s Active alone: %s" % (TO, [(x["Version"], x["Status"]) for x in p]))
     print("folders on disk:", docker("exec", name, "ls", "/config/plugins").split())
     after_cfg = call("GET", "/Plugins/%s/Configuration" % PID)[1]
     expect(all(after_cfg.get(k) == cfg[k] for k in ("Address", "ServerName", "TranscodesAtOnce", "AllowLoopback")), "settings kept")

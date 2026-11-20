@@ -116,7 +116,11 @@ code and its libraries, then installs TO over it and restarts. 0.3.0 to
 replaced the old version's folder, 0.4.0 alone Active, settings, the
 server's key, the code and the libraries kept (the engine's state lives
 in the plugin's data folder, apart from the version's folder), no error
-in the log.
+in the log. TO can also be a package made by `tools/package.py`, to
+try a build before releasing it: Jellyfin stopped, the package unpacked
+as its update does, started again. 0.4.0 from the repository to main
+(2026-11-20) on 12.2, 12.3 and 12.4: one copy Active, settings, key,
+code and libraries kept, no error.
 
 ## Running it
 
