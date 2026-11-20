@@ -116,6 +116,25 @@ public sealed class StandIns : IHostedService, IDisposable
             : w.Series.TryGetValue(k.Tmdb, out var s) && s.Episodes.TryGetValue(key, out var e) ? e.Copy : null;
     }
 
+    /// <summary>
+    /// <see cref="CopyOf"/>, also before the first pass since Jellyfin
+    /// started (2 minutes, or a catalog read): the copies are then taken
+    /// from the catalogs as stored, as a pass takes them.
+    /// </summary>
+    internal async Task<Playable?> CopyOfAsync(string key, CancellationToken ct)
+    {
+        if (_wanted is null && _host.Engine is { } engine)
+        {
+            var wanted = Wanted.Of(await LivePeersAsync(engine, ct).ConfigureAwait(false), Held());
+            lock (_lock)
+            {
+                _wanted ??= wanted;
+            }
+        }
+
+        return CopyOf(key);
+    }
+
     /// <summary>What the page shows: the libraries and what is in them.</summary>
     public StandInStatus Status { get; private set; } = new();
 

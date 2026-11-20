@@ -132,7 +132,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
         };
         var engine = _host.Engine ?? throw new InvalidOperationException("Federation is off on this server.");
         var key = item.Path![Wanted.PathOf(string.Empty).Length..];
-        var copy = _standIns.CopyOf(key) ?? throw new InvalidOperationException("No paired server holds this title now.");
+        var copy = await _standIns.CopyOfAsync(key, ct).ConfigureAwait(false) ?? throw new InvalidOperationException("No paired server holds this title now.");
         var busy = false;
         foreach (var holder in copy.Holders)
         {
