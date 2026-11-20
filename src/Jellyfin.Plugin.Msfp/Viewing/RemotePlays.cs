@@ -375,8 +375,17 @@ public sealed class RemotePlays : IHostedService, IDisposable
 
         var stream = e.Session?.PlayState?.LiveStreamId;
         var lives = _byToken.Values.Where(l => l.Item.Id == item.Id).ToList();
-        return lives.FirstOrDefault(l => stream is not null && l.StreamId == stream) ?? (lives.Count == 1 ? lives[0] : null);
+        return lives.FirstOrDefault(l => SameStream(stream, l.StreamId)) ?? (lives.Count == 1 ? lives[0] : null);
     }
+
+    /// <summary>
+    /// Whether Jellyfin's ID of a live stream is ours: Jellyfin puts its
+    /// provider's prefix and "_" before the ID the live stream gave
+    /// ("{md5}_msfp-{guid}").
+    /// </summary>
+    internal static bool SameStream(string? jellyfinId, string ours) =>
+        jellyfinId is { Length: > 0 } id && ours.Length > 0
+        && (id == ours || id.EndsWith("_" + ours, StringComparison.Ordinal));
 
     private void Sweep()
     {
