@@ -4,6 +4,18 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
+## 0.5.2 (2026-11-20)
+
+### Changed
+
+- The configuration page is in tabs: Peers, Settings, This server and
+  Titles. Help texts are shorter, the rarely needed settings are under
+  "Advanced", and the controls are Jellyfin's own (dark text areas,
+  checkboxes, a red button for the stolen key and for ending a pairing).
+- The dialogs (Offered, Read, Limits, Titles read, Check) have a title
+  bar and their buttons at the bottom. The titles read from a paired
+  server are shown as a table, and reading every library ticks them all.
+
 ## 0.5.1 (2026-11-20)
 
 ### Fixed
