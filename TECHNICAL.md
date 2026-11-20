@@ -232,8 +232,17 @@ track is named from the answer. Played as it is, the file brings every
 track and the viewer switches here. Switching the audio of a converted
 stream while it plays isn't built (it needs a new `play`).
 
+Seek-bar previews: when a playback's answer carries previews (MSFP
+video section 5.5) and the stand-in has none of that width, the plugin
+fetches the sheets in the background through the engine, which
+re-encodes each with SkiaSharp (the image library Jellyfin ships; not
+shipped with the plugin), and keeps them as the stand-in's own trickplay.
+They show from the next time the title is opened, for every viewer, and
+go with the stand-in. The stand-in's saved source isn't marked remote:
+Jellyfin lists the trickplay of local sources only.
+
 Not built yet: the paired server's picture subtitles (PGS) served apart,
-its previews, and a clear message
+and a clear message
 in the client when no server can play (Jellyfin shows a generic
 playback error; the log says why).
 

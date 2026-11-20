@@ -88,7 +88,9 @@ public sealed class PairedSources : IMediaSourceProvider
         Name = "From a paired server",
         Protocol = MediaProtocol.Http,
         Path = item.Path,
-        IsRemote = true,
+        // Not remote: Jellyfin lists the trickplay of local sources only (a
+        // paired server's previews, PeerPreviews); opened at play anyway.
+        IsRemote = false,
         RequiresOpening = true,
         RequiresClosing = true,
         OpenToken = TokenOf(item),

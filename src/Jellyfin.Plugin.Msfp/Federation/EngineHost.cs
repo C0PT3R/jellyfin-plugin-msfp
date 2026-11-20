@@ -186,6 +186,8 @@ public sealed class EngineHost : IHostedService, IDisposable
             Catalog = _catalog,
             Playback = _playback,
             Media = _playback,
+            // Paired servers' preview sheets, re-encoded as they're relayed.
+            SheetEncoder = new Viewing.SheetEncoder(),
         };
     }
 

@@ -250,3 +250,14 @@ the answer. Languages are written as files write them ("fre", not
 "fra"). After a playback, the stand-in's saved source returns to the
 catalog's at the next pass (30 seconds). Also the first live test of a
 converted (HLS) stream from a paired server: it plays.
+
+## Previews from paired servers, 2026-11-19
+
+The engine's ISheetEncoder given (SkiaSharp, Jellyfin's own, 3.119.4 in
+12.2, compiled against and not shipped); a playback's sheets kept as the
+stand-in's trickplay (GetTrickplayDirectory, SaveTrickplayInfo), fetched
+in the background. Learned: Jellyfin's trickplay manifest skips remote
+sources, so the stand-in's saved source isn't marked remote (the live
+one is). Tried live: A's 320 px set (24 tiles, 10 s) kept on B, listed
+with the item, shown on jellyfin-web's seek bar; playback unchanged.
+To check per Jellyfin version: the SkiaSharp each ships.

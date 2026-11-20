@@ -18,6 +18,9 @@
          Jellyfin provides them at run time. -->
     <PackageReference Include="Jellyfin.Controller" Version="12.2.0" ExcludeAssets="runtime" />
     <PackageReference Include="Jellyfin.Model" Version="12.2.0" ExcludeAssets="runtime" />
+    <!-- Jellyfin's own image library (12.2 ships 3.119.4), for paired
+         servers' preview sheets: never shipped with the plugin. -->
+    <PackageReference Include="SkiaSharp" Version="3.119.4" ExcludeAssets="runtime;native" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
     <!-- MSFP itself, msfp-dotnet's packages (github.com/msfp-io/msfp-dotnet):
