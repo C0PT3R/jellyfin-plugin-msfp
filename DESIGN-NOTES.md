@@ -328,3 +328,15 @@ parts is the first part's: the copy's duration is the parts' sum.
 Tried live: two 90-second parts played on a 12.4 server as one
 3-minute film, part 2 at its place after a seek; parts of two sizes
 refused with the reason in the log; the folder removed at the end.
+
+## Peers' playbacks in Jellyfin's dashboard, 2026-11-20
+
+A session per playback (LogSessionActivity with no user, device ID
+msfp-<handle>, the one the plugin's HLS requests already use), then
+OnPlaybackStart / OnPlaybackProgress / OnPlaybackStopped and
+ReportSessionEnded. With no user, Jellyfin keeps no watched state for
+anyone. Tried live on 12.2: two paired playbacks (direct, remux) shown as
+"Server B / MSFP 0.3.0" with artwork, method and position; gone at the
+stop. Not seen on the remux's card: Jellyfin's transcode details.
+Learned on the way (remux check): Jellyfin makes no session for the
+plugin's API-key HLS requests; the job's ffmpeg command is read instead.

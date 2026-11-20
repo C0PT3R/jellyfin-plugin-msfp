@@ -50,6 +50,7 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia
     {
         _segments = segments;
         _encoder = encoder;
+        _peerSessions = new PeerSessions(sessions, log);
 
         // Joins left by a stop of Jellyfin mid-playback.
         try
@@ -73,6 +74,7 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia
     }
 
     private readonly MediaBrowser.Controller.MediaEncoding.IMediaEncoder _encoder;
+    private readonly PeerSessions _peerSessions;
     private readonly MediaBrowser.Controller.MediaSegments.IMediaSegmentManager _segments;
 
     /// <summary>The peers' playbacks here now, for the operator's page.</summary>
@@ -228,6 +230,8 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia
         }
 
         _live[handle] = live;
+        live.Method = started.Method;
+        live.Session = await _peerSessions.StartAsync(handle, request.Peer.Name, item.Id, started.Method, request.StartMs).ConfigureAwait(false);
         _log.LogInformation("MSFP: {Peer} plays {Title} here, {Method}", request.Peer.Name, request.Title, started.Method);
         return started with
         {
@@ -277,6 +281,7 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia
 
         live.PositionMs = positionMs;
         live.Paused = paused;
+        _ = _peerSessions.ProgressAsync(live.Session, handle, live.Item, live.Method, positionMs, paused);
         if (live.Master is not null)
         {
             // Keeps Jellyfin's transcode alive while the viewer is paused.
@@ -301,6 +306,7 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia
         }
 
         _log.LogInformation("MSFP: {Peer}'s playback here ended ({Reason})", live.Peer, reason);
+        await _peerSessions.StopAsync(live.Session, handle, live.Item, live.PositionMs).ConfigureAwait(false);
         if (live.Transcode)
         {
             _limit.Give();
@@ -662,6 +668,12 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia
         public long PositionMs { get; set; }
 
         public bool Paused { get; set; }
+
+        /// <summary>direct, remux or transcode.</summary>
+        public string Method { get; set; } = string.Empty;
+
+        /// <summary>Its session in Jellyfin's dashboard (PeerSessions); null when none.</summary>
+        public string? Session { get; set; }
 
         /// <summary>A copy of several files, joined here; null otherwise.</summary>
         public Joined? Joined { get; init; }

@@ -203,7 +203,13 @@ on this server", and with none left it is stopped (reason `operator`:
 MSFP has no closer one, SPEC-GAPS). With the plugin's requests this is
 rare: Jellyfin works out a stream's bitrate the file doesn't give.
 
-Not built yet: Jellyfin's own dashboard showing peers' playbacks.
+Paired servers' playbacks show in Jellyfin's own dashboard: each one a
+session of its own, the paired server's name as the device, "MSFP" as
+the client, no user (a paired server's viewers are never known here),
+with the title, the play method and the position, told as a client
+tells them (start, progress, stop); no one's watched state is touched.
+They don't count as this server's own users' transcodes ("Transcodes at
+once on this server" counts them as paired servers').
 
 ## Paired servers' titles
 
