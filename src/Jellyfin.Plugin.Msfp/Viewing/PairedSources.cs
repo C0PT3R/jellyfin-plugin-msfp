@@ -59,7 +59,8 @@ public sealed class PairedSources : IMediaSourceProvider
             throw new ResourceNotFoundException("No such title from a paired server.");
         }
 
-        return await _plays.OpenAsync(item, Wishes(), cancellationToken).ConfigureAwait(false);
+        var audioSwitch = _http.HttpContext?.Items[AudioSwitchFilter.ItemKey] as RemotePlays.AudioSwitch;
+        return await _plays.OpenAsync(item, Wishes(), cancellationToken, audioSwitch).ConfigureAwait(false);
     }
 
     // The viewer's audio and subtitle languages, from the Jellyfin user

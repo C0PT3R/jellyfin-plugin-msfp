@@ -355,8 +355,24 @@ Audio: `play` carries the Jellyfin user's audio and subtitle languages
 (their settings, as Jellyfin's tag), which a paired server converting
 the stream uses to send the right audio track; a converted stream's one
 track is named from the answer. Played as it is, the file brings every
-track and the viewer switches here. Switching the audio of a converted
-stream while it plays isn't built (it needs a new `play`).
+track and the viewer switches here.
+
+Switching the audio of a converted stream while it plays: its source
+lists every audio track of the copy, each with an Index from its place
+among the copy's (the same for every playback of that copy), the one
+playing first after the video, since Jellyfin maps a stream to ffmpeg by
+its place in the list. A player picking another track asks Jellyfin for
+playback info again with the live stream already open, which Jellyfin
+would reuse. `AudioSwitchFilter`, an MVC action filter on that request
+(`MediaInfo`/`GetPostedPlaybackInfo`), sees a stand-in's live stream and
+a track it doesn't carry: it closes the live stream (MSFP `stop`) and
+clears the request's live stream so that Jellyfin opens the source again,
+which plays the copy with that track: its ID on the same paired server,
+its language on another (playback 2.3). Jellyfin's request type isn't
+one plugins can reference; the filter reads and sets its members by
+name, the same in 12.2, 12.3 and 12.4. Tried in jellyfin-web 12.4 with
+a film converted by a 12.2 server (English, then French): playback goes
+on at its position, the paired server's ffmpeg maps the new track.
 
 Seek-bar previews: when a playback's answer carries previews (MSFP
 video section 5.5) and the stand-in has none of that width, the plugin

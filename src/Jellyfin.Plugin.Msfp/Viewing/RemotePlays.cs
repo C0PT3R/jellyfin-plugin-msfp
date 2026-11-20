@@ -123,7 +123,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
     /// it, best copy first, and gives the source Jellyfin reads.
     /// </summary>
     /// <exception cref="InvalidOperationException">No paired server could play it now; the message says why.</exception>
-    internal async Task<PairedLiveStream> OpenAsync(BaseItem item, (string Audio, string Subtitles) wishes, CancellationToken ct)
+    internal async Task<PairedLiveStream> OpenAsync(BaseItem item, (string Audio, string Subtitles) wishes, CancellationToken ct, AudioSwitch? audioSwitch = null)
     {
         var request = new PlayRequest
         {
@@ -141,7 +141,12 @@ public sealed class RemotePlays : IHostedService, IDisposable
             RemotePlayback playback;
             try
             {
-                playback = await engine.PlayAsync(holder.Peer, request with { Title = key }, ct).ConfigureAwait(false);
+                // A track picked during a playback: its ID on the server that
+                // played it; on another, the same language.
+                var asked = audioSwitch is null ? request
+                    : holder.Peer == audioSwitch.Peer ? request with { AudioTrack = audioSwitch.Track }
+                    : request with { AudioLanguage = audioSwitch.Language };
+                playback = await engine.PlayAsync(holder.Peer, asked with { Title = key }, ct).ConfigureAwait(false);
             }
             catch (MsfpException e)
             {
@@ -159,6 +164,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
             {
                 await ProbeAsync(source, ct).ConfigureAwait(false);
                 NameAudio(source, playback);
+                ListAllAudio(source, playback, live);
                 live.DurationMs = (source.RunTimeTicks ?? 0) / TimeSpan.TicksPerMillisecond;
 
                 // PGS tracks are fetched before Jellyfin has the source: it
@@ -292,6 +298,69 @@ public sealed class RemotePlays : IHostedService, IDisposable
         {
             audio[0].Language = Three(tag);
         }
+    }
+
+    // A converted stream carries the chosen audio track only: the copy's
+    // others are listed too, so that players offer them. Each track keeps
+    // an Index from its place among the copy's (the same for every
+    // playback of that copy), and the one playing comes first in the list,
+    // after the video: Jellyfin maps a stream to ffmpeg by its place in the
+    // list, not its Index. Picking another one plays the copy again with
+    // it (AudioSwitchFilter).
+    private void ListAllAudio(MediaSourceInfo source, RemotePlayback p, Live live)
+    {
+        var audio = source.MediaStreams.Where(s => s.Type == MediaStreamType.Audio).ToList();
+        var at = p.AudioTracks.Select((t, i) => (t, i)).FirstOrDefault(x => x.t.Id == p.AudioTrack, (null!, -1)).Item2;
+        if (audio.Count != 1 || p.AudioTracks.Count < 2 || at < 0)
+        {
+            return;
+        }
+
+        var video = source.MediaStreams.Where(s => s.Type == MediaStreamType.Video).ToList();
+        var first = video.Count > 0 ? video.Max(v => v.Index) + 1 : 0;
+        var playing = audio[0];
+        playing.Index = first + at;
+        // The same labels for all, as players list them.
+        playing.Title ??= p.AudioTracks[at].Label.Length > 0 ? p.AudioTracks[at].Label : null;
+        var list = new List<MediaStream>(video) { playing };
+        live.AudioByIndex[playing.Index] = p.AudioTracks[at];
+        for (var k = 0; k < p.AudioTracks.Count; k++)
+        {
+            if (k == at)
+            {
+                continue;
+            }
+
+            var t = p.AudioTracks[k];
+            live.AudioByIndex[first + k] = t;
+            list.Add(new MediaStream
+            {
+                Index = first + k,
+                Type = MediaStreamType.Audio,
+                Codec = playing.Codec,
+                Channels = t.Channels > 0 ? t.Channels : playing.Channels,
+                ChannelLayout = t.Channels <= 0 || t.Channels == playing.Channels ? playing.ChannelLayout : null,
+                Language = t.Language is { Length: > 0 } tag ? Three(tag) : null,
+                Title = t.Label.Length > 0 ? t.Label : null,
+                IsDefault = false,
+            });
+        }
+
+        var next = first + p.AudioTracks.Count;
+        foreach (var other in source.MediaStreams.Where(s => s.Type is not (MediaStreamType.Video or MediaStreamType.Audio)))
+        {
+            other.Index = next++;
+            list.Add(other);
+        }
+
+        source.MediaStreams = list;
+    }
+
+    /// <summary>A playback by Jellyfin's ID of its live stream (the provider's prefix, then ours), null when none.</summary>
+    internal Live? ByLiveStreamId(string liveStreamId)
+    {
+        var ours = liveStreamId[(liveStreamId.LastIndexOf('_') + 1)..];
+        return _byToken.Values.FirstOrDefault(l => l.StreamId == ours);
     }
 
     // The paired server's subtitles, text (WebVTT) and pictures (PGS), as
@@ -565,7 +634,13 @@ public sealed class RemotePlays : IHostedService, IDisposable
 
         /// <summary>The subtitle tracks read whole, by track.</summary>
         public ConcurrentDictionary<string, Lazy<Task<byte[]?>>> Subtitles { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>A converted stream's audio tracks by the Index Jellyfin shows; empty otherwise.</summary>
+        public Dictionary<int, Track> AudioByIndex { get; } = new();
     }
+
+    /// <summary>An audio track picked during a playback: on that server, its ID; elsewhere, its language.</summary>
+    internal sealed record AudioSwitch(string Peer, string Track, string Language);
 }
 
 /// <summary>A playback on a paired server as Jellyfin's live stream: closing it stops the playback.</summary>
