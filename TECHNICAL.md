@@ -55,6 +55,15 @@ Jellyfin 12.2 with a second films library holding a film of the first
 test server has no subtitles, PGS, previews or second films library:
 118 passed, 0 failed, 4 skipped (those).
 
+The suite's viewer checks (VW1 to VW4, `--watch-pause`, on msfp-spec's
+branch `conformance-viewer` for now) make the plugin's server play one of
+the suite's films: the tool opens its stand-in through Jellyfin as a
+client that names no live stream, reports a pause once and goes quiet,
+then stops. With main on 12.2: 4 progress reports in 151 seconds of
+pause, the longest gap 56 seconds; a build from before 2026-11-20's
+fixes left 150 seconds without a report (the paired server would have
+ended it at 120).
+
 ## Building
 
 The plugin uses msfp-dotnet's packages from nuget.org (`Msfp.Engine`,

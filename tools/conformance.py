@@ -107,7 +107,8 @@ def confirm_held(wait=60):
 class Operator:
     """The suite's operator steps, through the plugin's API."""
 
-    def __init__(self, suite_address):
+    def __init__(self, suite_address, watch_pause=0):
+        self.watch_pause = watch_pause
         # The suite moves between its port and the next two (address changes).
         u = urllib.parse.urlsplit(suite_address)
         self.suite_addresses = {"https://%s:%d" % (u.hostname, u.port + i) for i in range(3)}
@@ -157,6 +158,44 @@ class Operator:
         print("  [operator] one film added, one removed; scan: %s" % call("POST", "/Library/Refresh")[0])
         confirm_identification(added)
 
+    def op_watch(self):
+        """A viewer of one of the suite's films, through Jellyfin as a
+        client: its stand-in opened, playing started, paused at once, then
+        silent (as a client reporting seldom while paused), stopped after
+        the suite's --watch-pause seconds."""
+        want = {"movie/tmdb/550", "movie/tmdb/603", "movie/tmdb/949"}
+        item = None
+        for _ in range(60):
+            st, r = call("GET", "/Items?Recursive=true&IncludeItemTypes=Movie&Fields=Path")
+            for i in r.get("Items", []) if st == 200 else []:
+                path = i.get("Path") or ""
+                if path.startswith("msfp://paired/") and path[len("msfp://paired/"):] in want:
+                    item = i
+                    break
+            if item:
+                break
+            time.sleep(3)
+        if not item:
+            print("  [operator] no stand-in of the suite's films here")
+            return
+        st, me = call("GET", "/Users/Me")
+        prof = {"TranscodingProfiles": [{"Container": "ts", "Type": "Video", "VideoCodec": "h264", "AudioCodec": "aac",
+                                         "Protocol": "hls"}], "DirectPlayProfiles": []}
+        st, pi = call("POST", "/Items/%s/PlaybackInfo" % item["Id"],
+                      {"UserId": me["Id"], "DeviceProfile": prof, "IsPlayback": True, "AutoOpenLiveStream": True})
+        if st != 200 or not pi.get("MediaSources"):
+            print("  [operator] %s didn't open: %s %s" % (item["Name"], st, str(pi)[:200]))
+            return
+        ms, ps = pi["MediaSources"][0], pi["PlaySessionId"]
+        base = {"ItemId": item["Id"], "MediaSourceId": ms["Id"], "PlaySessionId": ps, "PlayMethod": "Transcode"}
+        call("POST", "/Sessions/Playing", dict(base, PositionTicks=0))
+        call("POST", "/Sessions/Playing/Progress", dict(base, PositionTicks=0, IsPaused=True))
+        print("  [operator] playing %s, paused for %d s" % (item["Name"], self.watch_pause), flush=True)
+        time.sleep(self.watch_pause)
+        call("POST", "/Sessions/Playing/Stopped", dict(base, PositionTicks=0))
+        call("POST", "/LiveStreams/Close?liveStreamId=" + urllib.parse.quote(ms.get("LiveStreamId") or ""))
+        print("  [operator] stopped")
+
     def op_confirm(self):
         pid = self.suite(False, ("paired", "ours", "theirs", "gone"))
         print("  [operator] confirmed: %s" % call("POST", "/Msfp/Peers/%s/Confirm" % pid)[0])
@@ -191,7 +230,7 @@ def main():
     info = call("GET", "/System/Info/Public")[1]
     report.note("MSFP version 1 conformance suite, %s, against the Jellyfin plugin in Jellyfin %s, "
                 "its operator played through the plugin's API" % (time.strftime("%Y-%m-%d %H:%M:%S %Z"), info.get("Version")))
-    suite = Suite(args, report, operator_hook=Operator(address))
+    suite = Suite(args, report, operator_hook=Operator(address, getattr(args, "watch_pause", 0)))
     try:
         suite.run()
     finally:
