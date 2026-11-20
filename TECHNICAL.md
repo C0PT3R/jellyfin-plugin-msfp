@@ -51,7 +51,8 @@ identification page when it is held "to check"; it offers every films
 library and confirms the titles held there, then waits for the catalog
 to take them. On 2026-11-20 with `--watch-changes 180 --load --end`, on
 Jellyfin 12.2 with a second films library holding a film of the first
-(for T8): 122 passed, 0 failed, 0 skipped. On Jellyfin 12.4, whose
+(for T8): 122 passed, 0 failed, 0 skipped; 126 with the viewer checks
+below (f541f21, every check run). On Jellyfin 12.4, whose
 test server has no subtitles, PGS, previews or second films library:
 118 passed, 0 failed, 4 skipped (those).
 
