@@ -183,7 +183,18 @@ server's own users are never refused, even above it. Direct play and
 remux don't count. 0 gives peers no transcode. The page shows the
 transcodes in use now.
 
-Not built yet: a copy of several files (refused as not playable), checking that a remux Jellyfin made didn't re-encode the video,
+A film in several files (Jellyfin's parts: `- cd1`, `- part2`...) is
+served as one HLS stream, as MSFP asks of such a copy: Jellyfin's ffmpeg
+joins the parts (its concat demuxer), copying the video and the audio,
+into a folder of the playback's own, and its playlist grows as the copy
+runs (an EVENT playlist, ended when done; far faster than playing). Only
+when every part has the same video (codec, size) and audio, and the
+viewer's device plays them as they are; otherwise the copy is refused
+(the viewer's server asks another server). Never converted: Jellyfin
+can't play parts as one, and a conversion outside it would miss its
+settings (hardware acceleration) and its dashboard.
+
+Not built yet: checking that a remux Jellyfin made didn't re-encode the video,
 Jellyfin's own dashboard showing peers' playbacks, and skip markers
 (intro, credits).
 

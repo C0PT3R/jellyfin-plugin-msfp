@@ -50,6 +50,19 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
     {
         _segments = segments;
         _encoder = encoder;
+
+        // Joins left by a stop of Jellyfin mid-playback.
+        try
+        {
+            var joined = Path.Combine(Plugin.Instance?.DataFolderPath ?? Path.GetTempPath(), "joined");
+            if (Directory.Exists(joined))
+            {
+                Directory.Delete(joined, true);
+            }
+        }
+        catch (IOException)
+        {
+        }
         _library = library;
         _subtitles = subtitles;
         _transcodes = transcodes;
@@ -82,8 +95,8 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
         var streams = item.GetMediaStreams();
         var info = new CopyInfo
         {
-            DurationMs = (item.RunTimeTicks ?? 0) / TimeSpan.TicksPerMillisecond,
-            Parts = 1 + (item is Video v ? v.AdditionalParts?.Length ?? 0 : 0),
+            DurationMs = (item is Video whole ? Joined.Parts(whole).Sum(p => p.RunTimeTicks ?? 0) : item.RunTimeTicks ?? 0) / TimeSpan.TicksPerMillisecond,
+            Parts = item is Video v ? Joined.Parts(v).Count : 1,
         };
         var audio = streams.Where(s => s.Type == MediaStreamType.Audio && s.Index is >= 0 and <= 999).ToList();
         if (audio.Count > 0)
@@ -134,10 +147,8 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
     public async ValueTask<Started> StartAsync(StartRequest request, CancellationToken ct)
     {
         var item = Item(request.Copy);
-        if (request.AudioOnly || request.Parts > 1 || item is not Video video || string.IsNullOrEmpty(video.Path) || !File.Exists(video.Path))
+        if (request.AudioOnly || item is not Video video || string.IsNullOrEmpty(video.Path) || !File.Exists(video.Path))
         {
-            // A copy of several files would have to come whole as HLS
-            // (MSFP media section 1); Jellyfin plays its parts apart.
             throw new MsfpException(MsfpError.NotPlayable);
         }
 
@@ -152,7 +163,26 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
         var handle = Base64UrlText.Encode(RandomNumberGenerator.GetBytes(16));
         Started started;
         Live live;
-        if (Direct.Plays(file, request))
+        var parts = Joined.Parts(video);
+        if (parts.Count > 1)
+        {
+            // A copy of several files comes whole as HLS (MSFP media section
+            // 1), joined here by copying only (Joined): Jellyfin plays its
+            // parts apart.
+            var join = Hls.Choose(file, audio, request);
+            if (!Joined.SameStreams(parts) || join.Method != "remux" || audio is not null && join.AudioCodec != audio.Codec?.ToLowerInvariant())
+            {
+                _log.LogInformation("MSFP: {Peer} can't play {Title} here: its {Parts} parts can't be joined as they are for that device", request.Peer.Name, request.Title, parts.Count);
+                throw new MsfpException(MsfpError.NotPlayable);
+            }
+
+            request.Admit?.Invoke("remux");
+            var folder = Path.Combine(Plugin.Instance?.DataFolderPath ?? Path.GetTempPath(), "joined", handle);
+            var joined = Joined.Start(_encoder.EncoderPath, folder, parts, audio?.Index ?? -1, join.Segments, Math.Max(file.BitrateKbps, 1) * 1000L);
+            live = new Live(item.Id, video.Path, request.Peer.Name, null, false) { Joined = joined };
+            started = new Started { Handle = handle, Method = "remux", Protocol = "hls" };
+        }
+        else if (Direct.Plays(file, request))
         {
             request.Admit?.Invoke("direct");
             live = new Live(item.Id, video.Path, request.Peer.Name, null, false);
@@ -272,6 +302,7 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
             _limit.Give();
         }
 
+        live.Joined?.Dispose();
         if (live.Master is not null)
         {
             try
@@ -291,6 +322,12 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
         if (!_live.TryGetValue(handle, out var live))
         {
             throw new MsfpException(MsfpError.NotFound);
+        }
+
+        if (live.Joined is { } joined)
+        {
+            await ServeJoinedAsync(joined, path, range, output, ct).ConfigureAwait(false);
+            return;
         }
 
         switch (path.Kind)
@@ -389,6 +426,30 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
 
     private static IEnumerable<MediaStream> PgsSubtitles(IEnumerable<MediaStream> streams) =>
         streams.Where(s => s.Type == MediaStreamType.Subtitle && s.IsPgsSubtitleStream && s.Index is >= 0 and <= 999);
+
+    // A copy of several files, joined here (Joined): its own playlists and segments.
+    private static async Task ServeJoinedAsync(Joined joined, MediaPath path, ByteRange? range, IResponseSink output, CancellationToken ct)
+    {
+        switch (path.Kind)
+        {
+            case MediaKind.Master:
+                var master = joined.Master();
+                output.Start(200, "application/vnd.apple.mpegurl", master.Length, string.Empty);
+                await output.WriteAsync(master, ct).ConfigureAwait(false);
+                return;
+            case MediaKind.Playlist when Joined.IsPlaylist(path.Name):
+                var playlist = await joined.PlaylistAsync(ct).ConfigureAwait(false);
+                output.Start(200, "application/vnd.apple.mpegurl", playlist.Length, string.Empty);
+                await output.WriteAsync(playlist, ct).ConfigureAwait(false);
+                return;
+            case MediaKind.Segment when joined.SegmentPath(path.Name) is { } segment && File.Exists(segment):
+                var type = segment.EndsWith(".ts", StringComparison.Ordinal) ? "video/mp2t" : "video/mp4";
+                await FileServing.ServeAsync(segment, range, type, output, ct).ConfigureAwait(false);
+                return;
+            default:
+                throw new MsfpException(MsfpError.NotFound);
+        }
+    }
 
     private async Task PlaylistAsync(Live live, string url, bool master, IResponseSink output, CancellationToken ct)
     {
@@ -532,6 +593,9 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
         public long PositionMs { get; set; }
 
         public bool Paused { get; set; }
+
+        /// <summary>A copy of several files, joined here; null otherwise.</summary>
+        public Joined? Joined { get; init; }
 
         /// <summary>The PGS tracks read, by track.</summary>
         public ConcurrentDictionary<string, List<Pgs.DisplaySet>> Pictures { get; } = new(StringComparer.Ordinal);

@@ -315,3 +315,16 @@ registers "MSFP Federation" there, finding nothing itself, and saves the
 markers of each playback under it. Tried live: an intro and credits on a
 12.2 server's film, sent with play, kept for the 12.4 server's stand-in;
 jellyfin-web 12.4 shows "Skip Intro" and skips to its end.
+
+## Films in several files, 2026-11-20
+
+Decided (owner, 2026-11-20): copy-only join. MSFP serves a copy of
+several files as one HLS stream; Jellyfin plays parts one after the
+other and can't. The plugin joins them with Jellyfin's ffmpeg (concat
+demuxer, `-c copy`, HLS EVENT playlist, ENDLIST at the end; MSFP's
+subset allows both), only when the parts match and the device takes them
+as they are; refused otherwise. Jellyfin's RunTimeTicks of a film in
+parts is the first part's: the copy's duration is the parts' sum.
+Tried live: two 90-second parts played on a 12.4 server as one
+3-minute film, part 2 at its place after a seek; parts of two sizes
+refused with the reason in the log; the folder removed at the end.
