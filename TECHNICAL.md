@@ -255,8 +255,17 @@ live TV: the add-on treats every source that must be closed after play
 as a live channel, so there is no total time and no seeking, and one
 audio track. That rule is the add-on's (see DESIGN-NOTES, "Kodi").
 
-Not built yet: the paired server's picture subtitles (PGS) served
-apart.
+PGS subtitles, both ways. Serving: a copy's PGS tracks (inside the
+file, or an external `.sup`) are listed as picture tracks; a track is
+copied out once per playback by Jellyfin's ffmpeg (`-copyts`, the file's
+own times) and served in 2-minute parts by display set (MSFP video
+section 6.4). Viewing: the paired server's PGS tracks are fetched whole
+in the background when a playback starts, joined (each display set
+once), and written under the plugin's data folder for the playback's
+time (Jellyfin reads an external PGS track from disk only); Jellyfin
+burns them in, or sends them to a client that draws them. Asked in the
+first seconds of a playback, before the track is written, it may not
+show that time.
 
 ## Ed25519
 

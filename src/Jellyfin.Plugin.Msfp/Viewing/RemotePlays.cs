@@ -82,6 +82,20 @@ public sealed class RemotePlays : IHostedService, IDisposable
         _sessions.PlaybackStart += Progress;
         _sessions.PlaybackStopped += Stopped;
         _sweep = new Timer(_ => Sweep(), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+
+        // Playbacks' PGS files left by a stop of Jellyfin.
+        try
+        {
+            var playing = System.IO.Path.GetDirectoryName(Subtitles.PictureFolder("x"))!;
+            if (System.IO.Directory.Exists(playing))
+            {
+                System.IO.Directory.Delete(playing, true);
+            }
+        }
+        catch (System.IO.IOException)
+        {
+        }
+
         return Task.CompletedTask;
     }
 
@@ -154,6 +168,10 @@ public sealed class RemotePlays : IHostedService, IDisposable
             StandIns.Playing.AddOrUpdate(item.Id, 1, (_, n) => n + 1);
             StandIns.SavePlaying(item, source.MediaStreams.ToList());
             _previews.Fetch(engine, item, playback);
+            foreach (var t in playback.SubtitleTracks.Concat(playback.ForcedTracks).Where(t => t.Pictures))
+            {
+                Subtitles.FetchPictures(engine, live, t.Id, _log);
+            }
             return new PairedLiveStream(live, source);
         }
 
@@ -259,22 +277,17 @@ public sealed class RemotePlays : IHostedService, IDisposable
         }
     }
 
-    // The paired server's text subtitles, as external tracks Jellyfin reads
-    // whole at the relay (Subtitles.cs), in place of the text tracks found
-    // inside a file played as it is (the same, served cleaned). Picture
-    // subtitles inside the file stay as found.
+    // The paired server's subtitles, text (WebVTT) and pictures (PGS), as
+    // external tracks Jellyfin reads whole at the relay (Subtitles.cs), in
+    // place of the subtitle tracks found inside a file played as it is
+    // (the same tracks, checked by the engine).
     private void AddSubtitles(MediaSourceInfo source, RemotePlayback p, string token)
     {
-        var streams = source.MediaStreams.Where(s => s.Type != MediaStreamType.Subtitle || !s.IsTextSubtitleStream).ToList();
+        var streams = source.MediaStreams.Where(s => s.Type != MediaStreamType.Subtitle).ToList();
         var next = streams.Count > 0 ? streams.Max(s => s.Index) + 1 : 0;
         var relay = source.Path[..(source.Path.IndexOf("/Msfp/Relay/", StringComparison.Ordinal) + "/Msfp/Relay/".Length)] + token + "/subtitles/";
         foreach (var (t, forced) in p.SubtitleTracks.Select(t => (t, false)).Concat(p.ForcedTracks.Select(t => (t, true))))
         {
-            if (t.Pictures)
-            {
-                continue;
-            }
-
             var language = t.Language is { Length: > 0 } tag
                 ? Three(tag)
                 : null;
@@ -282,7 +295,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
             {
                 Index = next++,
                 Type = MediaStreamType.Subtitle,
-                Codec = "vtt",
+                Codec = t.Pictures ? "PGSSUB" : "vtt",
                 Language = language,
                 Title = t.Label.Length > 0 ? t.Label : null,
                 IsForced = forced || t.Forced,
@@ -292,7 +305,9 @@ public sealed class RemotePlays : IHostedService, IDisposable
                 // Served by Jellyfin's own subtitle route, never the relay's
                 // URL itself, which answers this machine only.
                 SupportsExternalStream = false,
-                Path = relay + t.Id + "/" + Subtitles.Whole,
+                // PGS: a file here, which Jellyfin reads from disk only
+                // (PictureFiles); text: the relay, which Jellyfin converts.
+                Path = t.Pictures ? Subtitles.PictureFile(token, t.Id) : relay + t.Id + "/" + Subtitles.Whole,
             });
         }
 
@@ -361,6 +376,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
             return;
         }
 
+        Subtitles.ForgetPictures(live.Token);
         if (StandIns.Playing.AddOrUpdate(live.Item.Id, 0, (_, n) => n - 1) <= 0)
         {
             StandIns.Playing.TryRemove(live.Item.Id, out _);

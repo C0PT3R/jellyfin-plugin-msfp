@@ -151,8 +151,8 @@ public sealed class JellyfinCatalogSource : ICatalogSource
         {
             Audio = Languages(streams.Where(s => s.Type == MediaStreamType.Audio)),
             // Only the subtitles play can list: the text ones, served as
-            // WebVTT (Playback/JellyfinPlayback.cs).
-            Subtitles = Languages(streams.Where(s => s.Type == MediaStreamType.Subtitle && s.IsTextSubtitleStream)),
+            // WebVTT, and PGS (Playback/JellyfinPlayback.cs).
+            Subtitles = Languages(streams.Where(s => s.Type == MediaStreamType.Subtitle && (s.IsTextSubtitleStream || s.IsPgsSubtitleStream))),
             Picture = PictureOf(streams.FirstOrDefault(s => s.Type == MediaStreamType.Video)),
             With = with,
             Ids = new Dictionary<string, string>(),

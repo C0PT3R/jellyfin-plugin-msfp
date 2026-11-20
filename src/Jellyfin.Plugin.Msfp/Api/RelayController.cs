@@ -37,15 +37,17 @@ public class RelayController : ControllerBase
             return;
         }
 
-        // A subtitle track whole: subtitles/<track>/all.vtt.
+        // A text subtitle track whole: subtitles/<track>/all.vtt (PGS ones are
+        // files Jellyfin reads, Subtitles.FetchPictures).
         var parts = (rest ?? string.Empty).Split('/');
         if (parts.Length == 3 && parts[0] == "subtitles" && parts[2] == Subtitles.Whole && Media.FileName(parts[1]))
         {
-            var whole = await live.Subtitles.GetOrAdd(parts[1], track => new System.Lazy<Task<byte[]?>>(() =>
-                Subtitles.WholeAsync(engine, live.Playback.Id, track, live.DurationMs, System.Threading.CancellationToken.None))).Value.ConfigureAwait(false);
+            var key = parts[0] + "/" + parts[1];
+            var whole = await live.Subtitles.GetOrAdd(key, _ => new System.Lazy<Task<byte[]?>>(() =>
+                Subtitles.WholeAsync(engine, live.Playback.Id, parts[1], false, live.DurationMs, System.Threading.CancellationToken.None))).Value.ConfigureAwait(false);
             if (whole is null)
             {
-                live.Subtitles.TryRemove(parts[1], out _);
+                live.Subtitles.TryRemove(key, out _);
                 Response.StatusCode = 404;
                 return;
             }

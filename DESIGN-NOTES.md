@@ -290,3 +290,17 @@ channel item's opened source from live TV). A 12-second episode failed
 in Kodi (Jellyfin's live HLS of a clip shorter than its segments); a
 60-second one played. Kodi itself crashed twice on its known "two
 concurrent busydialogs" bug when driven over JSON-RPC.
+
+## PGS subtitles, 2026-11-19
+
+Both ways. Learned: Jellyfin numbers external subtitle files before the
+file's own streams, so an embedded track's ffmpeg number is its count
+among the streams inside the file, not Jellyfin's index; Jellyfin reads
+an external PGS track from disk only (an http path fails), unlike text,
+which it converts from http; burning in, Jellyfin seeks the subtitle
+input too, so a set that started before the seek point isn't shown
+(any external PGS, not the plugin's). Tried live with a generated PGS
+track (3 subtitles, one inside the 10-second overlap of two parts):
+all six display sets through, once, payloads unchanged; burned in by
+jellyfin-web's playback at 1:55; the playback's files removed at its
+end. MSFP's conformance check M7 (a PGS part) not run again.

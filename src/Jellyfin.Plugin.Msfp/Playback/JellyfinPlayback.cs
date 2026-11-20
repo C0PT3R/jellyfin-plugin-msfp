@@ -46,8 +46,9 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
 
     public JellyfinPlayback(ILibraryManager library, ISubtitleEncoder subtitles, ITranscodeManager transcodes,
         IServerConfigurationManager server, IAuthenticationManager auth, ISessionManager sessions, ITrickplayManager trickplay,
-        ILogger<JellyfinPlayback> log)
+        MediaBrowser.Controller.MediaEncoding.IMediaEncoder encoder, ILogger<JellyfinPlayback> log)
     {
+        _encoder = encoder;
         _library = library;
         _subtitles = subtitles;
         _transcodes = transcodes;
@@ -56,6 +57,8 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
         _limit = new TranscodeLimit(() => Plugin.Instance?.Configuration.TranscodesAtOnce ?? 2, () => OwnTranscodes(sessions.Sessions));
         _log = log;
     }
+
+    private readonly MediaBrowser.Controller.MediaEncoding.IMediaEncoder _encoder;
 
     /// <summary>The peers' playbacks here now, for the operator's page.</summary>
     public int Playing => _live.Count;
@@ -93,7 +96,8 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
             }).ToList();
         }
 
-        var subtitles = TextSubtitles(streams).ToList();
+        // Text tracks as WebVTT, PGS ones as they are (MSFP video section 6.2).
+        var subtitles = TextSubtitles(streams).Concat(PgsSubtitles(streams)).OrderBy(s => s.Index).ToList();
         if (subtitles.Count > 0)
         {
             info.SubtitleTracks = subtitles.Select(s => new Track
@@ -104,6 +108,7 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
                 Default = s.IsDefault,
                 Forced = s.IsForced,
                 HearingImpaired = s.IsHearingImpaired,
+                Pictures = !s.IsTextSubtitleStream,
             }).ToList();
         }
 
@@ -292,10 +297,73 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
                 output.Start(200, "text/vtt; charset=utf-8", part.Length, string.Empty);
                 await output.WriteAsync(part, ct).ConfigureAwait(false);
                 return;
+            case MediaKind.Pictures:
+                var sets = await PgsAsync(live, path.Track, ct).ConfigureAwait(false);
+                var bytes = Pgs.Part(sets, path.Part);
+                output.Start(200, "application/octet-stream", bytes.Length, string.Empty);
+                if (bytes.Length > 0)
+                {
+                    await output.WriteAsync(bytes, ct).ConfigureAwait(false);
+                }
+
+                return;
             default:
                 throw new MsfpException(MsfpError.NotFound);
         }
     }
+
+    // A PGS track of the copy, its display sets read once per playback:
+    // an external .sup as it is, an embedded one copied out by Jellyfin's
+    // ffmpeg.
+    private async Task<List<Pgs.DisplaySet>> PgsAsync(Live live, string track, CancellationToken ct)
+    {
+        if (live.Pictures.TryGetValue(track, out var done))
+        {
+            return done;
+        }
+
+        if (!track.StartsWith('s') || !int.TryParse(track.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out var index)
+            || _library.GetItemById(live.Item) is not { } item
+            || PgsSubtitles(item.GetMediaStreams()).FirstOrDefault(s => s.Index == index) is not { } stream)
+        {
+            throw new MsfpException(MsfpError.NotFound);
+        }
+
+        byte[] data;
+        if (stream.IsExternal && stream.Path is { Length: > 0 } sup)
+        {
+            data = await File.ReadAllBytesAsync(sup, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo(_encoder.EncoderPath)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = false,
+                UseShellExecute = false,
+            };
+            // Jellyfin numbers external subtitle files first: the file's own
+            // stream number counts the streams inside it only.
+            var inFile = item.GetMediaStreams().Count(s => !s.IsExternal && s.Index < index);
+            foreach (var a in new[] { "-v", "error", "-copyts", "-i", live.Path, "-map", "0:" + inFile.ToString(CultureInfo.InvariantCulture), "-c:s", "copy", "-f", "sup", "pipe:1" })
+            {
+                psi.ArgumentList.Add(a);
+            }
+
+            using var process = System.Diagnostics.Process.Start(psi) ?? throw new MsfpException(MsfpError.NotFound);
+            using var ms = new MemoryStream();
+            await process.StandardOutput.BaseStream.CopyToAsync(ms, ct).ConfigureAwait(false);
+            await process.WaitForExitAsync(ct).ConfigureAwait(false);
+            data = ms.ToArray();
+        }
+
+        var sets = Pgs.Sets(data) ?? throw new MsfpException(MsfpError.NotFound);
+        live.Pictures[track] = sets;
+        return sets;
+    }
+
+    private static IEnumerable<MediaStream> PgsSubtitles(IEnumerable<MediaStream> streams) =>
+        streams.Where(s => s.Type == MediaStreamType.Subtitle && s.IsPgsSubtitleStream && s.Index is >= 0 and <= 999);
 
     private async Task PlaylistAsync(Live live, string url, bool master, IResponseSink output, CancellationToken ct)
     {
@@ -439,6 +507,9 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
         public long PositionMs { get; set; }
 
         public bool Paused { get; set; }
+
+        /// <summary>The PGS tracks read, by track.</summary>
+        public ConcurrentDictionary<string, List<Pgs.DisplaySet>> Pictures { get; } = new(StringComparer.Ordinal);
 
         public ConcurrentDictionary<string, byte[]> Subtitles { get; } = new(StringComparer.Ordinal);
     }
