@@ -63,7 +63,7 @@ client that names no live stream, reports a pause once and goes quiet,
 then stops. With main: on 12.2, 4 progress reports in 151 seconds of
 pause, the longest gap 56 seconds; on 12.3, 53 seconds (the whole
 suite there: 122 passed, 0 failed, 4 skipped for content its test
-server lacks); a build from before 2026-11-20's
+server lacks); on 12.4, 45 seconds; a build from before 2026-11-20's
 fixes left 150 seconds without a report (the paired server would have
 ended it at 120).
 
