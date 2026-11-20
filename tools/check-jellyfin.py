@@ -90,8 +90,6 @@ try:
     expect(st == 200 and ident.get("key") == "plugin", "identification has the plugin's TMDB key")
     st, paired = call("GET", "/Msfp/Paired")
     expect(st == 200, "the paired servers' titles answer")
-    st, channels = call("GET", "/Channels")
-    expect(st == 200 and any(c["Name"] == "Paired servers" for c in channels["Items"]), "its channel is registered")
     st, options = call("GET", "/Libraries/AvailableOptions?LibraryContentType=movies")
     expect(st == 200 and any(p["Name"] == "MSFP Federation" for p in options.get("MediaSegmentProviders", [])), "its segment provider is registered")
     st, page = call("GET", "/web/ConfigurationPage?name=MSFP%20Federation")
@@ -105,6 +103,14 @@ try:
             break
         time.sleep(5)
     expect("Films from paired servers" in names and "Series from paired servers" in names, "its two libraries are made")
+    # Its channel: registered (the pass made its item), but in no user's
+    # channel list or My Media, so no empty tile.
+    st, features = call("GET", "/Channels/Features")
+    expect(st == 200 and any(f["Name"] == "Paired servers" for f in features), "its channel is registered")
+    st, channels = call("GET", "/Channels")
+    st2, views = call("GET", "/UserViews?userId=" + login["User"]["Id"])
+    expect(st == 200 and st2 == 200 and not any(c["Name"] == "Paired servers" for c in channels["Items"] + views["Items"]),
+           "its channel shows in no channel list nor My Media")
 
     errors = [l for l in docker("exec", name, "sh", "-c", "cat /config/log/log_*.log").splitlines()
               if ("[ERR]" in l or "[FTL]" in l) and ("Msfp" in l or "MSFP" in l)]

@@ -234,7 +234,10 @@ server:
   watched state. It belongs to the plugin's empty channel "Paired
   servers": Jellyfin takes a channel's items for remote ones, which
   clients offer to play (an item with no file would be virtual, with no
-  Play button). The channel shows as a tile in My Media.
+  Play button). The channel is in no user's channel list, so no empty
+  tile in My Media: Jellyfin asks `IsEnabledFor` only for those lists,
+  and its items' access and playback go by the channel's visibility
+  (user policy). Tried on 12.4: tile gone, stand-ins play.
 - **Metadata from Jellyfin's TMDb provider**, from the TMDB ID in the
   key: a film's, a series' (episodes are placed by the `place` the
   catalog gives, TMDB's numbering, never the peer's).

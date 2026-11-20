@@ -43,8 +43,13 @@ public sealed class PairedChannel : IChannel, IDisableMediaSourceDisplay
         ContentTypes = [ChannelMediaContentType.Movie, ChannelMediaContentType.Episode],
     };
 
-    /// <inheritdoc />
-    public bool IsEnabledFor(string userId) => true;
+    /// <summary>
+    /// False for every user: the channel stays out of channel lists, so no
+    /// empty tile in My Media. Jellyfin asks it only for those lists; its
+    /// items' access and playback go by the channel's own visibility (user
+    /// policy), which this leaves alone.
+    /// </summary>
+    public bool IsEnabledFor(string userId) => false;
 
     /// <inheritdoc />
     public Task<ChannelItemResult> GetChannelItems(InternalChannelItemQuery query, CancellationToken cancellationToken) =>
