@@ -31,8 +31,9 @@ Peers' titles in this server's Jellyfin, played through MSFP (since
 spoken are catalog, playback, media and video).
 
 Tested on 2026-11-19 in a Jellyfin 12.2 container: msfp-spec's
-conformance suite, 0 failed, preview sheets passing since they are served,
-only PGS subtitles skipped (the plugin doesn't serve them); and live with Overfin
+conformance suite, 0 failed, preview sheets passing since they are served;
+again on 2026-11-20 with 0.3.0 (110 passed, 0 failed), PGS parts passing
+(M7) since they are served; and live with Overfin
 over HTTPS: pairing, sharing both ways, the plugin's key changed and
 revoked with Overfin following, and Overfin's viewers playing the plugin's
 titles (a film and an episode direct, with WebVTT subtitles; an HEVC film
