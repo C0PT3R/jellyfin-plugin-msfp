@@ -30,6 +30,22 @@ is stream 0 is `a1`. Either reading gives a stable position for one copy,
 and a viewer's server only passes back IDs from a former answer; the
 conformance suite accepts it.
 
+### playback 3: how often a viewer's server sends progress
+
+*Open (msfp-spec proposal 6).*
+
+**Issue.** "The viewer's server should send `progress` at most every 45
+seconds while the viewer watches." That caps how often; nothing says it
+must keep reporting, yet the owning server ends a playback with neither
+`progress` nor a media request for 2 minutes (6.3). A Jellyfin client
+can report seldom while paused (Kodi's add-on: every 250 seconds), and
+media requests stop once Jellyfin has read the whole stream.
+
+**Assumed.** A floor as well as the cap: every minute, the plugin reports
+each playback a Jellyfin session is still on, paused too; the engine
+sends one report per 45 seconds at most. Found on 2026-11-20 (playbacks
+ended as expired); proposal 6 words it so.
+
 ### playback 6: a server without a transcode budget
 
 *Open.*
