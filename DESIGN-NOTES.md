@@ -304,3 +304,14 @@ track (3 subtitles, one inside the 10-second overlap of two parts):
 all six display sets through, once, payloads unchanged; burned in by
 jellyfin-web's playback at 1:55; the playback's files removed at its
 end. MSFP's conformance check M7 (a PGS part) not run again.
+
+## Skip markers, 2026-11-20
+
+Both ways, through Jellyfin's media segments. Learned: Jellyfin lists a
+segment only when its provider ID (the MD5 of the provider's name, UTF-16,
+as a GUID) is one of the registered segment providers, which come from
+the service container (not from the plugin's types): the plugin
+registers "MSFP Federation" there, finding nothing itself, and saves the
+markers of each playback under it. Tried live: an intro and credits on a
+12.2 server's film, sent with play, kept for the 12.4 server's stand-in;
+jellyfin-web 12.4 shows "Skip Intro" and skips to its end.

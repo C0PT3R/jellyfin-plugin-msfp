@@ -46,8 +46,9 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
 
     public JellyfinPlayback(ILibraryManager library, ISubtitleEncoder subtitles, ITranscodeManager transcodes,
         IServerConfigurationManager server, IAuthenticationManager auth, ISessionManager sessions, ITrickplayManager trickplay,
-        MediaBrowser.Controller.MediaEncoding.IMediaEncoder encoder, ILogger<JellyfinPlayback> log)
+        MediaBrowser.Controller.MediaEncoding.IMediaEncoder encoder, MediaBrowser.Controller.MediaSegments.IMediaSegmentManager segments, ILogger<JellyfinPlayback> log)
     {
+        _segments = segments;
         _encoder = encoder;
         _library = library;
         _subtitles = subtitles;
@@ -59,6 +60,7 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
     }
 
     private readonly MediaBrowser.Controller.MediaEncoding.IMediaEncoder _encoder;
+    private readonly MediaBrowser.Controller.MediaSegments.IMediaSegmentManager _segments;
 
     /// <summary>The peers' playbacks here now, for the operator's page.</summary>
     public int Playing => _live.Count;
@@ -196,6 +198,7 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
         return started with
         {
             PositionMs = request.StartMs,
+            Segments = await SegmentsOfAsync(item, ct).ConfigureAwait(false),
             Info = new PlaybackInfo
             {
                 Container = started.Protocol == "file" ? file.Container : null,
@@ -206,6 +209,28 @@ public sealed class JellyfinPlayback : IPlayback, IMedia
                 Audio = audio is { } a ? new StreamInfo { Codec = a.Codec, Channels = a.Channels ?? 0, Language = Lang(a.Language) } : null,
             },
         };
+    }
+
+    // The copy's skip markers, as Jellyfin keeps them (its own providers', or
+    // a plugin's), in MSFP's kinds (video section 5.3); none when it has none.
+    private async Task<IReadOnlyList<Segment>?> SegmentsOfAsync(BaseItem item, CancellationToken ct)
+    {
+        try
+        {
+            var found = await _segments.GetSegmentsAsync(item, null, _library.GetLibraryOptions(item)).ConfigureAwait(false);
+            var markers = found
+                .Select(s => (Kind: Viewing.PairedSegments.KindOf(s.Type), s.StartTicks, s.EndTicks))
+                .Where(s => s.Kind is not null && s.StartTicks >= 0)
+                .Select(s => new Segment(s.Kind!, s.StartTicks / TimeSpan.TicksPerMillisecond, Math.Max(s.EndTicks, 0) / TimeSpan.TicksPerMillisecond))
+                .ToList();
+            return markers.Count > 0 ? markers : null;
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            // Markers are optional (MSFP video section 5.3): played without.
+            _log.LogWarning(e, "MSFP: the skip markers of {Title} couldn't be read", item.Name);
+            return null;
+        }
     }
 
     /// <inheritdoc />

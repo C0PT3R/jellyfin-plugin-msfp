@@ -281,6 +281,15 @@ limits."). It touches only that one exception of the plugin's. Other
 failures (no server holds it now, unreachable) stay Jellyfin's generic
 playback error ("Please try again later").
 
+Skip markers, both ways. Serving: a copy's media segments as Jellyfin
+keeps them (its providers', a plugin's), intro, outro (credits), recap,
+preview and commercial, are sent with `play` (MSFP video section 5.3).
+Viewing: a playback's markers replace the stand-in's media segments
+before Jellyfin hands the source over, under the plugin's segment
+provider "MSFP Federation" (Jellyfin lists only the segments of
+providers it knows; an owner can turn it off per library like any
+other), so clients offer to skip them.
+
 Kodi (Jellyfin for Kodi 2.2.0) syncs and plays these titles, but as
 live TV: the add-on treats every source that must be closed after play
 as a live channel, so there is no total time and no seeking, and one

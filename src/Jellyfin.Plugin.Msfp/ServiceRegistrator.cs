@@ -36,6 +36,8 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<MediaBrowser.Controller.Channels.IChannel, PairedChannel>();
         serviceCollection.AddSingleton<StandIns>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<StandIns>());
+        // Jellyfin takes its segment providers from here: the stand-ins' skip markers.
+        serviceCollection.AddSingleton<MediaBrowser.Controller.MediaSegments.IMediaSegmentProvider, PairedSegments>();
         serviceCollection.AddSingleton<RemotePlays>();
         serviceCollection.AddSingleton<Microsoft.Extensions.Options.IConfigureOptions<Microsoft.AspNetCore.Mvc.MvcOptions>, BusyFilterSetup>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<RemotePlays>());

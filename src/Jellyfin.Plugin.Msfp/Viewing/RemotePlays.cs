@@ -56,12 +56,14 @@ public sealed class RemotePlays : IHostedService, IDisposable
     private readonly IMediaEncoder _encoder;
     private readonly ILocalizationManager _localization;
     private readonly PeerPreviews _previews;
+    private readonly MediaBrowser.Controller.MediaSegments.IMediaSegmentManager _segments;
     private readonly ILogger<RemotePlays> _log;
     private readonly ConcurrentDictionary<string, Live> _byToken = new(StringComparer.Ordinal);
     private Timer? _sweep;
 
-    public RemotePlays(EngineHost host, StandIns standIns, ISessionManager sessions, IConfigurationManager config, IMediaEncoder encoder, ILocalizationManager localization, MediaBrowser.Controller.Trickplay.ITrickplayManager trickplay, ILogger<RemotePlays> log)
+    public RemotePlays(EngineHost host, StandIns standIns, ISessionManager sessions, IConfigurationManager config, IMediaEncoder encoder, ILocalizationManager localization, MediaBrowser.Controller.Trickplay.ITrickplayManager trickplay, MediaBrowser.Controller.MediaSegments.IMediaSegmentManager segments, ILogger<RemotePlays> log)
     {
+        _segments = segments;
         _previews = new PeerPreviews(trickplay, log);
         _localization = localization;
         _encoder = encoder;
@@ -167,6 +169,17 @@ public sealed class RemotePlays : IHostedService, IDisposable
             live.DurationMs = (source.RunTimeTicks ?? 0) / TimeSpan.TicksPerMillisecond;
             StandIns.Playing.AddOrUpdate(item.Id, 1, (_, n) => n + 1);
             StandIns.SavePlaying(item, source.MediaStreams.ToList());
+            // The skip markers before Jellyfin hands the source over: clients ask for them as playing starts.
+            try
+            {
+                await PairedSegments.SaveAsync(_segments, item, playback.Segments, ct).ConfigureAwait(false);
+                source.HasSegments = playback.Segments.Count > 0;
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                _log.LogInformation(e, "MSFP: the skip markers of {Key} couldn't be kept", key);
+            }
+
             _previews.Fetch(engine, item, playback);
             foreach (var t in playback.SubtitleTracks.Concat(playback.ForcedTracks).Where(t => t.Pictures))
             {

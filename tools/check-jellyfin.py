@@ -92,6 +92,8 @@ try:
     expect(st == 200, "the paired servers' titles answer")
     st, channels = call("GET", "/Channels")
     expect(st == 200 and any(c["Name"] == "Paired servers" for c in channels["Items"]), "its channel is registered")
+    st, options = call("GET", "/Libraries/AvailableOptions?LibraryContentType=movies")
+    expect(st == 200 and any(p["Name"] == "MSFP Federation" for p in options.get("MediaSegmentProviders", [])), "its segment provider is registered")
     st, page = call("GET", "/web/ConfigurationPage?name=MSFP%20Federation")
     expect(st == 200 and "MsfpPaired" in page, "its configuration page is served")
 
