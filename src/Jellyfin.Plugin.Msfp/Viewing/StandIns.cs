@@ -60,6 +60,8 @@ public sealed class StandIns : IHostedService, IDisposable
     private readonly IServerConfigurationManager _server;
     private readonly EngineHost _host;
     private readonly Identifier _identifier;
+    private readonly IUserDataManager _userData;
+    private readonly IUserManager _users;
     private readonly ILogger<StandIns> _log;
     private readonly object _lock = new();
     private readonly SemaphoreSlim _running = new(1, 1);
@@ -76,6 +78,8 @@ public sealed class StandIns : IHostedService, IDisposable
         IServerConfigurationManager server,
         EngineHost host,
         Identifier identifier,
+        IUserDataManager userData,
+        IUserManager users,
         ILogger<StandIns> log)
     {
         _library = library;
@@ -87,6 +91,8 @@ public sealed class StandIns : IHostedService, IDisposable
         _server = server;
         _host = host;
         _identifier = identifier;
+        _userData = userData;
+        _users = users;
         _log = log;
     }
 
@@ -479,7 +485,7 @@ public sealed class StandIns : IHostedService, IDisposable
             SaveStreams(item, f.Copy);
         }
 
-        Remove(existing.Values);
+        await RemoveAsync(existing.Values, ct).ConfigureAwait(false);
         Refresh(created);
         return wanted.Films.Count;
     }
@@ -582,7 +588,7 @@ public sealed class StandIns : IHostedService, IDisposable
         }
 
         // Episodes first, then their seasons and series.
-        Remove(existing.Values.OrderBy(i => i is Episode ? 0 : i is Season ? 1 : 2));
+        await RemoveAsync(existing.Values.OrderBy(i => i is Episode ? 0 : i is Season ? 1 : 2), ct).ConfigureAwait(false);
         Refresh(created);
         return (wanted.Series.Count, episodes);
     }
@@ -687,6 +693,49 @@ public sealed class StandIns : IHostedService, IDisposable
         foreach (var item in items)
         {
             _library.DeleteItem(item, new DeleteOptions { DeleteFileLocation = false }, false);
+        }
+    }
+
+    // Stand-ins gone at the end of a pass, most often because this server
+    // now holds the title: what users did with them (watched, position,
+    // favourite) goes to the local items sharing their user data keys.
+    // Jellyfin keeps a deleted item's user data, detached, but reattaches
+    // it only to a new item or within one folder; the local copy is in
+    // another library and was usually added before. Its own merge picks,
+    // per user, the latest played.
+    private async Task RemoveAsync(IEnumerable<BaseItem> items, CancellationToken ct)
+    {
+        var gone = items.ToList();
+        if (gone.Count == 0)
+        {
+            return;
+        }
+
+        var keys = gone.SelectMany(i => i.GetUserDataKeys()).ToHashSet(StringComparer.Ordinal);
+        var kinds = gone.Select(i => i.GetBaseItemKind()).Distinct().ToArray();
+        Remove(gone);
+        foreach (var local in _library.GetItemList(new InternalItemsQuery
+        {
+            IncludeItemTypes = kinds,
+            Recursive = true,
+            IsVirtualItem = false,
+        }))
+        {
+            // On the item Jellyfin keeps in memory, which its answers read
+            // (a list gives copies). Then saved again per user as Jellyfin
+            // saves user data, for its own cache and its clients' updates.
+            if (!PairedSources.IsStandIn(local) && local.GetUserDataKeys().Any(keys.Contains)
+                && _library.GetItemById(local.Id) is { } held)
+            {
+                await held.ReattachUserDataAsync(ct).ConfigureAwait(false);
+                foreach (var userId in (held.UserData ?? []).Select(d => d.UserId).Distinct())
+                {
+                    if (_users.GetUserById(userId) is { } user && _userData.GetUserData(user, held) is { } data)
+                    {
+                        _userData.SaveUserData(user, held, data, UserDataSaveReason.Import, ct);
+                    }
+                }
+            }
         }
     }
 

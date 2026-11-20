@@ -255,7 +255,17 @@ by its numbers otherwise): a series held in part shows in both places.
 A stand-in goes when no paired server lists the title any more (the
 pairing ended, the library stopped being read, the title gone), when
 this server gets the title itself, or after 7 days without hearing from
-its servers (back at their next reading). Federation off empties both
+its servers (back at their next reading). When it goes because this
+server got the title, what users did with it (watched, position,
+favourite) goes to the local film or episode: Jellyfin keeps a deleted
+item's user data, detached, but reattaches it only to a new item or
+within one folder, and the local copy is in another library, usually
+added before the stand-in goes. The plugin has Jellyfin reattach it to
+the local items sharing its keys, with Jellyfin's own merge (per user,
+the latest played wins), then saves it again per user so that
+Jellyfin's cache and its clients see it. Tried on 12.3: a film and an
+episode. The other way, a stand-in made again gets the local copy's
+user data from Jellyfin itself (a new item). Federation off empties both
 libraries, which stay. A library its owner removes isn't made again
 until the page's "Make the libraries again".
 
