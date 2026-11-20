@@ -55,9 +55,11 @@ its media server to copy the video can't always tell whether it did.
 
 **Assumed.** The plugin asks Jellyfin to copy the video only when the
 viewer's device plays its codec, HDR, height and bitrate, which is when
-Jellyfin copies (its log names the job a remux, checked live). It doesn't
-check afterwards, so a remux Jellyfin turned into a transcode would count
-as a stream only.
+Jellyfin copies. Since 2026-11-20 it also checks: while the remux
+starts, it reads the video encoder in Jellyfin's ffmpeg command for the
+playback; re-encoding, the playback counts as a transcode for the
+pairing and the server, and with none left it ends (see the last entry
+of this section for the reason it gives).
 
 ### core 11 and media 1: a prefix the discovery document can't announce
 
