@@ -19,17 +19,19 @@ with Overfin and with other servers that speak MSFP.
   sees.
 - **Let their viewers play** your films and episodes. Your server sends
   the file as it is when their device can play it, or converts it on the
-  fly when it can't. Subtitles (text and picture ones) and seek-bar
-  previews come along.
+  fly when it can't. Subtitles (text and picture ones), seek-bar previews
+  and skip markers (intro, credits) come along. A film stored in several
+  files is shared when its parts are alike.
 - **Keep your server's load in hand**: a limit on how many conversions run
   at once on your server, your own users and paired servers together. Your
-  own users are never refused.
-
+  own users are never refused. Paired servers' playbacks show in
+  Jellyfin's dashboard.
 - **See and play the other servers' titles** in two libraries the plugin
   makes, "Films from paired servers" and "Series from paired servers",
-  with their names, pictures and summaries. A title you have yourself
-  isn't repeated there. When several servers hold a title, the best copy
-  is asked first, and the next server when one is busy.
+  with their names, pictures and summaries, subtitles, previews and skip
+  markers. A title you have yourself isn't repeated there. When several
+  servers hold a title, the best copy is asked first, and the next server
+  when one is busy.
 
 Music isn't shared.
 
