@@ -145,7 +145,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
                 // played it; on another, the same language.
                 var asked = audioSwitch is null ? request
                     : holder.Peer == audioSwitch.Peer ? request with { AudioTrack = audioSwitch.Track }
-                    : request with { AudioLanguage = audioSwitch.Language };
+                    : request with { AudioLanguage = Tag(audioSwitch.Language) };
                 playback = await engine.PlayAsync(holder.Peer, asked with { Title = key }, ct).ConfigureAwait(false);
             }
             catch (MsfpException e)
@@ -639,7 +639,10 @@ public sealed class RemotePlays : IHostedService, IDisposable
         public Dictionary<int, Track> AudioByIndex { get; } = new();
     }
 
-    /// <summary>An audio track picked during a playback: on that server, its ID; elsewhere, its language.</summary>
+    /// <summary>
+    /// An audio track picked: during a playback, on that server its ID,
+    /// elsewhere its language; before Play, its language only (no peer).
+    /// </summary>
     internal sealed record AudioSwitch(string Peer, string Track, string Language);
 }
 

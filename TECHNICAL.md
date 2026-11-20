@@ -372,7 +372,12 @@ its language on another (playback 2.3). Jellyfin's request type isn't
 one plugins can reference; the filter reads and sets its members by
 name, the same in 12.2, 12.3 and 12.4. Tried in jellyfin-web 12.4 with
 a film converted by a 12.2 server (English, then French): playback goes
-on at its position, the paired server's ffmpeg maps the new track.
+on at its position, the paired server's ffmpeg maps the new track. The
+same filter carries a track picked before Play (the audio menu on the
+title's page, sent in that request's body, which the source's opening
+can't read): its language, from the stand-in's saved streams, goes in
+`play` in place of the user's audio language. Tried: French picked, the
+paired server converts French.
 
 Seek-bar previews: when a playback's answer carries previews (MSFP
 video section 5.5) and the stand-in has none of that width, the plugin

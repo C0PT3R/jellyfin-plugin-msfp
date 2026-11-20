@@ -1,6 +1,8 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Entities;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -26,12 +28,14 @@ public sealed class AudioSwitchFilter : IAsyncActionFilter
 
     private readonly RemotePlays _plays;
     private readonly IMediaSourceManager _sources;
+    private readonly ILibraryManager _library;
     private readonly ILogger<AudioSwitchFilter> _log;
 
-    public AudioSwitchFilter(RemotePlays plays, IMediaSourceManager sources, ILogger<AudioSwitchFilter> log)
+    public AudioSwitchFilter(RemotePlays plays, IMediaSourceManager sources, ILibraryManager library, ILogger<AudioSwitchFilter> log)
     {
         _plays = plays;
         _sources = sources;
+        _library = library;
         _log = log;
     }
 
@@ -53,7 +57,13 @@ public sealed class AudioSwitchFilter : IAsyncActionFilter
         args.TryGetValue("playbackInfoDto", out var dto);
         var liveStreamId = Arg<string>(args, "liveStreamId") ?? Member<string>(dto, "LiveStreamId");
         var audioIndex = Arg<int?>(args, "audioStreamIndex") ?? Member<int?>(dto, "AudioStreamIndex");
-        if (string.IsNullOrEmpty(liveStreamId) || audioIndex is not { } index
+        if (string.IsNullOrEmpty(liveStreamId))
+        {
+            Picked(context, audioIndex);
+            return;
+        }
+
+        if (audioIndex is not { } index
             || _plays.ByLiveStreamId(liveStreamId) is not { } live
             || !live.AudioByIndex.TryGetValue(index, out var track) || track.Id == live.Playback.AudioTrack)
         {
@@ -67,6 +77,24 @@ public sealed class AudioSwitchFilter : IAsyncActionFilter
         args["autoOpenLiveStream"] = true;
         SetMember(dto, "LiveStreamId", null);
         SetMember(dto, "AutoOpenLiveStream", true);
+    }
+
+    // A track picked before Play (a client's audio menu on the title): its
+    // language, from the stand-in's saved streams, for the paired server
+    // to send. Without it, the user's audio language is asked.
+    private void Picked(ActionExecutingContext context, int? audioIndex)
+    {
+        if (audioIndex is not { } index || Arg<Guid?>(context.ActionArguments, "itemId") is not { } itemId
+            || _library.GetItemById(itemId) is not { } item || !PairedSources.IsStandIn(item))
+        {
+            return;
+        }
+
+        var stream = _sources.GetMediaStreams(itemId).FirstOrDefault(s => s.Index == index && s.Type == MediaStreamType.Audio);
+        if (stream?.Language is { Length: > 0 } language)
+        {
+            context.HttpContext.Items[ItemKey] = new RemotePlays.AudioSwitch(string.Empty, string.Empty, language);
+        }
     }
 
     private static T? Arg<T>(System.Collections.Generic.IDictionary<string, object?> args, string name) =>
