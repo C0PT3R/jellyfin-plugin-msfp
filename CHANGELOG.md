@@ -4,6 +4,14 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
+## Unreleased
+
+### Changed
+
+- The "Titles read…" dialog says how many titles were read from a paired
+  server, by kind, and pages through them 1,000 at a time (it showed only
+  the first 1,000).
+
 ## 0.5.0 (2026-11-20)
 
 ### Added

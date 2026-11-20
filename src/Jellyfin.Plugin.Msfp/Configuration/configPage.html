@@ -160,6 +160,8 @@
                     <h3>Titles read from <span id="MsfpCatalogPeer"></span></h3>
                     <p id="MsfpCatalogSummary"></p>
                     <pre id="MsfpCatalogTitles" style="max-height:50vh;overflow:auto;white-space:pre-wrap"></pre>
+                    <button is="emby-button" type="button" id="MsfpCatalogPrev" class="raised emby-button"><span>Previous 1,000</span></button>
+                    <button is="emby-button" type="button" id="MsfpCatalogNext" class="raised emby-button"><span>Next 1,000</span></button>
                     <button is="emby-button" type="button" id="MsfpCatalogRead" class="raised emby-button"><span>Read now</span></button>
                     <button is="emby-button" type="button" id="MsfpCatalogClose" class="raised emby-button"><span>Close</span></button>
                 </dialog>
@@ -502,13 +504,28 @@
             });
 
             var msfpCatalogFor = null;
-            function msfpCatalog(p) {
+            // The keys each shown batch starts after: the last is the one shown.
+            var msfpCatalogAfters = [''];
+            var msfpCatalogNext = null;
+            var msfpKindNames = { movie: 'films', series: 'series', season: 'seasons', episode: 'episodes', artist: 'artists', album: 'albums', track: 'tracks' };
+            function msfpCatalog(p, after) {
+                if (msfpCatalogFor !== p || after === undefined) {
+                    msfpCatalogAfters = [''];
+                }
                 msfpCatalogFor = p;
+                var from = msfpCatalogAfters[msfpCatalogAfters.length - 1];
                 document.querySelector('#MsfpCatalogPeer').textContent = p.name;
-                ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers/' + encodeURIComponent(p.id) + '/Catalog')).then(function (c) {
+                ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers/' + encodeURIComponent(p.id) + '/Catalog', { after: from })).then(function (c) {
+                    var n = function (x) { return x.toLocaleString(); };
+                    var kinds = Object.keys(c.kinds).map(function (k) { return n(c.kinds[k]) + ' ' + (msfpKindNames[k] || k); }).join(', ');
+                    var first = (msfpCatalogAfters.length - 1) * 1000;
                     document.querySelector('#MsfpCatalogSummary').textContent =
-                        (c.more ? 'The first 1,000' : c.titles.length) + ' titles, from ' +
-                        c.libraries.filter(function (l) { return l.wanted; }).map(function (l) { return l.name; }).join(', ');
+                        n(c.total) + ' titles' + (kinds ? ' (' + kinds + ')' : '') + ', from ' +
+                        c.libraries.filter(function (l) { return l.wanted; }).map(function (l) { return l.name; }).join(', ') +
+                        (c.total > 1000 ? '. Showing ' + n(first + 1) + ' to ' + n(first + c.titles.length) + '.' : '.');
+                    msfpCatalogNext = c.next;
+                    document.querySelector('#MsfpCatalogNext').disabled = !c.next;
+                    document.querySelector('#MsfpCatalogPrev').disabled = msfpCatalogAfters.length < 2;
                     document.querySelector('#MsfpCatalogTitles').textContent = c.titles.map(function (t) {
                         return t.key + '  ' + t.kind + (t.height ? '  ' + t.height + 'p' : '') + (t.audio.length ? '  audio ' + t.audio.join(',') : '') + (t.subtitles.length ? '  subtitles ' + t.subtitles.join(',') : '');
                     }).join('\n');
@@ -517,6 +534,18 @@
                 });
             }
 
+            document.querySelector('#MsfpCatalogNext').addEventListener('click', function () {
+                if (msfpCatalogNext) {
+                    msfpCatalogAfters.push(msfpCatalogNext);
+                    msfpCatalog(msfpCatalogFor, msfpCatalogNext);
+                }
+            });
+            document.querySelector('#MsfpCatalogPrev').addEventListener('click', function () {
+                if (msfpCatalogAfters.length > 1) {
+                    msfpCatalogAfters.pop();
+                    msfpCatalog(msfpCatalogFor, msfpCatalogAfters[msfpCatalogAfters.length - 1]);
+                }
+            });
             document.querySelector('#MsfpCatalogRead').addEventListener('click', function () {
                 document.querySelector('#MsfpCatalogSummary').textContent = '…';
                 msfpPost('Msfp/Peers/' + encodeURIComponent(msfpCatalogFor.id) + '/Read').then(function () {

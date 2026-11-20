@@ -229,13 +229,37 @@ public class AdminController : ControllerBase
         var wants = await e.WantsAsync(id, ct).ConfigureAwait(false);
         var store = _host.Store ?? throw new MsfpException(MsfpError.NotFound);
         var titles = await store.ReadAsync(tx => tx.PeerTitlesAsync(id, after ?? string.Empty, 1000), ct).ConfigureAwait(false);
+
+        // Everything read, by kind: the page shows 1,000 at a time.
+        var kinds = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        var from = string.Empty;
+        while (true)
+        {
+            var at = from;
+            var page = await store.ReadAsync(tx => tx.PeerTitlesAsync(id, at, 5000), ct).ConfigureAwait(false);
+            foreach (var t in page)
+            {
+                kinds[t.Kind] = kinds.GetValueOrDefault(t.Kind) + 1;
+            }
+
+            if (page.Count < 5000)
+            {
+                break;
+            }
+
+            from = page[^1].Key;
+        }
+
         return new
         {
+            total = kinds.Values.Sum(),
+            kinds,
             libraries = wants.Select(l => new { id = l.Id, name = l.Name, kind = l.Kind, wanted = l.Wanted, gone = l.Gone }),
             titles = titles.Select(t => t is VideoTitle v
                 ? new { key = t.Key, kind = t.Kind, library = t.Libraries?.FirstOrDefault(), audio = v.Audio ?? [], subtitles = v.Subtitles ?? [], height = v.Video?.Height }
                 : new { key = t.Key, kind = t.Kind, library = t.Libraries?.FirstOrDefault(), audio = new List<string>(), subtitles = new List<string>(), height = (int?)null }),
             more = titles.Count == 1000,
+            next = titles.Count == 1000 ? titles[^1].Key : null,
         };
     });
 
