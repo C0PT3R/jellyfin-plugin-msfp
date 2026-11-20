@@ -1,7 +1,7 @@
 ---
 name: "MSFP Federation"
 guid: "505184bf-b92c-487f-a406-bf6b3570fb7f"
-version: "0.4.0.0"
+version: "0.5.0.0"
 targetAbi: "12.2.0.0"
 framework: "net10.0"
 overview: "Federate Jellyfin servers over MSFP, the Media Server Federation Protocol"
@@ -16,8 +16,10 @@ artifacts:
 - "Msfp.Protocol.dll"
 - "BouncyCastle.Cryptography.dll"
 changelog: >
-  Skip markers (intro, credits) both ways. Films stored in several files
-  can be shared when their parts match. Paired servers' playbacks show
-  in the dashboard. A remux that Jellyfin turns into a transcode now
-  counts as one. Fix: picture subtitles (PGS) chosen by a viewer's
-  settings no longer stop the playback.
+  Paired servers' titles: the audio language can be changed while
+  playing, also when the other server converts the stream. What your
+  users watched, half-watched or marked favourite carries over when you
+  get the title yourself. No more empty "Paired servers" tile in My
+  Media. Fixes: several viewers of one title, or a long pause, no longer
+  end the playback after 2 minutes; titles play right after Jellyfin
+  starts.

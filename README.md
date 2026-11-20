@@ -29,9 +29,11 @@ with Overfin and with other servers that speak MSFP.
 - **See and play the other servers' titles** in two libraries the plugin
   makes, "Films from paired servers" and "Series from paired servers",
   with their names, pictures and summaries, subtitles, previews and skip
-  markers. A title you have yourself isn't repeated there. When several
-  servers hold a title, the best copy is asked first, and the next server
-  when one is busy.
+  markers, and the audio language can be changed while playing. A title
+  you have yourself isn't repeated there, and when you get one you were
+  watching from another server, what your users watched carries over.
+  When several servers hold a title, the best copy is asked first, and
+  the next server when one is busy.
 
 Music isn't shared.
 
