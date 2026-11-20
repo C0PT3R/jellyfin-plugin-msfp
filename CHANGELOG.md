@@ -4,7 +4,7 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
-## Unreleased
+## 0.5.1 (2026-11-20)
 
 ### Fixed
 
