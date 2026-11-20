@@ -1,7 +1,8 @@
 # Checks every push and pull request: the build (warnings are errors), the
-# tests, and the plugin as Jellyfin loads it (the four DLLs of build.yaml's
-# artifacts). It runs in the .NET 10 SDK's own image, the same one used
-# locally (README, Building).
+# tests, the plugin as Jellyfin loads it (the four DLLs of build.yaml's
+# artifacts), then that plugin in each Jellyfin version it supports
+# (jellyfin-check.yml). It builds in the .NET 10 SDK's own image, the same
+# one used locally (TECHNICAL.md, Building).
 name: CI
 
 on:
@@ -34,6 +35,18 @@ jobs:
       - name: The plugin
         run: |
           dotnet build src/Jellyfin.Plugin.Msfp --no-restore -c Release -o out
+          mkdir plugin
           for f in $(sed -n 's/^- "\(.*\)"$/\1/p' build.yaml); do
             test -f "out/$f" || { echo "out/$f is missing" >&2; exit 1; }
+            cp "out/$f" plugin/
           done
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plugin
+          path: plugin
+          retention-days: 7
+
+  jellyfin:
+    needs: check
+    uses: ./.github/workflows/jellyfin-check.yml

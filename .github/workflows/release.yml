@@ -1,0 +1,85 @@
+# A release, from a tag v<x.y.z> matching the version the project says
+# (Jellyfin.Plugin.Msfp.csproj <Version>, build.yaml version x.y.z.0):
+# built and tested, checked in each Jellyfin it supports, then published
+# as a GitHub release with the plugin's zip and the repository's
+# manifest.json (every version so far), which Jellyfin reads at
+# https://github.com/<owner>/<repo>/releases/latest/download/manifest.json.
+# The publish job runs in the "release" environment: a reviewer set there
+# approves each release.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/dotnet/sdk:10.0.404
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: The tag is the project's version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          project=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' src/Jellyfin.Plugin.Msfp/Jellyfin.Plugin.Msfp.csproj)
+          yaml=$(sed -n 's/^version: "\(.*\)"$/\1/p' build.yaml)
+          test "$tag" = "$project" || { echo "tag $tag, csproj $project" >&2; exit 1; }
+          test "$tag.0" = "$yaml" || { echo "tag $tag, build.yaml $yaml" >&2; exit 1; }
+
+      - name: Build and test
+        run: |
+          dotnet restore Jellyfin.Plugin.Msfp.slnx
+          dotnet build Jellyfin.Plugin.Msfp.slnx --no-restore -c Release
+          dotnet test Jellyfin.Plugin.Msfp.slnx --no-build -c Release
+          dotnet build src/Jellyfin.Plugin.Msfp --no-restore -c Release -o out
+          mkdir plugin
+          for f in $(sed -n 's/^- "\(.*\)"$/\1/p' build.yaml); do cp "out/$f" plugin/; done
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plugin
+          path: plugin
+          retention-days: 7
+
+  jellyfin:
+    needs: build
+    uses: ./.github/workflows/jellyfin-check.yml
+
+  publish:
+    needs: [build, jellyfin]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: plugin
+          path: plugin
+
+      - name: Package
+        run: |
+          mkdir dist && cd dist
+          # The repository so far: the latest release's manifest, if any.
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern manifest.json -O previous.json 2>/dev/null || true
+          python3 ../tools/package.py ../plugin "${GITHUB_REF_NAME#v}.0" \
+            "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME" previous.json
+
+      - name: Publish
+        run: |
+          cd dist
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
+            --notes "MSFP Federation for Jellyfin ${GITHUB_REF_NAME#v} (Jellyfin 12.2 and later). Install: add https://github.com/$GITHUB_REPOSITORY/releases/latest/download/manifest.json as a repository (Dashboard, Plugins, Repositories)." \
+            msfp-federation_*.zip manifest.json

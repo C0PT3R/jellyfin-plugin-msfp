@@ -59,8 +59,38 @@ podman run --rm -v "$PWD":/src:Z -w /src mcr.microsoft.com/dotnet/sdk:10.0 \
 The plugin is the four DLLs in `out`: `Jellyfin.Plugin.Msfp.dll`,
 `Msfp.Engine.dll`, `Msfp.Protocol.dll` and `BouncyCastle.Cryptography.dll`
 (Jellyfin's own, and what ASP.NET Core brings, stay out). Copy them into a
-folder under Jellyfin's `plugins` directory and restart Jellyfin. It
-targets Jellyfin 12.2.
+folder under Jellyfin's `plugins` directory and restart Jellyfin. It is
+built against Jellyfin 12.2 (`targetAbi` 12.2.0.0) and works with 12.2
+and later.
+
+## Releases and Jellyfin versions
+
+`tools/check-jellyfin.py IMAGE PLUGIN_DIR` starts a throwaway Jellyfin
+of that image with the plugin and checks that it is loaded and Active,
+that its API, channel and configuration page answer, that its two
+libraries are made, and that Jellyfin's log holds no error of its own.
+CI runs it for every Jellyfin the plugin supports, listed in
+`.github/workflows/jellyfin-check.yml` (12.2, 12.3 and 12.4 on
+2026-11-19; each new Jellyfin release is added there). The viewing and
+serving sides were also tried live across versions: a 12.4 server
+playing from a 12.2 one and from a 12.3 one (subtitles, PGS, previews,
+the busy answer). All three ship the same SkiaSharp (3.119.4), which the
+plugin compiles against for preview sheets.
+
+A tag `v<x.y.z>` matching the project's version (`<Version>` in the
+csproj, `version` x.y.z.0 in build.yaml) starts `release.yml`: built and
+tested, checked in each Jellyfin version, then, once approved in the
+`release` environment, published as a GitHub release holding the
+plugin's zip (`tools/package.py`: build.yaml's artifacts and Jellyfin's
+`meta.json`) and the repository's `manifest.json`, every version so far.
+Jellyfin owners add, once, as a repository (Dashboard, Plugins,
+Repositories):
+
+    https://github.com/C0PT3R/jellyfin-plugin-msfp/releases/latest/download/manifest.json
+
+and install and update from the catalog. Tried with Jellyfin 12.4 and
+a local copy of that manifest: listed, installed, Active after the
+restart.
 
 ## Running it
 

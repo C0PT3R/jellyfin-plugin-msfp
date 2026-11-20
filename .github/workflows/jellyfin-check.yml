@@ -1,0 +1,32 @@
+# The built plugin in each Jellyfin it supports, from 12.2 to the latest:
+# loaded, its services started, no error of its own (tools/check-jellyfin.py).
+# Called by CI and by the release, with the plugin built by them. A new
+# Jellyfin release is added to the list below.
+name: Jellyfin versions
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  jellyfin:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - jellyfin/jellyfin:12.2.20261005-225228
+          - jellyfin/jellyfin:12.3.20261023-013714
+          - jellyfin/jellyfin:12.4.20261026-211555
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: plugin
+          path: plugin
+
+      - name: Check
+        run: python3 tools/check-jellyfin.py "${{ matrix.image }}" plugin
