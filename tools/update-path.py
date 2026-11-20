@@ -86,6 +86,11 @@ try:
     call("POST", "/Startup/Configuration", {"UICulture": "en-US", "MetadataCountryCode": "US", "PreferredMetadataLanguage": "en"})
     call("GET", "/Startup/User"); call("POST", "/Startup/User", {"Name": "admin", "Password": "check-only"}); call("POST", "/Startup/Complete")
     token = call("POST", "/Users/AuthenticateByName", {"Username": "admin", "Pw": "check-only"})[1]["AccessToken"]
+    # Jellyfin's own "Update Plugins" task would update FROM by itself at
+    # a start (its default): off here, so that the update tried is ours.
+    for t in call("GET", "/ScheduledTasks")[1]:
+        if t.get("Key") == "PluginUpdates":
+            expect(call("POST", "/ScheduledTasks/%s/Triggers" % t["Id"], [])[0] in (200, 204), "Jellyfin's plugin updates off")
     repos = call("GET", "/Repositories")[1] + [{"Name": "MSFP", "Url": REPO, "Enabled": True}]
     call("POST", "/Repositories", repos)
     pk = call("GET", "/Packages/" + urllib.parse.quote("MSFP Federation") + "?assemblyGuid=" + PID)[1]

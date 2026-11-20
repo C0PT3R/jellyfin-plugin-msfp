@@ -131,8 +131,11 @@ in the plugin's data folder, apart from the version's folder), no error
 in the log. TO can also be a package made by `tools/package.py`, to
 try a build before releasing it: Jellyfin stopped, the package unpacked
 as its update does, started again. 0.4.0 from the repository to main
-(2026-11-20) on 12.2, 12.3 and 12.4: one copy Active, settings, key,
-code and libraries kept, no error.
+(2026-11-20) on 12.2, 12.3 and 12.4, and 0.3.0 to main on 12.2: one
+copy Active, settings, key, code and libraries kept, no error. The
+tool turns off Jellyfin's "Update Plugins" task first: by default it
+updates plugins by itself at each start, which would update FROM before
+the update tried (and is how most owners will get a release).
 
 ## Running it
 
