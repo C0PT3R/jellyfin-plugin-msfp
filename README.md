@@ -35,12 +35,25 @@ Music isn't shared.
 
 ## What you need
 
-- Jellyfin 12.2.
+- Jellyfin 12.2 or later.
 - An address where the other servers can reach yours, over **HTTPS**:
   Jellyfin's own HTTPS (Dashboard, Networking) or a reverse proxy in front
   of it. A certificate you made yourself is fine.
-- The plugin installed. There is no ready-made download yet: it has to be
-  built, see [TECHNICAL.md](TECHNICAL.md#building).
+
+## Installing
+
+1. In Jellyfin, open Dashboard, Plugins, Repositories (the **+** button,
+   or the Repositories tab), and add this repository:
+
+   ```
+   https://github.com/C0PT3R/jellyfin-plugin-msfp/releases/latest/download/manifest.json
+   ```
+
+2. In the Catalog, open **MSFP Federation** and install it.
+3. Restart Jellyfin.
+
+Updates then come through the same catalog. To build it yourself, see
+[TECHNICAL.md](TECHNICAL.md#building).
 
 ## Setting it up
 

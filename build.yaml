@@ -1,7 +1,7 @@
 ---
 name: "MSFP Federation"
 guid: "505184bf-b92c-487f-a406-bf6b3570fb7f"
-version: "0.2.0.0"
+version: "0.3.0.0"
 targetAbi: "12.2.0.0"
 framework: "net10.0"
 overview: "Federate Jellyfin servers over MSFP, the Media Server Federation Protocol"
@@ -16,4 +16,8 @@ artifacts:
 - "Msfp.Protocol.dll"
 - "BouncyCastle.Cryptography.dll"
 changelog: >
-  Early development.
+  First release. Pair with other MSFP servers, share chosen libraries with
+  them, and watch theirs: their films and series appear in two libraries,
+  with subtitles (text and pictures), seek-bar previews and the next
+  server tried when one is busy. Titles identified against TMDB before
+  they are shared. Early: try it on a test server first.
