@@ -357,11 +357,8 @@ public sealed class RemotePlays : IHostedService, IDisposable
     }
 
     /// <summary>A playback by Jellyfin's ID of its live stream (the provider's prefix, then ours), null when none.</summary>
-    internal Live? ByLiveStreamId(string liveStreamId)
-    {
-        var ours = liveStreamId[(liveStreamId.LastIndexOf('_') + 1)..];
-        return _byToken.Values.FirstOrDefault(l => l.StreamId == ours);
-    }
+    internal Live? ByLiveStreamId(string liveStreamId) =>
+        _byToken.Values.FirstOrDefault(l => SameStream(liveStreamId, l.StreamId));
 
     // The paired server's subtitles, text (WebVTT) and pictures (PGS), as
     // external tracks Jellyfin reads whole at the relay (Subtitles.cs), in
