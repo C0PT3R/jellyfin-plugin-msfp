@@ -402,16 +402,59 @@ public sealed class RemotePlays : IHostedService, IDisposable
     private Live? LiveOf(Guid item, string? liveStreamId, string? sessionId, bool starting = false)
     {
         var lives = _byToken.Values.Where(l => l.Item.Id == item).ToList();
-        var live = lives.FirstOrDefault(l => SameStream(liveStreamId, l.StreamId))
-            ?? lives.FirstOrDefault(l => sessionId is not null && l.SessionId == sessionId)
-            ?? (lives.Count == 1 ? lives[0] : null)
-            ?? (starting ? lives.Where(l => l.SessionId is null).OrderByDescending(l => l.Opened).FirstOrDefault() : null);
-        if (live is not null && sessionId is not null)
+        var at = Match(lives.Select(l => (l.StreamId, l.SessionId, l.Opened)).ToList(), liveStreamId, sessionId, starting);
+        if (at < 0)
+        {
+            return null;
+        }
+
+        var live = lives[at];
+        if (sessionId is not null)
         {
             live.SessionId ??= sessionId;
         }
 
         return live;
+    }
+
+    /// <summary>
+    /// <see cref="LiveOf"/>'s choice among a title's playbacks (their live
+    /// stream, session and opening): the index of the one a session's
+    /// report is about, -1 for none.
+    /// </summary>
+    internal static int Match(IReadOnlyList<(string StreamId, string? SessionId, DateTimeOffset Opened)> lives, string? liveStreamId, string? sessionId, bool starting)
+    {
+        for (var i = 0; i < lives.Count; i++)
+        {
+            if (SameStream(liveStreamId, lives[i].StreamId))
+            {
+                return i;
+            }
+        }
+
+        for (var i = 0; sessionId is not null && i < lives.Count; i++)
+        {
+            if (lives[i].SessionId == sessionId)
+            {
+                return i;
+            }
+        }
+
+        if (lives.Count == 1)
+        {
+            return 0;
+        }
+
+        var newest = -1;
+        for (var i = 0; starting && i < lives.Count; i++)
+        {
+            if (lives[i].SessionId is null && (newest < 0 || lives[i].Opened > lives[newest].Opened))
+            {
+                newest = i;
+            }
+        }
+
+        return newest;
     }
 
     /// <summary>
