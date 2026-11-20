@@ -1,3 +1,5 @@
+<img src="logo.png" alt="" width="128" align="right">
+
 # MSFP Federation for Jellyfin
 
 Share your Jellyfin libraries with servers you trust, and let their viewers

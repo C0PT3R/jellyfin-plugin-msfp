@@ -11,8 +11,9 @@ usage: package.py BUILD_DIR VERSION RELEASE_URL [PREVIOUS_MANIFEST]
 - PREVIOUS_MANIFEST: the repository's manifest so far, if any.
 
 Writes, in the current folder, msfp-federation_<version>.zip (the
-artifacts and meta.json, as Jellyfin installs them) and manifest.json (the
-repository: every version, the newest first). Only Python's standard
+artifacts, the logo and meta.json, as Jellyfin installs them) and
+manifest.json (the repository: every version, the newest first; the logo
+as the repository's own logo.png, which Jellyfin's catalog shows). Only Python's standard
 library: build.yaml is read for the few keys it has."""
 import datetime
 import hashlib
@@ -23,6 +24,11 @@ import sys
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# The plugin's logo: in its zip (meta.json's imagePath, shown once
+# installed) and at this address (the catalog's imageUrl, shown before).
+LOGO = os.path.join(ROOT, "logo.png")
+LOGO_URL = "https://raw.githubusercontent.com/C0PT3R/jellyfin-plugin-msfp/main/logo.png"
 
 
 def read_build_yaml(path):
@@ -75,6 +81,7 @@ def main():
         "status": "Active",
         "autoUpdate": True,
         "assemblies": [],
+        "imagePath": "logo.png",
     }
 
     zip_name = "msfp-federation_%s.zip" % version
@@ -84,6 +91,7 @@ def main():
             if not os.path.isfile(path):
                 raise SystemExit("missing " + path)
             z.write(path, artifact)
+        z.write(LOGO, "logo.png")
         z.writestr("meta.json", json.dumps(plugin_meta, indent=2) + "\n")
     checksum = hashlib.md5(open(zip_name, "rb").read()).hexdigest()
 
@@ -106,6 +114,7 @@ def main():
         "overview": meta["overview"],
         "owner": meta["owner"],
         "category": meta["category"],
+        "imageUrl": LOGO_URL,
     })
     plugin["versions"] = [entry] + [v for v in plugin["versions"] if v.get("version") != version]
     with open("manifest.json", "w", encoding="utf-8") as f:
