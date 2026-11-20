@@ -241,10 +241,17 @@ They show from the next time the title is opened, for every viewer, and
 go with the stand-in. The stand-in's saved source isn't marked remote:
 Jellyfin lists the trickplay of local sources only.
 
-Not built yet: the paired server's picture subtitles (PGS) served apart,
-and a clear message
-in the client when no server can play (Jellyfin shows a generic
-playback error; the log says why).
+When every paired server holding the title refuses it as busy (its
+stream limit, or no answer), the plugin's MVC exception filter turns
+the failed open into Jellyfin's own answer for rate limits
+(`ErrorCode: RateLimitExceeded`), which clients show in the viewer's
+language ("This media cannot be played at this time due to rate
+limits."). It touches only that one exception of the plugin's. Other
+failures (no server holds it now, unreachable) stay Jellyfin's generic
+playback error ("Please try again later").
+
+Not built yet: the paired server's picture subtitles (PGS) served
+apart.
 
 ## Ed25519
 

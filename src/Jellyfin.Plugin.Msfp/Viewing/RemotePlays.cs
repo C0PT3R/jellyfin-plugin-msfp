@@ -157,9 +157,12 @@ public sealed class RemotePlays : IHostedService, IDisposable
             return new PairedLiveStream(live, source);
         }
 
-        throw new InvalidOperationException(busy
-            ? "The paired servers holding this title are busy now. Try again later."
-            : "No paired server could play this title now.");
+        if (busy)
+        {
+            throw new PairedBusyException("The paired servers holding this title are busy now. Try again later.");
+        }
+
+        throw new InvalidOperationException("No paired server could play this title now.");
     }
 
     /// <summary>A playback by its relay token, null when none: each read keeps it from going idle.</summary>

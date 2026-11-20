@@ -37,6 +37,7 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<StandIns>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<StandIns>());
         serviceCollection.AddSingleton<RemotePlays>();
+        serviceCollection.AddSingleton<Microsoft.Extensions.Options.IConfigureOptions<Microsoft.AspNetCore.Mvc.MvcOptions>, BusyFilterSetup>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<RemotePlays>());
     }
 }

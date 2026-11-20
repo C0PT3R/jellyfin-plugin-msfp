@@ -261,3 +261,14 @@ sources, so the stand-in's saved source isn't marked remote (the live
 one is). Tried live: A's 320 px set (24 tiles, 10 s) kept on B, listed
 with the item, shown on jellyfin-web's seek bar; playback unchanged.
 To check per Jellyfin version: the SkiaSharp each ships.
+
+## Busy message, 2026-11-19
+
+An exception while opening a source is a 500, which jellyfin-web shows as
+"There was an error processing the request". Jellyfin sets ErrorCode only
+before opening. The plugin registers an MVC exception filter
+(IConfigureOptions<MvcOptions>) that answers its own PairedBusyException
+with PlaybackInfoResponse { ErrorCode = RateLimitExceeded }: jellyfin-web
+shows "This media cannot be played at this time due to rate limits." (fr:
+"Ce média ne peut pas être lu à cause de la limite de débit."). Tried
+live with both holders at 0 streams. Other clients: not tried.
