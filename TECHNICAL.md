@@ -109,7 +109,9 @@ plugin compiles against for preview sheets.
 A tag `v<x.y.z>` matching the project's version (`<Version>` in the
 csproj, `version` x.y.z.0 in build.yaml) starts `release.yml`: built and
 tested, checked in each Jellyfin version, then, once approved in the
-`release` environment, published as a GitHub release holding the
+`release` environment, published as a GitHub release (its notes: the
+version's section of CHANGELOG.md, which must exist, by
+`tools/release-notes.py`) holding the
 plugin's zip (`tools/package.py`: build.yaml's artifacts and Jellyfin's
 `meta.json`) and the repository's `manifest.json`, every version so far.
 Jellyfin owners add, once, as a repository (Dashboard, Plugins,

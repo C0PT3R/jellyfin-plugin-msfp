@@ -26,9 +26,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: The tag is the project's version
+      - name: The tag is the project's version, with its changelog
         run: |
           tag="${GITHUB_REF_NAME#v}"
+          grep -q "^## $tag\( \|$\)" CHANGELOG.md || { echo "CHANGELOG.md has no section for $tag" >&2; exit 1; }
           project=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' src/Jellyfin.Plugin.Msfp/Jellyfin.Plugin.Msfp.csproj)
           yaml=$(sed -n 's/^version: "\(.*\)"$/\1/p' build.yaml)
           test "$tag" = "$project" || { echo "tag $tag, csproj $project" >&2; exit 1; }
@@ -80,10 +81,10 @@ jobs:
       - name: Publish
         run: |
           cd dist
-          # The notes: build.yaml's changelog (what Jellyfin's catalog
-          # shows), then how to install.
-          python3 -c "import sys; sys.path.insert(0, '../tools'); from package import read_build_yaml; print(read_build_yaml('../build.yaml')['changelog'].strip())" > notes.md
-          printf '\nMSFP Federation for Jellyfin %s (Jellyfin 12.2 and later). Install: add https://github.com/%s/releases/latest/download/manifest.json as a repository (Dashboard, Plugins, Repositories).\n' \
-            "${GITHUB_REF_NAME#v}" "$GITHUB_REPOSITORY" >> notes.md
+          # The notes: the version's section of CHANGELOG.md (none: no
+          # release), then how to install.
+          python3 ../tools/release-notes.py ../CHANGELOG.md "${GITHUB_REF_NAME#v}" > notes.md
+          printf '\n### Install\n\nJellyfin 12.2 or later. Add `https://github.com/%s/releases/latest/download/manifest.json` as a plugin repository (Dashboard, Plugins, Repositories), then install MSFP Federation from the catalog. Servers that have it update by themselves.\n' \
+            "$GITHUB_REPOSITORY" >> notes.md
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
             --notes-file notes.md msfp-federation_*.zip manifest.json
