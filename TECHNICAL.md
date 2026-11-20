@@ -46,7 +46,11 @@ pairings, offers the films, reads the suite's catalog, confirms an
 address change, and changes the server's key twice (rotation, then
 "stolen"), so use a test server. With `--media` (a films folder on that
 machine) and the suite's `--watch-changes`, it also adds and removes a
-film for the catalog's change check. RESULTS_PLACEHOLDER
+film for the catalog's change check, and confirms it on the plugin's
+identification page when it is held "to check". On 2026-11-20 with
+`--watch-changes 180 --load --end`, on Jellyfin 12.2: 121 passed, 0
+failed, 1 skipped (T8: one title in two offered libraries, which the
+test server doesn't have).
 
 ## Building
 
