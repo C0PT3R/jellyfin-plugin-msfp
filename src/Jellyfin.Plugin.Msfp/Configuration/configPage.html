@@ -5,7 +5,7 @@
     <title>MSFP Federation</title>
 </head>
 <body>
-    <div id="MsfpConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-textarea">
+    <div id="MsfpConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-textarea,emby-checkbox,emby-radio">
         <div data-role="content">
             <div class="content-primary">
                 <style>
@@ -30,6 +30,28 @@
                     #MsfpConfigPage .msfpDanger { margin-top: 2em; padding-top: 1em; border-top: 1px solid rgba(128, 128, 128, 0.3); }
                     #MsfpConfigPage .msfpSaveBar { margin-top: 2em; }
                     #MsfpConfigPage dialog .emby-button { margin: 0; }
+                    #MsfpConfigPage .msfpDialog { padding: 0; width: 34em; max-width: calc(100vw - 2em); max-height: calc(100vh - 4em); box-shadow: 0 0.5em 2em rgba(0, 0, 0, 0.6); }
+                    #MsfpConfigPage .msfpDialog[open] { display: flex; flex-direction: column; }
+                    #MsfpConfigPage .msfpDialogWide { width: 60em; }
+                    #MsfpConfigPage .msfpDialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+                    #MsfpConfigPage .msfpDialogHead { padding: 1.2em 1.5em 0.8em; border-bottom: 1px solid rgba(128, 128, 128, 0.25); }
+                    #MsfpConfigPage .msfpDialogHead h3 { margin: 0 0 0.3em; }
+                    #MsfpConfigPage .msfpDialogBody { padding: 1em 1.5em; overflow: auto; flex: 1 1 auto; }
+                    #MsfpConfigPage .msfpDialogFoot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.5em; padding: 0.8em 1.5em 1.2em; border-top: 1px solid rgba(128, 128, 128, 0.25); }
+                    #MsfpConfigPage .msfpFootSpacer { flex: 1 1 auto; }
+                    #MsfpConfigPage .msfpDialogLabel { opacity: 0.7; margin: 0.5em 0; }
+                    #MsfpConfigPage .msfpChoices .checkboxContainer, #MsfpConfigPage .msfpChoices .radio-label-block { margin: 0 0 0.6em; }
+                    #MsfpConfigPage .msfpChoices .radio-label-block { display: flex; align-items: baseline; gap: 0.6em; cursor: pointer; }
+                    #MsfpConfigPage .msfpChoices input[type=radio] { accent-color: #00a4dc; flex: none; }
+                    #MsfpConfigPage .msfpChoices a { color: inherit; opacity: 0.7; margin-left: 0.5em; }
+                    #MsfpConfigPage .msfpReasons { margin: 0 0 1em; padding-left: 1.2em; }
+                    #MsfpConfigPage .msfpReasons:empty { display: none; }
+                    #MsfpConfigPage .msfpProblem { color: #ff6b6b; margin-top: 0.5em; }
+                    #MsfpConfigPage .msfpProblem:empty { display: none; }
+                    #MsfpConfigPage .msfpTable { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+                    #MsfpConfigPage .msfpTable th { text-align: left; opacity: 0.7; font-weight: normal; position: sticky; top: -1em; background: inherit; }
+                    #MsfpConfigPage .msfpTable th, #MsfpConfigPage .msfpTable td { padding: 0.35em 1em 0.35em 0; border-bottom: 1px solid rgba(128, 128, 128, 0.15); }
+                    #MsfpConfigPage .msfpTable td:first-child { font-family: monospace; }
                 </style>
                 <h2 class="sectionTitle">MSFP Federation</h2>
                 <div class="emby-tabs msfpTabs" role="tablist">
@@ -148,77 +170,113 @@
                     </div>
                     <div id="MsfpToCheck"></div>
                     <div class="fieldDescription" style="margin-top:1.5em">This product uses the TMDB API but is not endorsed or certified by TMDB.</div>
-                    <dialog id="MsfpCheckDialog" style="min-width:20em;max-width:40em">
-                    <h3 id="MsfpCheckName"></h3>
-                    <div id="MsfpCheckWhere" class="fieldDescription"></div>
-                    <ul id="MsfpCheckReasons"></ul>
-                    <div id="MsfpCheckCandidates"></div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="MsfpCheckOther">Another TMDB ID</label>
-                        <input id="MsfpCheckOther" type="text" is="emby-input" inputmode="numeric" />
-                        <div class="fieldDescription">The number in the title's address on themoviedb.org (for example 603 in /movie/603).</div>
-                    </div>
-                    <div id="MsfpCheckProblem" style="font-weight:bold;margin-top:0.5em"></div>
-                    <div style="margin-top:1em">
-                        <button is="emby-button" type="button" id="MsfpCheckSave" class="raised button-submit emby-button"><span>Save</span></button>
-                        <button is="emby-button" type="button" id="MsfpCheckReset" class="raised emby-button"><span>Back to the match</span></button>
-                        <button is="emby-button" type="button" id="MsfpCheckCancel" class="raised emby-button"><span>Cancel</span></button>
-                    </div>
-                </dialog>
                 </div>
 
-                <dialog id="MsfpOffersDialog" style="min-width:20em">
-                    <h3>Libraries offered to <span id="MsfpOffersPeer"></span></h3>
-                    <div class="fieldDescription">The peer sees the titles of these libraries that have a TMDB ID. Nothing else of this server.</div>
-                    <div id="MsfpOffersList"></div>
-                    <div style="margin-top:1em">
-                        <button is="emby-button" type="button" id="MsfpOffersSave" class="raised button-submit emby-button"><span>Save</span></button>
+                <dialog id="MsfpCheckDialog" class="msfpDialog">
+                    <div class="msfpDialogHead">
+                        <h3 id="MsfpCheckName"></h3>
+                        <div id="MsfpCheckWhere" class="fieldDescription msfpMono"></div>
+                    </div>
+                    <div class="msfpDialogBody">
+                        <ul id="MsfpCheckReasons" class="msfpReasons"></ul>
+                        <div class="msfpDialogLabel">Which title is it?</div>
+                        <div id="MsfpCheckCandidates" class="msfpChoices"></div>
+                        <div class="inputContainer" style="margin-top:1.2em">
+                            <label class="inputLabel inputLabelUnfocused" for="MsfpCheckOther">Or another TMDB ID</label>
+                            <input id="MsfpCheckOther" type="text" is="emby-input" inputmode="numeric" placeholder="603" />
+                            <div class="fieldDescription">The number in the title's address on themoviedb.org, as 603 in /movie/603.</div>
+                        </div>
+                        <div id="MsfpCheckProblem" class="msfpProblem"></div>
+                    </div>
+                    <div class="msfpDialogFoot">
+                        <button is="emby-button" type="button" id="MsfpCheckReset" class="raised emby-button"><span>Back to the match</span></button>
+                        <span class="msfpFootSpacer"></span>
+                        <button is="emby-button" type="button" id="MsfpCheckCancel" class="raised emby-button"><span>Cancel</span></button>
+                        <button is="emby-button" type="button" id="MsfpCheckSave" class="raised button-submit emby-button"><span>Save</span></button>
+                    </div>
+                </dialog>
+
+                <dialog id="MsfpOffersDialog" class="msfpDialog">
+                    <div class="msfpDialogHead">
+                        <h3>Offered to <span id="MsfpOffersPeer"></span></h3>
+                        <div class="fieldDescription">It sees the titles of these libraries that have a TMDB ID, and nothing else of this server.</div>
+                    </div>
+                    <div class="msfpDialogBody">
+                        <div id="MsfpOffersList" class="msfpChoices"></div>
+                    </div>
+                    <div class="msfpDialogFoot">
                         <button is="emby-button" type="button" id="MsfpOffersCancel" class="raised emby-button"><span>Cancel</span></button>
+                        <button is="emby-button" type="button" id="MsfpOffersSave" class="raised button-submit emby-button"><span>Save</span></button>
                     </div>
                 </dialog>
 
-                <dialog id="MsfpLimitsDialog" style="min-width:20em;max-width:32em">
-                    <h3>What <span id="MsfpLimitsPeer"></span> may use here</h3>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="MsfpLimitsStreams">Streams at once</label>
-                        <input id="MsfpLimitsStreams" type="number" is="emby-input" min="0" max="50" step="1" />
-                        <div class="fieldDescription">How many of its viewers may play from this server at the same time (0 to 50; 0: none).</div>
+                <dialog id="MsfpWantsDialog" class="msfpDialog">
+                    <div class="msfpDialogHead">
+                        <h3>Read from <span id="MsfpWantsPeer"></span></h3>
+                        <div class="fieldDescription">Its titles in these libraries appear in yours.</div>
                     </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="MsfpLimitsTranscodes">Transcodes at once</label>
-                        <input id="MsfpLimitsTranscodes" type="number" is="emby-input" min="0" max="50" step="1" />
-                        <div class="fieldDescription">How many of those streams may be converted (the video re-encoded) at the same time; no more than the streams. "Transcodes at once on this server" applies as well.</div>
+                    <div class="msfpDialogBody">
+                        <div class="checkboxContainer">
+                            <label>
+                                <input type="checkbox" is="emby-checkbox" id="MsfpWantsAll" />
+                                <span>Every library it offers, those it adds later too</span>
+                            </label>
+                        </div>
+                        <div id="MsfpWantsList" class="msfpChoices"></div>
                     </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="MsfpLimitsBitrate">Bitrate cap (kbit/s)</label>
-                        <input id="MsfpLimitsBitrate" type="number" is="emby-input" min="0" max="1000000" step="1" />
-                        <div class="fieldDescription">The most each of its streams may use, in kilobits a second (for example 8000 for 8 Mbit/s); a file above it is converted. 0: no cap.</div>
-                    </div>
-                    <div>From its next play on; what is playing now goes on.</div>
-                    <div id="MsfpLimitsProblem" style="font-weight:bold;margin-top:0.5em"></div>
-                    <div style="margin-top:1em">
-                        <button is="emby-button" type="button" id="MsfpLimitsSave" class="raised button-submit emby-button"><span>Save</span></button>
-                        <button is="emby-button" type="button" id="MsfpLimitsCancel" class="raised emby-button"><span>Cancel</span></button>
-                    </div>
-                </dialog>
-                <dialog id="MsfpWantsDialog" style="min-width:20em">
-                    <h3>Libraries read from <span id="MsfpWantsPeer"></span></h3>
-                    <label style="display:block"><input type="checkbox" id="MsfpWantsAll" /> Every library it offers, those it adds later too</label>
-                    <div id="MsfpWantsList"></div>
-                    <div style="margin-top:1em">
-                        <button is="emby-button" type="button" id="MsfpWantsSave" class="raised button-submit emby-button"><span>Save</span></button>
+                    <div class="msfpDialogFoot">
                         <button is="emby-button" type="button" id="MsfpWantsCancel" class="raised emby-button"><span>Cancel</span></button>
+                        <button is="emby-button" type="button" id="MsfpWantsSave" class="raised button-submit emby-button"><span>Save</span></button>
                     </div>
                 </dialog>
 
-                <dialog id="MsfpCatalogDialog" style="min-width:24em;max-width:90vw">
-                    <h3>Titles read from <span id="MsfpCatalogPeer"></span></h3>
-                    <p id="MsfpCatalogSummary"></p>
-                    <pre id="MsfpCatalogTitles" style="max-height:50vh;overflow:auto;white-space:pre-wrap"></pre>
-                    <button is="emby-button" type="button" id="MsfpCatalogPrev" class="raised emby-button"><span>Previous 1,000</span></button>
-                    <button is="emby-button" type="button" id="MsfpCatalogNext" class="raised emby-button"><span>Next 1,000</span></button>
-                    <button is="emby-button" type="button" id="MsfpCatalogRead" class="raised emby-button"><span>Read now</span></button>
-                    <button is="emby-button" type="button" id="MsfpCatalogClose" class="raised emby-button"><span>Close</span></button>
+                <dialog id="MsfpLimitsDialog" class="msfpDialog">
+                    <div class="msfpDialogHead">
+                        <h3>Limits for <span id="MsfpLimitsPeer"></span></h3>
+                        <div class="fieldDescription">What its viewers may use here, from their next play on.</div>
+                    </div>
+                    <div class="msfpDialogBody">
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="MsfpLimitsStreams">Streams at once</label>
+                            <input id="MsfpLimitsStreams" type="number" is="emby-input" min="0" max="50" step="1" />
+                            <div class="fieldDescription">0 to 50. 0: none.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="MsfpLimitsTranscodes">Transcodes at once</label>
+                            <input id="MsfpLimitsTranscodes" type="number" is="emby-input" min="0" max="50" step="1" />
+                            <div class="fieldDescription">No more than the streams. This server's own limit applies as well.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="MsfpLimitsBitrate">Bitrate cap (kbit/s)</label>
+                            <input id="MsfpLimitsBitrate" type="number" is="emby-input" min="0" max="1000000" step="1" />
+                            <div class="fieldDescription">Per stream, as 8000 for 8 Mbit/s; a file above it is converted. 0: no cap.</div>
+                        </div>
+                        <div id="MsfpLimitsProblem" class="msfpProblem"></div>
+                    </div>
+                    <div class="msfpDialogFoot">
+                        <button is="emby-button" type="button" id="MsfpLimitsCancel" class="raised emby-button"><span>Cancel</span></button>
+                        <button is="emby-button" type="button" id="MsfpLimitsSave" class="raised button-submit emby-button"><span>Save</span></button>
+                    </div>
+                </dialog>
+
+                <dialog id="MsfpCatalogDialog" class="msfpDialog msfpDialogWide">
+                    <div class="msfpDialogHead">
+                        <h3>Titles read from <span id="MsfpCatalogPeer"></span></h3>
+                        <div id="MsfpCatalogSummary" class="fieldDescription"></div>
+                    </div>
+                    <div class="msfpDialogBody">
+                        <table class="msfpTable">
+                            <thead><tr><th>Title</th><th>Kind</th><th>Video</th><th>Audio</th><th>Subtitles</th></tr></thead>
+                            <tbody id="MsfpCatalogTitles"></tbody>
+                        </table>
+                    </div>
+                    <div class="msfpDialogFoot">
+                        <button is="emby-button" type="button" id="MsfpCatalogPrev" class="raised emby-button"><span>Previous</span></button>
+                        <button is="emby-button" type="button" id="MsfpCatalogNext" class="raised emby-button"><span>Next</span></button>
+                        <span class="msfpFootSpacer"></span>
+                        <button is="emby-button" type="button" id="MsfpCatalogRead" class="raised emby-button"><span>Read now</span></button>
+                        <button is="emby-button" type="button" id="MsfpCatalogClose" class="raised button-submit emby-button"><span>Close</span></button>
+                    </div>
                 </dialog>
             </div>
         </div>
@@ -244,8 +302,8 @@
                 document.querySelectorAll('#MsfpConfigPage dialog').forEach(function (d) {
                     d.style.backgroundColor = root.backgroundColor;
                     d.style.color = root.color;
-                    d.style.border = '1px solid rgba(128, 128, 128, 0.5)';
-                    d.style.borderRadius = '0.3em';
+                    d.style.border = '1px solid rgba(128, 128, 128, 0.35)';
+                    d.style.borderRadius = '0.5em';
                 });
             }
 
@@ -261,6 +319,34 @@
                 b.textContent = label;
                 b.addEventListener('click', onClick);
                 return b;
+            }
+
+            // A Jellyfin checkbox or radio button with its label, and what
+            // follows it (a link).
+            function msfpChoice(type, name, value, checked, text, after) {
+                var wrap = document.createElement(type === 'radio' ? 'label' : 'div');
+                var label = wrap;
+                if (type === 'radio') {
+                    wrap.className = 'radio-label-block';
+                } else {
+                    wrap.className = 'checkboxContainer';
+                    label = document.createElement('label');
+                    wrap.appendChild(label);
+                }
+                // From markup: Jellyfin's elements upgrade so (its createElement
+                // is replaced by a polyfill's).
+                var holder = document.createElement('div');
+                holder.innerHTML = type === 'radio' ? '<input type="radio" is="emby-radio" />' : '<input type="checkbox" is="emby-checkbox" />';
+                var box = holder.firstChild;
+                if (name) box.name = name;
+                box.value = value;
+                box.checked = checked;
+                var span = document.createElement('span');
+                span.textContent = text;
+                if (after) span.appendChild(after);
+                label.appendChild(box);
+                label.appendChild(span);
+                return wrap;
             }
 
             // A card: a title, lines of description, and a row of buttons.
@@ -368,7 +454,7 @@
                                 msfpPost('Msfp/Peers/' + key + '/End').then(msfpLoad, msfpLoad);
                             }
                         }, true));
-                        var row = msfpCard(p.name, lines, buttons);
+                        list.appendChild(msfpCard(p.name, lines, buttons));
                     });
                 }, function () {
                     document.querySelector('#MsfpPeers').innerHTML = '<div class="fieldDescription">None yet.</div>';
@@ -382,16 +468,11 @@
                 ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers/' + encodeURIComponent(p.id) + '/Offers')).then(function (libs) {
                     var list = document.querySelector('#MsfpOffersList');
                     list.textContent = '';
+                    if (!libs.length) {
+                        list.innerHTML = '<div class="fieldDescription">This server has no film or series library.</div>';
+                    }
                     libs.forEach(function (l) {
-                        var label = document.createElement('label');
-                        label.style.display = 'block';
-                        var box = document.createElement('input');
-                        box.type = 'checkbox';
-                        box.value = l.id;
-                        box.checked = l.offered;
-                        label.appendChild(box);
-                        label.appendChild(document.createTextNode(' ' + l.name + (l.kind ? ' (' + l.kind + ')' : '')));
-                        list.appendChild(label);
+                        list.appendChild(msfpChoice('checkbox', '', l.id, l.offered, l.name + (l.kind ? ' (' + l.kind + ')' : '')));
                     });
                     document.querySelector('#MsfpOffersDialog').showModal();
                 });
@@ -417,19 +498,22 @@
                     var list = document.querySelector('#MsfpWantsList');
                     list.textContent = '';
                     r.libraries.forEach(function (l) {
-                        var label = document.createElement('label');
-                        label.style.display = 'block';
-                        var box = document.createElement('input');
-                        box.type = 'checkbox';
-                        box.value = l.id;
-                        box.checked = l.wanted;
-                        label.appendChild(box);
-                        label.appendChild(document.createTextNode(' ' + l.name + (l.kind ? ' (' + l.kind + ')' : '') + (l.gone ? ' (no longer offered)' : '')));
-                        list.appendChild(label);
+                        list.appendChild(msfpChoice('checkbox', '', l.id, l.wanted, l.name + (l.kind ? ' (' + l.kind + ')' : '') + (l.gone ? ' (no longer offered)' : '')));
                     });
+                    msfpWantsAllChanged();
                     document.querySelector('#MsfpWantsDialog').showModal();
                 }, function () { msfpMessage('Its libraries could not be read.'); });
             }
+
+            // Every library: the list is then what it means, ticked and locked.
+            function msfpWantsAllChanged() {
+                var all = document.querySelector('#MsfpWantsAll').checked;
+                document.querySelectorAll('#MsfpWantsList input').forEach(function (b) {
+                    if (all) { b.checked = true; }
+                    b.disabled = all;
+                });
+            }
+            document.querySelector('#MsfpWantsAll').addEventListener('change', msfpWantsAllChanged);
 
             document.querySelector('#MsfpWantsSave').addEventListener('click', function () {
                 var ids = Array.prototype.map.call(document.querySelectorAll('#MsfpWantsList input:checked'), function (b) { return b.value; });
@@ -479,8 +563,7 @@
             function msfpCheck(t) {
                 msfpCheckFor = t;
                 document.querySelector('#MsfpCheckName').textContent = t.folder || t.name;
-                document.querySelector('#MsfpCheckWhere').textContent = [t.folder, t.file].filter(function (x) { return x; }).join(' / ') +
-                    (t.chosen ? '. Your choice: ' + (t.chosenName || '') + ' (TMDB ' + t.chosen + ')' : '') + '.';
+                document.querySelector('#MsfpCheckWhere').textContent = [t.folder, t.file].filter(function (x) { return x; }).join(' / ');
                 var reasons = document.querySelector('#MsfpCheckReasons');
                 reasons.textContent = '';
                 (t.reasons || []).forEach(function (text) {
@@ -492,26 +575,17 @@
                 list.textContent = '';
                 var picked = t.chosen || t.match;
                 (t.candidates || []).forEach(function (c) {
-                    var label = document.createElement('label');
-                    label.style.display = 'block';
-                    var box = document.createElement('input');
-                    box.type = 'radio';
-                    box.name = 'MsfpCheckPick';
-                    box.value = c.tmdb;
-                    box.checked = c.tmdb === picked;
-                    label.appendChild(box);
-                    label.appendChild(document.createTextNode(' ' + c.name + ' (' + (c.year || 'year unknown') + ')' +
-                        (c.originalName && c.originalName !== c.name ? ', originally ' + c.originalName : '') + ' '));
                     var link = document.createElement('a');
                     link.href = 'https://www.themoviedb.org/' + (t.kind === 'series' ? 'tv' : 'movie') + '/' + encodeURIComponent(c.tmdb);
                     link.target = '_blank';
-                    link.style.color = 'inherit';
-                    link.style.textDecoration = 'underline';
                     link.rel = 'noopener noreferrer';
                     link.textContent = 'TMDB ' + c.tmdb;
-                    label.appendChild(link);
-                    list.appendChild(label);
+                    list.appendChild(msfpChoice('radio', 'MsfpCheckPick', c.tmdb, c.tmdb === picked,
+                        c.name + ' (' + (c.year || 'year unknown') + ')' + (c.originalName && c.originalName !== c.name ? ', originally ' + c.originalName : ''), link));
                 });
+                if (!(t.candidates || []).length) {
+                    list.innerHTML = '<div class="fieldDescription">No candidate found on TMDB.</div>';
+                }
                 document.querySelector('#MsfpCheckOther').value = '';
                 document.querySelector('#MsfpCheckProblem').textContent = '';
                 document.querySelector('#MsfpCheckReset').style.display = t.chosen ? '' : 'none';
@@ -592,6 +666,7 @@
             var msfpCatalogAfters = [''];
             var msfpCatalogNext = null;
             var msfpKindNames = { movie: 'films', series: 'series', season: 'seasons', episode: 'episodes', artist: 'artists', album: 'albums', track: 'tracks' };
+            var msfpKindName = { movie: 'film', series: 'series', season: 'season', episode: 'episode', artist: 'artist', album: 'album', track: 'track' };
             function msfpCatalog(p, after) {
                 if (msfpCatalogFor !== p || after === undefined) {
                     msfpCatalogAfters = [''];
@@ -610,9 +685,17 @@
                     msfpCatalogNext = c.next;
                     document.querySelector('#MsfpCatalogNext').disabled = !c.next;
                     document.querySelector('#MsfpCatalogPrev').disabled = msfpCatalogAfters.length < 2;
-                    document.querySelector('#MsfpCatalogTitles').textContent = c.titles.map(function (t) {
-                        return t.key + '  ' + t.kind + (t.height ? '  ' + t.height + 'p' : '') + (t.audio.length ? '  audio ' + t.audio.join(',') : '') + (t.subtitles.length ? '  subtitles ' + t.subtitles.join(',') : '');
-                    }).join('\n');
+                    var body = document.querySelector('#MsfpCatalogTitles');
+                    body.textContent = '';
+                    c.titles.forEach(function (t) {
+                        var tr = document.createElement('tr');
+                        [t.key, msfpKindName[t.kind] || t.kind, t.height ? t.height + 'p' : '', t.audio.join(', '), t.subtitles.join(', ')].forEach(function (v) {
+                            var td = document.createElement('td');
+                            td.textContent = v;
+                            tr.appendChild(td);
+                        });
+                        body.appendChild(tr);
+                    });
                     var d = document.querySelector('#MsfpCatalogDialog');
                     if (!d.open) { d.showModal(); }
                 });
@@ -631,7 +714,7 @@
                 }
             });
             document.querySelector('#MsfpCatalogRead').addEventListener('click', function () {
-                document.querySelector('#MsfpCatalogSummary').textContent = '…';
+                document.querySelector('#MsfpCatalogSummary').textContent = 'Reading…';
                 msfpPost('Msfp/Peers/' + encodeURIComponent(msfpCatalogFor.id) + '/Read').then(function () {
                     msfpCatalog(msfpCatalogFor);
                 }, function () { msfpCatalog(msfpCatalogFor); });
@@ -672,7 +755,7 @@
             });
 
             document.querySelector('#MsfpRedeemButton').addEventListener('click', function () {
-                msfpMessage('…');
+                msfpMessage('Using the code…');
                 msfpPost('Msfp/Redeem', { code: document.querySelector('#MsfpRedeem').value }).then(function (r) {
                     msfpMessage('Waiting for ' + r.name + "'s operator to accept. Its fingerprint: " + r.fingerprint);
                     document.querySelector('#MsfpRedeem').value = '';
