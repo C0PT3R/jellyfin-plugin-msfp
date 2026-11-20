@@ -6,6 +6,13 @@ section here.
 
 ## Unreleased
 
+### Fixed
+
+- Playing a paired server's title for a moment no longer marks it as
+  watched: it now has its runtime from its first play, so Jellyfin marks
+  it watched past 90%, and keeps the position in between, as for your
+  own titles.
+
 ### Changed
 
 - The "Titles read…" dialog says how many titles were read from a paired

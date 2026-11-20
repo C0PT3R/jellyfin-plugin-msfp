@@ -166,6 +166,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
                 NameAudio(source, playback);
                 ListAllAudio(source, playback, live);
                 live.DurationMs = (source.RunTimeTicks ?? 0) / TimeSpan.TicksPerMillisecond;
+                await KeepRuntimeAsync(item, live.DurationMs, ct).ConfigureAwait(false);
 
                 // PGS tracks are fetched before Jellyfin has the source: it
                 // may burn one in from its first segment. One not ready in
@@ -204,6 +205,27 @@ public sealed class RemotePlays : IHostedService, IDisposable
         }
 
         throw new InvalidOperationException("No paired server could play this title now.");
+    }
+
+    // A stand-in's runtime, from its copy's length: Jellyfin marks an item
+    // without one as played at any stop (UserDataManager.UpdatePlayState),
+    // and its TMDB provider gives none to films and episodes. Kept on the
+    // item Jellyfin holds, from the first play on.
+    private static async Task KeepRuntimeAsync(BaseItem item, long durationMs, CancellationToken ct)
+    {
+        if (durationMs <= 0)
+        {
+            return;
+        }
+
+        var ticks = durationMs * TimeSpan.TicksPerMillisecond;
+        if (item.RunTimeTicks is { } had && Math.Abs(had - ticks) < 5 * TimeSpan.TicksPerSecond)
+        {
+            return;
+        }
+
+        item.RunTimeTicks = ticks;
+        await item.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, ct).ConfigureAwait(false);
     }
 
     /// <summary>A playback by its relay token, null when none: each read keeps it from going idle.</summary>
