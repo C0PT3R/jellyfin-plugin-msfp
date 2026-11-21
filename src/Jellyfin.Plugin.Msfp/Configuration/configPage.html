@@ -619,12 +619,33 @@
             document.querySelector('#MsfpManageTitles').addEventListener('click', function () { msfpCatalog(msfpManaged); });
             document.querySelector('#MsfpManageEnd').addEventListener('click', function () {
                 var p = msfpManaged;
-                if (confirm('End the pairing with ' + p.name + '? It ends on both servers at once; only a new code starts it again.')) {
-                    msfpPost('Msfp/Peers/' + encodeURIComponent(p.id) + '/End').then(function () {
+                var end = function () {
+                    return msfpPost('Msfp/Peers/' + encodeURIComponent(p.id) + '/End').then(function () {
                         document.querySelector('#MsfpManageDialog').close();
                         msfpLoad();
-                    }, function (e) { msfpError(e, 'The pairing could not be ended.'); });
-                }
+                    });
+                };
+                // Its last pairing through a group: that group can't reach this
+                // server afterwards (MSFP groups section 6, "No way in").
+                ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers/' + encodeURIComponent(p.id) + '/Cuts')).then(function (cuts) { return cuts; }, function () { return []; }).then(function (cuts) {
+                    if (!cuts.length) {
+                        if (confirm('End the pairing with ' + p.name + '? It ends on both servers at once; only a new code starts it again.')) {
+                            end().catch(function (e) { msfpError(e, 'The pairing could not be ended.'); });
+                        }
+                        return;
+                    }
+                    var names = cuts.map(function (g) { return '"' + g.name + '"'; }).join(', ');
+                    var nodes = cuts.map(function (g) {
+                        return msfpButton('Open "' + g.name + '" instead…', function () {
+                            msfpFormClose();
+                            document.querySelector('#MsfpManageDialog').close();
+                            msfpOpenGroup(g.id);
+                        });
+                    });
+                    msfpForm('End the pairing with ' + p.name, p.name + ' is this server\'s only pairing through ' + (cuts.length === 1 ? 'the group ' : 'the groups ') + names +
+                        '. Once it ends, nothing from ' + (cuts.length === 1 ? 'that group' : 'those groups') + ' reaches this server, and nothing from this server reaches ' + (cuts.length === 1 ? 'it' : 'them') +
+                        '. To stop being part of ' + (cuts.length === 1 ? 'it' : 'them') + ', leave instead: open the group and choose Leave.', nodes, 'End anyway', end, true);
+                });
             });
             document.querySelector('#MsfpManageSave').addEventListener('click', function () {
                 var p = msfpManaged;
@@ -967,6 +988,7 @@
                         badges.appendChild(msfpTag({ owner: 'Owner', admin: 'Admin', member: 'Member' }[g.role], g.role === 'member' ? '' : 'Info'));
                         if (msfpWaiting(g)) badges.appendChild(msfpTag(msfpPlural(msfpWaiting(g), 'request') + ' for you', 'Warn'));
                         if (g.joining) badges.appendChild(msfpTag('Joining', 'Info'));
+                        if (g.noWayIn) badges.appendChild(msfpTag('No way in', 'Err'));
                         var buttons = [];
                         if (msfpWaiting(g)) buttons.push(msfpPrimary('Answer…', function () { msfpOpenGroup(g.id); }));
                         if ((g.role === 'owner' || g.role === 'admin') && !g.dissolved) buttons.push(msfpButton('Invite…', function () { msfpNewCode(g.id); }));
@@ -1044,6 +1066,7 @@
                 body.textContent = '';
                 if (g.joining) body.appendChild(msfpText("Joining: the group's list comes from the server that invited you, once its operator accepts. Without an answer within 30 days, this server gives up."));
                 if (g.dissolved) body.appendChild(msfpText('The owner dissolved this group. It goes from this server at once.'));
+                if (g.noWayIn) body.appendChild(msfpText("No way in: this server has no pairing through this group any more. Nothing from the other members reaches it, and nothing it does reaches them, so what you see here may be out of date."));
 
                 // Requests waiting for you: servers already paired that used your code, then members asking to pair.
                 if (msfpWaiting(g)) {

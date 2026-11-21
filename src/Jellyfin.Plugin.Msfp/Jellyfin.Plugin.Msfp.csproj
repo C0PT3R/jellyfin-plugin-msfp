@@ -27,7 +27,7 @@
          the engine, which brings the protocol (Msfp.Engine.dll,
          Msfp.Protocol.dll) and their Ed25519 (BouncyCastle); all three
          shipped with the plugin. -->
-    <PackageReference Include="Msfp.Engine" Version="0.4.1-preview" />
+    <PackageReference Include="Msfp.Engine" Version="0.5.0-preview" />
   </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

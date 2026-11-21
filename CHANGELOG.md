@@ -6,6 +6,22 @@ section here.
 
 ## Unreleased
 
+### Added
+
+- Ending a pairing that is this server's only one through a group now
+  says so first, naming the group. Afterwards nothing from that group
+  would reach this server, and nothing from this server would reach the
+  group. The window offers to open the group instead, to leave it. A
+  group in that state shows "No way in" in the Groups list and in its
+  window.
+
+### Changed
+
+- Asking a member to pair, in a group this server has no way into, is
+  refused with the reason. Before, the request was kept as sent but never
+  arrived.
+- msfp-dotnet 0.5.0-preview.
+
 ### Fixed
 
 - After Jellyfin restarted, or updated the plugin, while the plugin was

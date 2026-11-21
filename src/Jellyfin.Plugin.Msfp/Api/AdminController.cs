@@ -213,6 +213,11 @@ public class AdminController : ControllerBase
     public Task<ContentResult> Hello(string id, CancellationToken ct) => Run(async e =>
         View(await e.CheckAsync(id, ct).ConfigureAwait(false)));
 
+    /// <summary>The groups that ending this pairing would cut this server off from (MSFP groups section 6, "No way in").</summary>
+    [HttpGet("Peers/{id}/Cuts")]
+    public Task<ContentResult> Cuts(string id, CancellationToken ct) => Run(async e =>
+        (await e.GroupsCutByAsync(id, ct).ConfigureAwait(false)).Select(g => new { id = g.Id, name = g.Name }).ToList());
+
     /// <summary>Ends a pairing, or refuses a waiting one.</summary>
     [HttpPost("Peers/{id}/End")]
     public Task<ContentResult> End(string id, CancellationToken ct) => Run(async e =>
@@ -491,6 +496,7 @@ public class AdminController : ControllerBase
             pool = g.Pool,
             dissolved = g.Dissolved,
             joining = g.Joining,
+            noWayIn = g.NoWayIn,
             members = g.Members.Select(m => new
             {
                 id = m.Id,
@@ -537,7 +543,10 @@ public class AdminController : ControllerBase
         }
         catch (MsfpException e)
         {
-            return Json(new { error = e.Message, code = e.Code.ToString() }, e.Code == MsfpError.NotFound ? 404 : 400);
+            var message = e.Code == MsfpError.NoWayIn
+                ? "This server has no pairing through this group any more: nothing it sends reaches the other members, and nothing from them reaches it."
+                : e.Message;
+            return Json(new { error = message, code = e.Code.ToString() }, e.Code == MsfpError.NotFound ? 404 : 400);
         }
     }
 
