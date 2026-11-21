@@ -40,6 +40,11 @@ public sealed class EngineHost : IHostedService, IDisposable
     private MsfpEngine? _engine;
     private CancellationTokenSource? _running;
 
+    // Set once Jellyfin stops the plugin: no engine opens after that (a
+    // settings change still waiting for the lock would open one nothing
+    // stops, beside the next start's).
+    private volatile bool _stopped;
+
     public EngineHost(HostCatalog catalog, JellyfinPlayback playback, IServerConfigurationManager server, ILoggerFactory loggers)
     {
         _catalog = catalog;
@@ -79,29 +84,58 @@ public sealed class EngineHost : IHostedService, IDisposable
     /// <inheritdoc />
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        _stopped = true;
         if (Plugin.Instance is { } plugin)
         {
             plugin.ConfigurationChanged -= Reopen;
         }
 
-        await _opening.WaitAsync(cancellationToken).ConfigureAwait(false);
+        // The background work stops at once, lock or not: Jellyfin gives
+        // its services a bounded time to stop, and an engine left running
+        // here keeps working beside the next start's.
+        CancelRunning();
+        var locked = false;
+        try
+        {
+            locked = await _opening.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
         try
         {
             await CloseAsync().ConfigureAwait(false);
         }
         finally
         {
-            _opening.Release();
+            if (locked)
+            {
+                _opening.Release();
+            }
         }
     }
 
     /// <inheritdoc />
     public void Dispose()
     {
-        _engine?.Dispose();
+        _stopped = true;
+        CancelRunning();
+        Interlocked.Exchange(ref _engine, null)?.Dispose();
         _running?.Dispose();
         _store?.Dispose();
         _opening.Dispose();
+    }
+
+    private void CancelRunning()
+    {
+        try
+        {
+            _running?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
     }
 
     private void Reopen(object? sender, BasePluginConfiguration e)
@@ -126,6 +160,11 @@ public sealed class EngineHost : IHostedService, IDisposable
         try
         {
             await CloseAsync().ConfigureAwait(false);
+            if (_stopped)
+            {
+                return;
+            }
+
             var plugin = Plugin.Instance ?? throw new InvalidOperationException("the MSFP plugin isn't loaded");
             var config = plugin.Configuration;
             Prefix = PrefixOf(_server.GetNetworkConfiguration().BaseUrl);
@@ -145,6 +184,13 @@ public sealed class EngineHost : IHostedService, IDisposable
             try
             {
                 var engine = await MsfpEngine.OpenAsync(Settings(config, address, _store), ct).ConfigureAwait(false);
+                if (_stopped)
+                {
+                    // Stopped while it opened: StopAsync didn't wait for it.
+                    engine.Dispose();
+                    return;
+                }
+
                 _running = new CancellationTokenSource();
                 var token = _running.Token;
                 _ = Task.Run(() => RunAsync(engine, token), CancellationToken.None);
@@ -212,11 +258,10 @@ public sealed class EngineHost : IHostedService, IDisposable
     private async Task CloseAsync()
     {
         var engine = Interlocked.Exchange(ref _engine, null);
-        if (_running is { } running)
+        if (Interlocked.Exchange(ref _running, null) is { } running)
         {
             await running.CancelAsync().ConfigureAwait(false);
             running.Dispose();
-            _running = null;
         }
 
         engine?.Dispose();

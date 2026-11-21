@@ -4,6 +4,17 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
+## Unreleased
+
+### Fixed
+
+- After Jellyfin restarted, or updated the plugin, while the plugin was
+  still opening its MSFP side (a settings change, a large library's first
+  reading), the old MSFP side could keep running beside the new one. Jellyfin
+  stops each plugin within a bounded time, and the plugin waited for the
+  opening to finish first. The plugin now stops its MSFP side at once, and
+  never opens one once Jellyfin has stopped it.
+
 ## 0.6.3 (2026-11-21)
 
 ### Fixed
