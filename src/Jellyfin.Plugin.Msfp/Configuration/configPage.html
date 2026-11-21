@@ -1066,7 +1066,7 @@
                 body.textContent = '';
                 if (g.joining) body.appendChild(msfpText("Joining: the group's list comes from the server that invited you, once its operator accepts. Without an answer within 30 days, this server gives up."));
                 if (g.dissolved) body.appendChild(msfpText('The owner dissolved this group. It goes from this server at once.'));
-                if (g.noWayIn) body.appendChild(msfpText("No way in: this server has no pairing through this group any more. Nothing from the other members reaches it, and nothing it does reaches them, so what you see here may be out of date."));
+                if (g.noWayIn) body.appendChild(msfpText("No way in: this server has no pairing through this group any more. Nothing from the other members reaches it, and nothing it does reaches them, so what you see here may be out of date. To get back in, ask a member for a new code for this group, and use it under Servers."));
 
                 // Requests waiting for you: servers already paired that used your code, then members asking to pair.
                 if (msfpWaiting(g)) {

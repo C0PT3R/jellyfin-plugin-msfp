@@ -1,7 +1,7 @@
 ---
 name: "MSFP Federation"
 guid: "505184bf-b92c-487f-a406-bf6b3570fb7f"
-version: "0.6.3.0"
+version: "0.7.0.0"
 targetAbi: "12.2.0.0"
 framework: "net10.0"
 overview: "Federate Jellyfin servers over MSFP, the Media Server Federation Protocol"
@@ -16,6 +16,7 @@ artifacts:
 - "Msfp.Protocol.dll"
 - "BouncyCastle.Cryptography.dll"
 changelog: >
-  After a paired server replaces a stolen key, its group events (a member
-  leaving, a ban, a new name) reach the other members at once instead of
-  up to 10 minutes later.
+  Groups: ending the last pairing through a group warns first; a group
+  this server can't reach any more says so, and a new code from a member
+  brings it back. Fixes a group owner being locked out, and the MSFP side
+  left running after a Jellyfin restart.

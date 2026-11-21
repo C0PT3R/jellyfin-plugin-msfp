@@ -4,7 +4,7 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
-## Unreleased
+## 0.7.0 (2026-11-21)
 
 ### Added
 
@@ -14,6 +14,9 @@ section here.
   group. The window offers to open the group instead, to leave it. A
   group in that state shows "No way in" in the Groups list and in its
   window.
+- A way back into such a group: a new code for it, from a member, used
+  under Servers. This server is a member already, so nobody adds it again;
+  once that member's operator accepts, the group reaches it again.
 
 ### Changed
 
@@ -30,6 +33,10 @@ section here.
   stops each plugin within a bounded time, and the plugin waited for the
   opening to finish first. The plugin now stops its MSFP side at once, and
   never opens one once Jellyfin has stopped it.
+- A group's owner could be locked out of its own group: after naming an
+  admin who was leaving at the same moment, the owner's next changes
+  (settings, invitations, dissolving) could be held forever. Fixed in
+  msfp-dotnet.
 
 ## 0.6.3 (2026-11-21)
 
