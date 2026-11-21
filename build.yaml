@@ -1,13 +1,13 @@
 ---
 name: "MSFP Federation"
 guid: "505184bf-b92c-487f-a406-bf6b3570fb7f"
-version: "0.6.1.0"
+version: "0.6.2.0"
 targetAbi: "12.2.0.0"
 framework: "net10.0"
 overview: "Federate Jellyfin servers over MSFP, the Media Server Federation Protocol"
 description: >
   Lets Jellyfin servers pair with each other, and with Overfin, over MSFP
-  (Media Server Federation Protocol, version 1), on msfp-dotnet. Early.
+  (Media Server Federation Protocol, version 0), on msfp-dotnet. Early.
 category: "General"
 owner: "C0PT3R"
 artifacts:
@@ -16,6 +16,7 @@ artifacts:
 - "Msfp.Protocol.dll"
 - "BouncyCastle.Cryptography.dll"
 changelog: >
-  A clearer configuration page: servers and groups as lists with their
-  status at a glance, one window per server, the titles to identify as a
-  compact table, and plainer words throughout.
+  Fixes: libraries shared with a group now show their titles to its
+  members; playing a paired server's title right after another pairing
+  ended no longer fails; films sitting directly in a library's folder are
+  identified by their file name instead of waiting to be checked.
