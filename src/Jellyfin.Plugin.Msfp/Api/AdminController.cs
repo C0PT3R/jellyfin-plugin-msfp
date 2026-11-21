@@ -29,6 +29,12 @@ public sealed class CodeRequest
 
     /// <summary>A group's ID: the new code invites to it ("" for a pairing).</summary>
     public string Group { get; set; } = string.Empty;
+
+    /// <summary>Using a group's invite: what this server shares with the group, set as it joins.</summary>
+    public List<string> Libraries { get; set; } = new();
+
+    /// <summary>Using a group's invite: the limits it lends the group.</summary>
+    public LimitsRequest? Pool { get; set; }
 }
 
 /// <summary>A group's name and settings, from the operator's page.</summary>
@@ -36,9 +42,16 @@ public sealed class GroupRequest
 {
     public string Name { get; set; } = string.Empty;
 
-    public long WaitDays { get; set; } = 3;
-
     public long CapPerDay { get; set; } = 5;
+
+    /// <summary>Creating: what this server shares with the group.</summary>
+    public List<string> Libraries { get; set; } = new();
+
+    /// <summary>Creating: the limits it lends the group.</summary>
+    public LimitsRequest? Pool { get; set; }
+
+    /// <summary>Creating: this server automatically accepts new members.</summary>
+    public bool Accept { get; set; }
 }
 
 /// <summary>An action on a group's member or request, from the operator's page.</summary>
@@ -69,8 +82,22 @@ public sealed class GroupSharingRequest
 
     public LimitsRequest Pool { get; set; } = new();
 
-    /// <summary>This server accepts a member's request itself once it waited the group's days.</summary>
-    public bool Accept { get; set; }
+    /// <summary>This server automatically accepts new members; null: unchanged.</summary>
+    public bool? Accept { get; set; }
+}
+
+/// <summary>The libraries a group doesn't show here, from the operator's page.</summary>
+public sealed class GroupShowsRequest
+{
+    public List<HiddenRequest> Hidden { get; set; } = new();
+}
+
+/// <summary>A member's library, hidden.</summary>
+public sealed class HiddenRequest
+{
+    public string Member { get; set; } = string.Empty;
+
+    public string Library { get; set; } = string.Empty;
 }
 
 /// <summary>A list of libraries, from the operator's page.</summary>
@@ -189,7 +216,37 @@ public class AdminController : ControllerBase
     /// <summary>Redeems another server's code.</summary>
     [HttpPost("Redeem")]
     public Task<ContentResult> Redeem([FromBody] CodeRequest request, CancellationToken ct) => Run(async e =>
-        View(await e.RedeemCodeAsync(request.Code.Trim(), ct).ConfigureAwait(false)));
+    {
+        var code = request.Code.Trim();
+        var preview = await e.ReadCodeAsync(code, ct).ConfigureAwait(false);
+        var peer = View(await e.RedeemCodeAsync(code, ct).ConfigureAwait(false));
+        if (preview.Group is { Length: > 0 } group)
+        {
+            // A group's invite: what this server shares with the group, from the start.
+            await ShareWithGroupAsync(e, group, request.Libraries, request.Pool, ct).ConfigureAwait(false);
+        }
+
+        return peer;
+    });
+
+    /// <summary>This server's libraries: what it may share, before a group exists (creating or joining one).</summary>
+    [HttpGet("Libraries")]
+    public ContentResult Libraries() =>
+        Json(_catalog.Read().Libraries.Select(l => new { id = l.Id, name = l.Name, kind = l.Kind }).ToList());
+
+    // What this server shares with a group and the limits it lends it; the
+    // libraries are this server's own.
+    private async Task ShareWithGroupAsync(MsfpEngine e, string group, List<string> libraries, LimitsRequest? pool, CancellationToken ct)
+    {
+        var ours = _catalog.Read().Libraries.Select(l => l.Id).ToHashSet(StringComparer.Ordinal);
+        if (pool is { } p)
+        {
+            await e.SetGroupPoolAsync(group, new Limits { Streams = p.Streams, Transcodes = p.Transcodes, BitrateKbps = p.BitrateKbps }, ct).ConfigureAwait(false);
+        }
+
+        await e.SetGroupOffersAsync(group, libraries.Where(ours.Contains).ToList(), ct).ConfigureAwait(false);
+        _identifier.Poke();
+    }
 
     /// <summary>The peers, with their fingerprints.</summary>
     [HttpGet("Peers")]
@@ -422,12 +479,40 @@ public class AdminController : ControllerBase
     /// <summary>Founds a group, this server its owner.</summary>
     [HttpPost("Groups")]
     public Task<ContentResult> CreateGroup([FromBody] GroupRequest request, CancellationToken ct) => Run(async e =>
-        GroupJson(await e.CreateGroupAsync(request.Name, new GroupSettings(request.WaitDays, request.CapPerDay), ct).ConfigureAwait(false), []));
+    {
+        var g = await e.CreateGroupAsync(request.Name, new GroupSettings(0, request.CapPerDay), ct).ConfigureAwait(false);
+        await ShareWithGroupAsync(e, g.Id, request.Libraries, request.Pool, ct).ConfigureAwait(false);
+        if (request.Accept)
+        {
+            await e.SetGroupAnswerAsync(g.Id, true, ct).ConfigureAwait(false);
+        }
+
+        return GroupJson(await e.GroupAsync(g.Id, ct).ConfigureAwait(false), []);
+    });
 
     /// <summary>Changes a group's name and settings (the owner only).</summary>
     [HttpPost("Groups/{id}/Settings")]
     public Task<ContentResult> GroupSettingsSet(string id, [FromBody] GroupRequest request, CancellationToken ct) =>
-        Act(e => e.SetGroupSettingsAsync(id, request.Name, new GroupSettings(request.WaitDays, request.CapPerDay), ct));
+        Act(e => e.SetGroupSettingsAsync(id, request.Name, new GroupSettings(0, request.CapPerDay), ct));
+
+    /// <summary>Whether this server automatically accepts the group's new members (each member chooses for itself).</summary>
+    [HttpPost("Groups/{id}/Answer")]
+    public Task<ContentResult> GroupAnswer(string id, [FromBody] GroupActionRequest r, CancellationToken ct) => Act(e => e.SetGroupAnswerAsync(id, r.On, ct));
+
+    /// <summary>What this server shows from a group: each member's libraries, all shown unless hidden.</summary>
+    [HttpGet("Groups/{id}/Shows")]
+    public Task<ContentResult> GroupShows(string id, CancellationToken ct) => Run(async e =>
+        (await e.GroupShowsAsync(id, ct).ConfigureAwait(false)).Members.Select(m => new
+        {
+            member = m.Member,
+            name = m.Name,
+            libraries = m.Libraries.Select(l => new { id = l.Id, name = l.Name, kind = l.Kind, shown = l.Shown }),
+        }).ToList());
+
+    /// <summary>Sets the members' libraries this server doesn't show from a group.</summary>
+    [HttpPost("Groups/{id}/Shows")]
+    public Task<ContentResult> SetGroupShows(string id, [FromBody] GroupShowsRequest r, CancellationToken ct) =>
+        Act(e => e.SetGroupShowsAsync(id, r.Hidden.Select(h => new HiddenLibrary(h.Member, h.Library)).ToList(), ct));
 
     /// <summary>This server's libraries, those offered to the group marked, and the pool it lends.</summary>
     [HttpGet("Groups/{id}/Sharing")]
@@ -456,7 +541,11 @@ public class AdminController : ControllerBase
         var p = request.Pool;
         await e.SetGroupPoolAsync(id, new Limits { Streams = p.Streams, Transcodes = p.Transcodes, BitrateKbps = p.BitrateKbps }, ct).ConfigureAwait(false);
         await e.SetGroupOffersAsync(id, request.Libraries, ct).ConfigureAwait(false);
-        await e.SetGroupAnswerAsync(id, request.Accept, ct).ConfigureAwait(false);
+        if (request.Accept is { } accept)
+        {
+            await e.SetGroupAnswerAsync(id, accept, ct).ConfigureAwait(false);
+        }
+
         // A library newly offered: its titles are identified before they're listed.
         _identifier.Poke();
     });
@@ -530,7 +619,6 @@ public class AdminController : ControllerBase
         {
             id = g.Id,
             name = g.Name,
-            waitDays = g.Settings.WaitDays,
             capPerDay = g.Settings.CapPerDay,
             role = g.Role,
             me = g.Me,
@@ -559,7 +647,7 @@ public class AdminController : ControllerBase
                 me = m.Id == g.Me,
             }),
             banned = g.Banned.Select(b => new { id = b.Id, name = b.Name, fingerprint = b.Fingerprint, reason = b.Reason }),
-            requests = g.Requests.Select(r => new { mail = r.Mail, from = r.From, name = r.Name, fingerprint = r.Fingerprint, received = r.Received, waited = r.Waited }),
+            requests = g.Requests.Select(r => new { mail = r.Mail, from = r.From, name = r.Name, fingerprint = r.Fingerprint, received = r.Received }),
             joins = g.Joins.Select(j => new { peer = j.Peer, name = j.Name, fingerprint = j.Fingerprint, received = j.Received }),
             links = peers.Where(p => p.Groups.Contains(g.Id)).Select(p => new { peer = p.Id, name = p.Name, only = !p.Individual && !p.IndividualAsked && p.Groups.Count == 1 }),
         };
@@ -625,6 +713,7 @@ public class AdminController : ControllerBase
         asked = p.IndividualAsked,
         asks = p.IndividualAsks,
         keepChoice = p.KeepChoice,
+        joiningGroup = p.JoiningGroup,
     };
 
     private static ContentResult Json(object value, int status = 200)

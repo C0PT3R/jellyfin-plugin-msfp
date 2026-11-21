@@ -4,6 +4,29 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
+## Unreleased
+
+A group is managed as a whole, like a server, and invites come from where
+they belong (msfp-dotnet 0.7.0-preview).
+
+### Changed
+
+- The tabs **Individual** and **Groups**. "Make a code" is gone: **Invite a
+  server** under Individual, **Invite…** on a group.
+- A server that used an invite to one of your groups waits in that group,
+  under "Waiting for you", not among your servers.
+- A group's window shows what you share with it, what you show from it and
+  how new members are accepted, each with **Change…**. Members have no
+  sharing window of their own; **Invite individually** is in a member's
+  **More…**.
+- **What you show from a group** is one choice for the whole group: every
+  member's libraries, all shown unless you untick them.
+- **Create a group** and **Use a code** for a group invite ask what you share
+  with the group, and its limits, from the start.
+- New members: one checkbox, **Automatically accept new members**, in each
+  group's **Settings…**, off by default. On, a new member is accepted at
+  once: there are no waiting days any more.
+
 ## 0.8.0 (2026-11-21)
 
 Servers you pair with yourself and servers you know through a group are

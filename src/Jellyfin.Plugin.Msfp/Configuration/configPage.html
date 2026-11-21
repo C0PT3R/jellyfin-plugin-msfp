@@ -96,7 +96,7 @@
                 <h2 class="sectionTitle">MSFP Federation</h2>
                 <div class="emby-tabs msfpTabs" role="tablist">
                     <div class="emby-tabs-slider">
-                        <button is="emby-button" type="button" class="emby-tab-button" data-tab="servers" role="tab"><div class="emby-button-foreground">Servers</div></button>
+                        <button is="emby-button" type="button" class="emby-tab-button" data-tab="servers" role="tab"><div class="emby-button-foreground">Individual</div></button>
                         <button is="emby-button" type="button" class="emby-tab-button" data-tab="groups" role="tab"><div class="emby-button-foreground">Groups</div></button>
                         <button is="emby-button" type="button" class="emby-tab-button" data-tab="identification" role="tab"><div class="emby-button-foreground">Identification</div></button>
                         <button is="emby-button" type="button" class="emby-tab-button" data-tab="server" role="tab"><div class="emby-button-foreground">This server</div></button>
@@ -108,14 +108,14 @@
 
                 <div class="msfpPanel" data-panel="servers">
                     <div class="msfpBar">
-                        <span class="msfpLead">Servers you paired with directly. Those you know only through a group are under Groups.</span>
-                        <button is="emby-button" type="button" id="MsfpMakeCode" class="raised button-submit emby-button"><span>Make a code</span></button>
-                        <button is="emby-button" type="button" id="MsfpUseCode" class="raised emby-button"><span>Use a code</span></button>
+                        <span class="msfpLead">Servers you share with one by one.</span>
+                        <button is="emby-button" type="button" id="MsfpMakeCode" class="raised button-submit emby-button"><span>Invite a server</span></button>
+                        <button is="emby-button" type="button" id="MsfpUseCode" class="raised emby-button msfpUseCode"><span>Use a code</span></button>
                     </div>
                     <div id="MsfpServers" class="msfpList"></div>
-                    <div id="MsfpNoServer" class="fieldDescription" hidden>No server yet. Make a code and send it to another server's owner, or use the code they sent you.</div>
+                    <div id="MsfpNoServer" class="fieldDescription" hidden>No server yet. Invite one, or use the invite another server's owner sent you.</div>
                     <div id="MsfpCodesBlock" hidden>
-                        <div class="msfpHeading"><h3>Codes not used yet</h3></div>
+                        <div class="msfpHeading"><h3>Invites not used yet</h3></div>
                         <div id="MsfpCodes" class="msfpList"></div>
                     </div>
                     <div class="msfpHeading"><h3>Their titles on your server</h3></div>
@@ -128,11 +128,12 @@
 
                 <div class="msfpPanel" data-panel="groups" hidden>
                     <div class="msfpBar">
-                        <span class="msfpLead">In a group, every server pairs with the others without a code for each pair. Invite with a code; each member answers the others' requests for itself.</span>
+                        <span class="msfpLead">Groups of servers that share with each other as one.</span>
                         <button is="emby-button" type="button" id="MsfpCreateGroup" class="raised button-submit emby-button"><span>Create a group</span></button>
+                        <button is="emby-button" type="button" class="raised emby-button msfpUseCode"><span>Use a code</span></button>
                     </div>
                     <div id="MsfpGroups" class="msfpList"></div>
-                    <div id="MsfpNoGroup" class="fieldDescription" hidden>No group yet.</div>
+                    <div id="MsfpNoGroup" class="fieldDescription" hidden>No group yet. Create one and invite servers to it, or use a group invite another server's owner sent you.</div>
                 </div>
 
                 <div class="msfpPanel" data-panel="identification" hidden>
@@ -491,7 +492,11 @@
             // Servers you paired with yourself, asked, or that ask you: the
             // Servers list. Those you know only through a group are in the group.
             function msfpOnServers(p) {
-                return p.state !== 'paired' || p.individual || p.asked || p.asks || p.keepChoice;
+                return !p.joiningGroup && (p.state !== 'paired' || p.individual || p.asked || p.asks || p.keepChoice);
+            }
+            // Servers that used an invite to a group: shown in that group.
+            function msfpJoiningOf(g) {
+                return msfpPeers.filter(function (p) { return p.state === 'ours' && p.joiningGroup === g.id; });
             }
             function msfpShareText(p) {
                 if (p.state !== 'paired') return '';
@@ -563,20 +568,24 @@
                 }, function () { document.querySelector('#MsfpServers').textContent = ''; });
             }
 
+            var msfpCodes = [];
+            function msfpWithdraw(c) {
+                if (confirm('Withdraw this invite? It stops working at once.')) msfpPost('Msfp/Codes/' + encodeURIComponent(c.id) + '/Delete').then(msfpLoad, msfpLoad);
+            }
+            // Personal invites under Individual; a group's, in that group.
             function msfpLoadCodes() {
-                ApiClient.getJSON(ApiClient.getUrl('Msfp/Codes')).then(function (codes) {
+                return ApiClient.getJSON(ApiClient.getUrl('Msfp/Codes')).then(function (codes) {
+                    msfpCodes = codes || [];
+                    var personal = msfpCodes.filter(function (c) { return !c.group; });
                     var list = document.querySelector('#MsfpCodes');
                     list.textContent = '';
-                    document.querySelector('#MsfpCodesBlock').hidden = !codes.length;
-                    codes.forEach(function (c) {
-                        var leads = c.group ? 'Joins "' + msfpGroupName(c.group) + '"' : 'Pairs with this server';
+                    document.querySelector('#MsfpCodesBlock').hidden = !personal.length;
+                    personal.forEach(function (c) {
                         list.appendChild(msfpItem([[msfpEl('div', 'msfpName', c.note || 'No note')],
-                            [msfpEl('div', null, leads + (c.uses > 1 ? ' · ' + c.uses + ' uses left' : '')), msfpEl('div', 'msfpSub', 'Works until ' + msfpWhen(c.expires))]],
-                            [msfpButton('Withdraw', function () {
-                                if (confirm('Withdraw this code? It stops working at once.')) msfpPost('Msfp/Codes/' + encodeURIComponent(c.id) + '/Delete').then(msfpLoad, msfpLoad);
-                            }, true)]));
+                            [msfpEl('div', 'msfpSub', 'Works until ' + msfpWhen(c.expires))]],
+                            [msfpButton('Withdraw', function () { msfpWithdraw(c); }, true)]));
                     });
-                }, function () { document.querySelector('#MsfpCodesBlock').hidden = true; });
+                }, function () { msfpCodes = []; document.querySelector('#MsfpCodesBlock').hidden = true; });
             }
 
             function msfpPaired() {
@@ -706,21 +715,39 @@
             });
 
             // Another server's code: what it leads to, said first.
-            document.querySelector('#MsfpUseCode').addEventListener('click', function () {
-                var field = msfpField('Code', '<textarea is="emby-textarea" class="emby-textarea msfpMono" rows="4" style="width:100%"></textarea>', 'The code another server\'s owner sent you, starting with msfp-pair-0.');
-                msfpForm('Use a code', 'It pairs your server with theirs, or brings it into their group. Their owner accepts it on their side.', [field], 'Read the code', function () {
+            // Another server's invite: what it leads to, said first; a group's
+            // asks what this server shares with the group.
+            function msfpUseCode() {
+                var field = msfpField('Invite', '<textarea is="emby-textarea" class="emby-textarea msfpMono" rows="4" style="width:100%"></textarea>', 'The invite another server\'s owner sent you, starting with msfp-pair-0.');
+                msfpForm('Use a code', 'An invite to pair one by one, or to join a group. Their owner accepts it on their side.', [field], 'Read it', function () {
                     var code = field.querySelector('textarea').value.trim();
                     return msfpPost('Msfp/Preview', { code: code }).then(function (p) {
-                        var what = p.groupName ? 'This code invites your server to the group "' + p.groupName + '", from ' + p.address + '. Once its owner accepts, your server joins the group and asks every member to pair.'
-                            : 'This code pairs your server with ' + p.address + '.';
-                        if (!confirm(what + ' Its fingerprint, to compare with its owner: ' + p.fingerprint + '. Go on?')) return;
-                        return msfpPost('Msfp/Redeem', { code: code }).then(function (r) {
-                            msfpMessage('Waiting for ' + r.name + "'s owner to accept" + (p.groupName ? '; your server then joins "' + p.groupName + '".' : '.'));
-                            msfpLoad();
+                        if (!p.groupName) {
+                            if (!confirm('Pair with ' + p.address + '? Its fingerprint, to compare with its owner: ' + p.fingerprint)) return;
+                            return msfpPost('Msfp/Redeem', { code: code }).then(function (r) {
+                                msfpMessage('Waiting for ' + r.name + "'s owner to accept.");
+                                msfpLoad();
+                            });
+                        }
+                        return ApiClient.getJSON(ApiClient.getUrl('Msfp/Libraries')).then(function (libraries) {
+                            setTimeout(function () {
+                                var share = msfpShareFields(libraries, [], { streams: 2, transcodes: 1, bitrateKbps: 0 });
+                                var fp = msfpLine('From ' + p.address + ' · fingerprint ' + p.fingerprint + ', to compare with its owner', 'fieldDescription');
+                                msfpForm('Join the group "' + p.groupName + '"', 'Once its owner accepts, your server joins the group and asks every member to pair. What you share now applies from the start; you can change it in the group.',
+                                    [fp].concat(share.nodes), 'Join', function () {
+                                        var sh = share.read();
+                                        if (!sh) return Promise.reject(msfpLimitsProblem);
+                                        return msfpPost('Msfp/Redeem', { code: code, libraries: sh.libraries, pool: sh.pool }).then(function (r) {
+                                            msfpMessage('Waiting for ' + r.name + '\'s owner to accept; your server then joins "' + p.groupName + '".');
+                                            msfpLoad();
+                                        });
+                                    });
+                            }, 0);
                         });
                     });
                 });
-            });
+            }
+            document.querySelectorAll('.msfpUseCode').forEach(function (b) { b.addEventListener('click', msfpUseCode); });
             document.querySelector('#MsfpMakeCode').addEventListener('click', function () { msfpMessage(''); msfpNewCode(''); });
 
             // ---- Identification ---------------------------------------------------
@@ -777,9 +804,8 @@
                     }
                 });
                 msfpLoadGroups().then(function () {
-                    msfpLoadServers();
-                    msfpLoadCodes();
-                });
+                    return Promise.all([msfpLoadServers(), msfpLoadCodes()]);
+                }).then(function () { msfpRenderGroups(); if (msfpGroupOpen) msfpRenderGroup(); });
             }
 
             var msfpCatalogFor = null;
@@ -1011,11 +1037,16 @@
                 var g = msfpGroups.filter(function (x) { return x.id === id; })[0];
                 return g ? g.name : 'a group';
             }
-            function msfpWaiting(g) { return g.requests.length + g.joins.length; }
+            function msfpWaiting(g) { return g.requests.length + g.joins.length + msfpJoiningOf(g).length; }
 
             function msfpLoadGroups() {
                 return ApiClient.getJSON(ApiClient.getUrl('Msfp/Groups')).then(function (groups) {
                     msfpGroups = groups;
+                    msfpRenderGroups();
+                }, function () { msfpGroups = []; });
+            }
+            function msfpRenderGroups() {
+                    var groups = msfpGroups;
                     var list = document.querySelector('#MsfpGroups');
                     list.textContent = '';
                     document.querySelector('#MsfpNoGroup').hidden = groups.length > 0;
@@ -1043,7 +1074,6 @@
                             document.querySelector('#MsfpGroupDialog').close();
                         }
                     }
-                }, function () { msfpGroups = []; });
             }
 
             // An action on a group: done, then the lists again.
@@ -1099,26 +1129,60 @@
                 var owner = g.role === 'owner';
                 document.querySelector('#MsfpGroupName').textContent = g.name || 'A group';
                 document.querySelector('#MsfpGroupSummary').textContent = msfpRoles[g.role] + ' · ' + msfpPlural(g.members.length, 'server') +
-                    ' · automatic acceptance after ' + msfpPlural(g.waitDays, 'day') + ' in the group · ' + msfpPlural(g.capPerDay, 'invitation') + ' a day for each inviter';
+                    ' · ' + (g.accept ? 'new members accepted automatically' : 'you confirm each new member');
                 var body = document.querySelector('#MsfpGroupBody');
                 body.textContent = '';
                 if (g.joining) body.appendChild(msfpText("Joining: the group's list comes from the server that invited you, once its operator accepts. Without an answer within 30 days, this server gives up."));
                 if (g.dissolved) body.appendChild(msfpText('The owner dissolved this group. It goes from this server at once.'));
-                if (g.noWayIn) body.appendChild(msfpText("No way in: this server has no pairing through this group any more. Nothing from the other members reaches it, and nothing it does reaches them, so what you see here may be out of date. To get back in, ask a member for a new code for this group, and use it under Servers."));
+                if (g.noWayIn) body.appendChild(msfpText("No way in: this server has no pairing through this group any more. Nothing from the other members reaches it, and nothing it does reaches them, so what you see here may be out of date. To get back in, ask a member for a new invite to this group, and use it (Use a code)."));
 
-                // Requests waiting for you: servers already paired that used your code, then members asking to pair.
+                // The group as a whole: what you share with it, what you show
+                // from it, how new members are accepted, its invites.
+                if (!g.joining) {
+                    var whole = document.createElement('table');
+                    whole.className = 'msfpRows';
+                    var pool = g.pool || {};
+                    whole.appendChild(msfpRow([[msfpLine('You share with it'), msfpLine((g.offers ? msfpPlural(g.offers, 'library', 'libraries') : 'Nothing yet') + ' · ' + msfpPlural(pool.streams || 0, 'stream') + ' at once for all its members together', 'fieldDescription'),
+                        msfpRowActions([msfpButton('Change…', function () { msfpGroupSharing(g); })])]]));
+                    whole.appendChild(msfpRow([[msfpLine('You show from it'), msfpLine('What its members share with it, but what you hide', 'fieldDescription'),
+                        msfpRowActions([msfpButton('Change…', function () { msfpGroupShows(g); })])]]));
+                    whole.appendChild(msfpRow([[msfpLine('New members'), msfpLine(g.accept ? 'Accepted automatically' : 'Each waits for you to confirm it', 'fieldDescription'),
+                        msfpRowActions([msfpButton('Change…', function () { msfpGroupSettings(g); })])]]));
+                    body.appendChild(whole);
+                }
+                var invites = msfpCodes.filter(function (c) { return c.group === g.id; });
+                if (invites.length) {
+                    body.appendChild(msfpLine('Invites not used yet', 'msfpSection'));
+                    var it = document.createElement('table');
+                    it.className = 'msfpRows';
+                    invites.forEach(function (c) {
+                        it.appendChild(msfpRow([[msfpLine(c.note || 'No note'), msfpLine((c.uses > 1 ? c.uses + ' uses left · ' : '') + 'works until ' + msfpWhen(c.expires), 'fieldDescription'),
+                            msfpRowActions([msfpButton('Withdraw', function () { msfpWithdraw(c); }, true)])]]));
+                    });
+                    body.appendChild(it);
+                }
+
+                // Waiting for you: servers that used an invite to the group,
+                // then members asking to pair.
                 if (msfpWaiting(g)) {
                     body.appendChild(msfpLine('Waiting for you', 'msfpSection'));
                     var t = document.createElement('table');
                     t.className = 'msfpRows';
+                    msfpJoiningOf(g).forEach(function (p) {
+                        var key = encodeURIComponent(p.id);
+                        t.appendChild(msfpRow([[msfpLine(p.name || 'A server'), msfpLine('Used your invite to join the group · ' + p.address, 'fieldDescription'), msfpLine(p.fingerprint, 'msfpMono fieldDescription'),
+                            msfpRowActions([
+                                msfpButton('Accept', function () { if (confirm('Accept ' + p.name + ' into "' + g.name + '"? Compare its fingerprint with its owner first: ' + p.fingerprint)) msfpPost('Msfp/Peers/' + key + '/Accept').then(msfpLoad, function (e) { msfpError(e, 'It could not be accepted.'); }); }),
+                                msfpButton('Refuse', function () { if (confirm('Refuse ' + p.name + '?')) msfpPost('Msfp/Peers/' + key + '/End').then(msfpLoad, msfpLoad); }, true)])]]));
+                    });
                     g.joins.forEach(function (j) {
-                        t.appendChild(msfpRow([[msfpLine(j.name || 'A server'), msfpLine('Already paired with you, used your code to join the group', 'fieldDescription'), msfpLine(j.fingerprint, 'msfpMono fieldDescription'),
+                        t.appendChild(msfpRow([[msfpLine(j.name || 'A server'), msfpLine('Already paired with you individually, used your invite to join the group', 'fieldDescription'), msfpLine(j.fingerprint, 'msfpMono fieldDescription'),
                             msfpRowActions([
                                 msfpButton('Accept', function () { if (confirm('Accept ' + j.name + ' into "' + g.name + '"? Its fingerprint: ' + j.fingerprint)) msfpGroupAct('Joins/' + encodeURIComponent(j.peer) + '/Accept').catch(msfpLoad); }),
                                 msfpButton('Refuse', function () { if (confirm('Refuse ' + j.name + '? It is not told; your pairing with it stays.')) msfpGroupAct('Joins/' + encodeURIComponent(j.peer) + '/Refuse').catch(msfpLoad); }, true)])]]));
                     });
                     g.requests.forEach(function (r) {
-                        t.appendChild(msfpRow([[msfpLine(r.name || 'A server'), msfpLine('Asks to pair' + (r.waited ? '' : ' · in the group for less than ' + msfpPlural(g.waitDays, 'day')), 'fieldDescription'), msfpLine(r.fingerprint, 'msfpMono fieldDescription'),
+                        t.appendChild(msfpRow([[msfpLine(r.name || 'A server'), msfpLine('New in the group, asks to pair with you', 'fieldDescription'), msfpLine(r.fingerprint, 'msfpMono fieldDescription'),
                             msfpRowActions([
                                 msfpButton('Pair', function () { if (confirm('Pair with ' + r.name + '? No fingerprint to compare: the group vouches for it. Its fingerprint: ' + r.fingerprint)) msfpGroupAct('Requests/' + encodeURIComponent(r.mail) + '/Accept').catch(msfpLoad); }),
                                 msfpButton('Refuse', function () { if (confirm('Refuse ' + r.name + '? It is not told; its requests are dropped until you hear it again.')) msfpGroupAct('Requests/' + encodeURIComponent(r.mail) + '/Refuse').catch(msfpLoad); }, true)])]]));
@@ -1133,11 +1197,10 @@
                     var name = msfpLine(m.name || 'A server');
                     if (m.role !== 'member') name.appendChild(msfpBadge(msfpRoles[m.role]));
                     if (g.heir === m.id) name.appendChild(msfpBadge('Heir'));
-                    var state = m.me ? 'This server' : m.paired ? (m.individual ? 'Paired, also directly' : 'Paired') : m.peer ? 'Pairing' : m.requested ? 'Asks to pair: see above' : m.refused ? 'You refused it' : m.asked ? 'Asked, waiting for its operator' : 'Not paired';
+                    var state = m.me ? 'This server' : m.paired ? (m.individual ? 'Paired, also individually' : 'Paired') : m.peer ? 'Pairing' : m.requested ? 'Asks to pair: see above' : m.refused ? 'You refused it' : m.asked ? 'Asked, waiting for its operator' : 'Not paired';
                     var buttons = [];
                     if (!m.me && !m.peer && !m.refused && !m.asked && !m.requested) buttons.push(msfpButton('Ask to pair', function () { msfpGroupAct('Ask', { member: m.id }).catch(msfpLoad); }));
                     if (m.refused) buttons.push(msfpButton('Hear it again', function () { msfpGroupAct('LiftRefusal', { member: m.id }).catch(msfpLoad); }));
-                    if (m.paired) buttons.push(msfpButton('Manage…', function () { document.querySelector('#MsfpGroupDialog').close(); msfpManageId(m.peer); }));
                     if (!m.me) buttons.push(msfpButton('More…', function () { msfpMember(g, m); }));
                     members.appendChild(msfpRow([[name, msfpLine((m.invitedBy ? 'Invited by ' + m.invitedBy + ', joined ' : 'Joined ') + new Date(m.joined).toLocaleDateString() + ' · ' + state, 'fieldDescription'),
                         msfpLine(m.fingerprint, 'msfpMono fieldDescription'), buttons.length ? msfpRowActions(buttons) : msfpLine('')]]));
@@ -1161,15 +1224,15 @@
                     foot.appendChild(msfpButton('Dissolve…', function () { msfpDissolve(g); }, true));
                     foot.appendChild(msfpButton('Give the group…', function () { msfpGive(g, ''); }));
                 } else if (g.joining) {
-                    foot.appendChild(msfpButton('Give up', function () { if (confirm('Give up joining "' + g.name + '"? Your pairings stay.')) msfpGroupAct('Leave', { end: [] }).catch(msfpLoad); }, true));
+                    foot.appendChild(msfpButton('Give up', function () { if (confirm('Give up joining "' + g.name + '"?')) msfpGroupAct('Leave', { ask: [] }).catch(msfpLoad); }, true));
                 } else {
                     foot.appendChild(msfpButton('Leave…', function () { msfpLeave(g); }, true));
                 }
                 var spacer = document.createElement('span');
                 spacer.className = 'msfpFootSpacer';
                 foot.appendChild(spacer);
-                if (owner) foot.appendChild(msfpButton('Settings…', function () { msfpGroupSettings(g); }));
-                if (!g.joining) foot.appendChild(msfpButton('Sharing…', function () { msfpGroupSharing(g); }));
+                if ((g.role === 'owner' || g.role === 'admin') && !g.dissolved && !g.joining) foot.appendChild(msfpButton('Invite…', function () { msfpNewCode(g.id); }));
+                if (!g.joining) foot.appendChild(msfpButton('Settings…', function () { msfpGroupSettings(g); }));
                 var close = msfpButton('Close', function () { document.querySelector('#MsfpGroupDialog').close(); });
                 close.className = 'raised button-submit emby-button';
                 foot.appendChild(close);
@@ -1189,6 +1252,11 @@
                 if (owner && g.heir === m.id) act('No heir', function () { msfpGroupAct('Heir', { member: '' }).catch(msfpLoad); });
                 if (owner) act('Give the group to it', function () { msfpGive(g, m.id); });
                 if (m.role !== 'owner' && (owner || (g.role === 'admin' && m.role === 'member'))) act('Ban…', function () { msfpBan(g, m); }, true);
+                if (m.paired && m.peer && !m.individual) act('Invite individually', function () {
+                    if (confirm('Ask ' + m.name + ' to pair with you individually? Its owner answers on their side. Its fingerprint, to compare with its owner if you like: ' + m.fingerprint)) {
+                        msfpPost('Msfp/Peers/' + encodeURIComponent(m.peer) + '/Individual').then(msfpLoad, function (e) { msfpError(e, 'It could not be asked.'); });
+                    }
+                });
                 act('Block…', function () { msfpBlock(g, m); }, true);
                 var stack = document.createElement('div');
                 stack.className = 'msfpStack';
@@ -1196,50 +1264,117 @@
                 msfpForm(m.name || 'A server', msfpRoles[m.role] + ' of "' + g.name + '". Ban puts it out of the group for everyone, and tells it why. Block is yours alone, and nobody is told.', [stack], null, null);
             }
 
-            function msfpGroupForm(title, description, g, saveLabel, send) {
-                var name = msfpField('Name', '<input type="text" is="emby-input" maxlength="80" />', 'What members see.');
-                var wait = msfpField('Days before members accept by themselves', '<input type="number" is="emby-input" min="0" max="30" step="1" />', 'A member set to accept new members waits this long after one joins. Accepting by hand works at once. 0 to 30.');
-                var cap = msfpField('Invitations a day, for each inviter', '<input type="number" is="emby-input" min="1" max="100" step="1" />', 'So a code that leaks can\'t flood the group. 1 to 100.');
-                name.querySelector('input').value = g ? g.name : '';
-                wait.querySelector('input').value = g ? g.waitDays : 3;
-                cap.querySelector('input').value = g ? g.capPerDay : 5;
-                msfpForm(title, description, [name, wait, cap], saveLabel, function () {
-                    return send({ name: name.querySelector('input').value.trim(), waitDays: parseInt(wait.querySelector('input').value, 10), capPerDay: parseInt(cap.querySelector('input').value, 10) });
-                });
+            // What this server shares with a group and its limits, as fields
+            // (creating a group, joining one, changing it).
+            function msfpShareFields(libraries, picked, pool) {
+                var libs = document.createElement('div');
+                libs.className = 'msfpChoices';
+                libraries.forEach(function (l) { libs.appendChild(msfpChoice('checkbox', '', l.id, picked.indexOf(l.id) >= 0, msfpLibrary(l))); });
+                if (!libraries.length) libs.appendChild(msfpText('This server has no film or series library.'));
+                var streams = msfpField('Streams at once', '<input type="number" is="emby-input" min="0" max="50" step="1" />', "For all the group's members together. Servers you share with individually keep their own limits, used first.");
+                var transcodes = msfpField('Conversions at once', '<input type="number" is="emby-input" min="0" max="50" step="1" />', "No more than the streams. This server's own limit applies as well.");
+                var bitrate = msfpField('Bitrate cap (kbit/s)', '<input type="number" is="emby-input" min="0" max="1000000" step="1" />', '0: no cap.');
+                streams.querySelector('input').value = pool.streams;
+                transcodes.querySelector('input').value = pool.transcodes;
+                bitrate.querySelector('input').value = pool.bitrateKbps || 0;
+                return {
+                    nodes: [msfpLine('You share with it', 'msfpDialogLabel'), libs, streams, transcodes, bitrate],
+                    read: function () {
+                        var n = function (w) { var v = parseInt(w.querySelector('input').value, 10); return isNaN(v) ? -1 : v; };
+                        var p = { streams: n(streams), transcodes: n(transcodes), bitrateKbps: n(bitrate) };
+                        if (p.streams < 0 || p.streams > 50 || p.transcodes < 0 || p.transcodes > p.streams || p.bitrateKbps < 0 || p.bitrateKbps > 1000000) return null;
+                        return { libraries: Array.prototype.map.call(libs.querySelectorAll('input:checked'), function (b) { return b.value; }), pool: p };
+                    }
+                };
             }
+            var msfpLimitsProblem = 'Streams go from 0 to 50, conversions from 0 to the streams, the bitrate cap from 0 to 1,000,000.';
+
             document.querySelector('#MsfpCreateGroup').addEventListener('click', function () {
-                msfpGroupForm('Create a group', 'You are its owner. Invite servers with a code: each one\'s operator uses it, you accept, and it asks every member to pair.', null, 'Create', function (b) {
-                    return msfpPost('Msfp/Groups', b).then(function (g) { msfpLoad(); msfpMessage('Group "' + g.name + '" created. Invite servers with a code.'); });
-                });
+                ApiClient.getJSON(ApiClient.getUrl('Msfp/Libraries')).then(function (libraries) {
+                    var name = msfpField('Name', '<input type="text" is="emby-input" maxlength="80" />', 'What members see.');
+                    var share = msfpShareFields(libraries, [], { streams: 2, transcodes: 1, bitrateKbps: 0 });
+                    var accept = msfpChoice('checkbox', '', 'accept', false, 'Automatically accept new members');
+                    var cap = msfpField('Invites a day, for each inviter', '<input type="number" is="emby-input" min="1" max="100" step="1" />', "So an invite that leaks can't flood the group. 1 to 100.");
+                    cap.querySelector('input').value = 5;
+                    cap.style.display = 'none';
+                    var more = msfpButton('More', function () { cap.style.display = ''; more.style.display = 'none'; });
+                    msfpForm('Create a group', 'You are its owner. Invite servers to it; each one asks the members to pair with it.',
+                        [name].concat(share.nodes).concat([accept, more, cap]), 'Create', function () {
+                            var sh = share.read();
+                            if (!sh) return Promise.reject(msfpLimitsProblem);
+                            return msfpPost('Msfp/Groups', { name: name.querySelector('input').value.trim(), capPerDay: parseInt(cap.querySelector('input').value, 10) || 5,
+                                libraries: sh.libraries, pool: sh.pool, accept: accept.querySelector('input').checked }).then(function (g) {
+                                msfpLoad();
+                                msfpMessage('Group "' + g.name + '" created. Invite servers to it.');
+                            });
+                        });
+                }, function () { msfpMessage("This server's libraries could not be read."); });
             });
+
+            // Settings: everyone chooses how it accepts new members; the owner
+            // also names the group and caps the invites.
             function msfpGroupSettings(g) {
-                msfpGroupForm('Group settings', 'Every member is told.', g, 'Save', function (b) { return msfpGroupAct('Settings', b); });
+                var owner = g.role === 'owner';
+                var nodes = [];
+                var name = msfpField('Name', '<input type="text" is="emby-input" maxlength="80" />', 'What members see.');
+                var cap = msfpField('Invites a day, for each inviter', '<input type="number" is="emby-input" min="1" max="100" step="1" />', "So an invite that leaks can't flood the group. 1 to 100.");
+                name.querySelector('input').value = g.name;
+                cap.querySelector('input').value = g.capPerDay;
+                if (owner) nodes.push(name);
+                var accept = msfpChoice('checkbox', '', 'accept', g.accept, 'Automatically accept new members');
+                var acceptHint = msfpLine('Off: each new member waits for you to confirm it. On: this server pairs with it at once. Each member chooses for itself.', 'fieldDescription');
+                acceptHint.style.marginBottom = '1.5em';
+                nodes.push(accept, acceptHint);
+                if (owner) nodes.push(cap);
+                msfpForm('Settings of "' + g.name + '"', '', nodes, 'Save', function () {
+                    var steps = [];
+                    if (owner && (name.querySelector('input').value.trim() !== g.name || parseInt(cap.querySelector('input').value, 10) !== g.capPerDay)) {
+                        steps.push(msfpPost('Msfp/Groups/' + encodeURIComponent(g.id) + '/Settings', { name: name.querySelector('input').value.trim(), capPerDay: parseInt(cap.querySelector('input').value, 10) || 5 }));
+                    }
+                    if (accept.querySelector('input').checked !== g.accept) {
+                        steps.push(msfpPost('Msfp/Groups/' + encodeURIComponent(g.id) + '/Answer', { on: accept.querySelector('input').checked }));
+                    }
+                    return Promise.all(steps).then(function () { msfpLoad(); });
+                });
             }
 
             function msfpGroupSharing(g) {
                 ApiClient.getJSON(ApiClient.getUrl('Msfp/Groups/' + encodeURIComponent(g.id) + '/Sharing')).then(function (sh) {
-                    var libs = document.createElement('div');
-                    libs.className = 'msfpChoices';
-                    sh.libraries.forEach(function (l) { libs.appendChild(msfpChoice('checkbox', '', l.id, l.offered, l.name + (l.kind ? ' (' + l.kind + ')' : ''))); });
-                    if (!sh.libraries.length) libs.appendChild(msfpText('This server has no film or series library.'));
-                    var streams = msfpField('Streams at once', '<input type="number" is="emby-input" min="0" max="50" step="1" />', "For all the group's members together. Pairings by hand keep their own limits, used first.");
-                    var transcodes = msfpField('Transcodes at once', '<input type="number" is="emby-input" min="0" max="50" step="1" />', 'No more than the streams. This server\'s own limit applies as well.');
-                    var bitrate = msfpField('Bitrate cap (kbit/s)', '<input type="number" is="emby-input" min="0" max="1000000" step="1" />', '0: no cap.');
-                    streams.querySelector('input').value = sh.pool.streams;
-                    transcodes.querySelector('input').value = sh.pool.transcodes;
-                    bitrate.querySelector('input').value = sh.pool.bitrateKbps || 0;
-                    var accept = msfpChoice('checkbox', '', 'accept', sh.accept, 'Accept new members by itself, once they have been in the group ' + msfpPlural(g.waitDays, 'day'));
-                    msfpForm('Sharing with "' + g.name + '"', 'As if the group were one server: every member you are paired with through the group gets this, beside what you share with it by hand.',
-                        [msfpLine('You offer', 'msfpDialogLabel'), libs, streams, transcodes, bitrate, accept], 'Save', function () {
-                            var n = function (w) { var v = parseInt(w.querySelector('input').value, 10); return isNaN(v) ? -1 : v; };
-                            var pool = { streams: n(streams), transcodes: n(transcodes), bitrateKbps: n(bitrate) };
-                            if (pool.streams < 0 || pool.streams > 50 || pool.transcodes < 0 || pool.transcodes > pool.streams || pool.bitrateKbps < 0 || pool.bitrateKbps > 1000000) {
-                                return Promise.reject('Streams go from 0 to 50, transcodes from 0 to the streams, the bitrate cap from 0 to 1,000,000.');
-                            }
-                            var ids = Array.prototype.map.call(libs.querySelectorAll('input:checked'), function (b) { return b.value; });
-                            return msfpGroupAct('Sharing', { libraries: ids, pool: pool, accept: accept.querySelector('input').checked });
-                        });
+                    var share = msfpShareFields(sh.libraries, sh.libraries.filter(function (l) { return l.offered; }).map(function (l) { return l.id; }), sh.pool);
+                    msfpForm('You share with "' + g.name + '"', 'One choice for the whole group: every member you are paired with through it gets this.', share.nodes, 'Save', function () {
+                        var r = share.read();
+                        if (!r) return Promise.reject(msfpLimitsProblem);
+                        return msfpGroupAct('Sharing', { libraries: r.libraries, pool: r.pool });
+                    });
                 }, function () { msfpMessage("The group's sharing could not be read."); });
+            }
+
+            // What you show from a group: each member's libraries, all shown
+            // unless unticked.
+            function msfpGroupShows(g) {
+                ApiClient.getJSON(ApiClient.getUrl('Msfp/Groups/' + encodeURIComponent(g.id) + '/Shows')).then(function (members) {
+                    var nodes = [];
+                    members.forEach(function (m) {
+                        nodes.push(msfpLine(m.name || 'A server', 'msfpDialogLabel'));
+                        var box = document.createElement('div');
+                        box.className = 'msfpChoices';
+                        m.libraries.forEach(function (l) {
+                            var c = msfpChoice('checkbox', '', l.id, l.shown, l.name);
+                            c.querySelector('input').dataset.member = m.member;
+                            box.appendChild(c);
+                        });
+                        if (!m.libraries.length) box.appendChild(msfpText("It shares nothing with the group yet, or you aren't paired with it yet."));
+                        nodes.push(box);
+                    });
+                    if (!members.length) nodes.push(msfpText('No other member yet.'));
+                    msfpForm('You show from "' + g.name + '"', 'Everything its members share with the group shows on your server, now and later. Untick what you don\'t want.', nodes, 'Save', function () {
+                        var hidden = [];
+                        nodes.forEach(function (n) {
+                            if (n.querySelectorAll) n.querySelectorAll('input[type=checkbox]').forEach(function (b) { if (!b.checked && b.dataset.member) hidden.push({ member: b.dataset.member, library: b.value }); });
+                        });
+                        return msfpGroupAct('Shows', { hidden: hidden });
+                    });
+                }, function () { msfpMessage('What the group shows could not be read.'); });
             }
 
             function msfpBan(g, m) {
@@ -1293,31 +1428,21 @@
             }
 
             // ---- Codes ---------------------------------------------------------
+            // An invite: personal (group "") or to a group, from where it belongs.
             function msfpNewCode(group) {
-                var note = msfpField('For', '<input type="text" is="emby-input" maxlength="80" placeholder="Marc\'s server" />', 'A note for you, to tell your codes apart.');
-                var leads = msfpField('Leads to', '<select is="emby-select" class="emby-select-withcolor emby-select"></select>', "A group's code: the server joins the group once you accept it, then asks every member to pair.");
-                var select = leads.querySelector('select');
-                var plain = document.createElement('option');
-                plain.value = '';
-                plain.textContent = 'Pairing with this server';
-                select.appendChild(plain);
-                msfpGroups.filter(function (g) { return (g.role === 'owner' || g.role === 'admin') && !g.dissolved; }).forEach(function (g) {
-                    var o = document.createElement('option');
-                    o.value = g.id;
-                    o.textContent = 'Joining the group "' + g.name + '"';
-                    select.appendChild(o);
-                });
-                select.value = group || '';
+                var note = msfpField('For', '<input type="text" is="emby-input" maxlength="80" placeholder="Marc\'s server" />', 'A note for you, to tell your invites apart.');
                 var uses = msfpField('Servers that may use it', '<input type="number" is="emby-input" min="1" max="100" step="1" />', '1 to 100. Each one still waits for you to accept it.');
                 uses.querySelector('input').value = 1;
                 var hours = msfpField('Works for', '<select is="emby-select" class="emby-select-withcolor emby-select"><option value="1">1 hour</option><option value="24" selected>1 day</option><option value="72">3 days</option><option value="168">1 week</option><option value="720">30 days</option></select>');
-                msfpForm('Make a pairing code', 'Send it to the other operator however you like. Compare fingerprints by phone or another way you trust before you accept their server.',
-                    [note, leads, uses, hours], 'Make the code', function () {
-                        var body = { note: note.querySelector('input').value.trim(), group: select.value, uses: parseInt(uses.querySelector('input').value, 10) || 1, hours: parseInt(hours.querySelector('select').value, 10) };
+                var nodes = group ? [note, uses, hours] : [note, hours];
+                msfpForm(group ? 'Invite to "' + msfpGroupName(group) + '"' : 'Invite a server',
+                    group ? "The server's owner uses it on their server; you accept it, after comparing fingerprints, and it joins the group."
+                        : "The server's owner uses it on their server; you accept it, after comparing fingerprints, and you share with each other one by one.",
+                    nodes, 'Make the invite', function () {
+                        var body = { note: note.querySelector('input').value.trim(), group: group || '', uses: group ? (parseInt(uses.querySelector('input').value, 10) || 1) : 1, hours: parseInt(hours.querySelector('select').value, 10) };
                         return msfpPost('Msfp/Codes', body).then(function (r) {
-                            msfpTab('servers');
                             msfpLoad();
-                            msfpShowCode(r.code, 'Copy the code now: it is not shown again. It works ' + (r.uses > 1 ? 'for ' + r.uses + ' servers' : 'once') + ', until ' + msfpWhen(r.expires) +
+                            msfpShowCode(r.code, 'Copy it now: it is not shown again. It works ' + (r.uses > 1 ? 'for ' + r.uses + ' servers' : 'once') + ', until ' + msfpWhen(r.expires) +
                                 (r.group ? ', and brings the server into "' + msfpGroupName(r.group) + '".' : '.'));
                         });
                     });
@@ -1326,9 +1451,9 @@
             // A new code, shown once, ready to copy.
             function msfpShowCode(code, text) {
                 setTimeout(function () {
-                    var box = msfpField('Code', '<textarea is="emby-textarea" class="emby-textarea msfpMono" rows="4" readonly style="width:100%"></textarea>', text);
+                    var box = msfpField('Invite', '<textarea is="emby-textarea" class="emby-textarea msfpMono" rows="4" readonly style="width:100%"></textarea>', text);
                     box.querySelector('textarea').value = code;
-                    msfpForm('Your code', 'Copy it now and send it to the other server\'s owner: it isn\'t shown again. Compare fingerprints with them by phone or another way you trust before you accept their server.', [box], null, null);
+                    msfpForm('Your invite', 'Send it to the other server\'s owner however you like: it isn\'t shown again. Compare fingerprints with them by phone or another way you trust before you accept their server.', [box], null, null);
                     box.querySelector('textarea').select();
                 }, 0);
             }
