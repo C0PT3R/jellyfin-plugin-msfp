@@ -4,6 +4,25 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
+## Unreleased (0.6.0)
+
+### Added
+
+- Groups (MSFP's groups part): under the new Groups tab, create a group,
+  invite servers with a code, answer members' requests to pair, share
+  with the group as with one server (one pool of streams and conversions
+  for all its members), name admins and an heir, give the group away,
+  ban, block, leave or dissolve.
+- Pairing codes can serve up to 100 servers and work up to 30 days, and
+  can invite to a group. A group's code says so before it's used.
+
+### Changed
+
+- MSFP is version 0 now (it was numbered 1): servers still on the former
+  numbering can't talk to this one until they're updated too. Codes made
+  before no longer work.
+- msfp-dotnet 0.4.0-preview.
+
 ## 0.5.3 (2026-11-20)
 
 ### Added

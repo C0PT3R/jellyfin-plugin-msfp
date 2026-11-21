@@ -28,7 +28,7 @@ namespace Jellyfin.Plugin.Msfp.Federation;
 public sealed class EngineHost : IHostedService, IDisposable
 {
     /// <summary>The parts this plugin speaks besides the core: no music (README).</summary>
-    public static readonly IReadOnlyList<string> Parts = ["catalog", "playback", "media", "video"];
+    public static readonly IReadOnlyList<string> Parts = ["catalog", "playback", "media", "video", "groups"];
 
     private readonly HostCatalog _catalog;
     private readonly JellyfinPlayback _playback;

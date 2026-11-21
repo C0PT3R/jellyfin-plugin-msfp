@@ -10,6 +10,7 @@ using Jellyfin.Plugin.Msfp.Playback;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Msfp;
+using GroupSettings = Msfp.Protocol.GroupSettings;
 
 namespace Jellyfin.Plugin.Msfp.Api;
 
@@ -19,6 +20,57 @@ public sealed class CodeRequest
     public string Code { get; set; } = string.Empty;
 
     public string Note { get; set; } = string.Empty;
+
+    /// <summary>How many servers may use a new code (0: one).</summary>
+    public int Uses { get; set; }
+
+    /// <summary>How many hours a new code works (0: 24).</summary>
+    public int Hours { get; set; }
+
+    /// <summary>A group's ID: the new code invites to it ("" for a pairing).</summary>
+    public string Group { get; set; } = string.Empty;
+}
+
+/// <summary>A group's name and settings, from the operator's page.</summary>
+public sealed class GroupRequest
+{
+    public string Name { get; set; } = string.Empty;
+
+    public long WaitDays { get; set; } = 3;
+
+    public long CapPerDay { get; set; } = 5;
+}
+
+/// <summary>An action on a group's member or request, from the operator's page.</summary>
+public sealed class GroupActionRequest
+{
+    /// <summary>A member ID ("" where none means something: no heir, the default successor).</summary>
+    public string Member { get; set; } = string.Empty;
+
+    public bool On { get; set; }
+
+    /// <summary>A ban's reason; optional.</summary>
+    public string Reason { get; set; } = string.Empty;
+
+    /// <summary>For a block: the members it invited too, and theirs.</summary>
+    public bool Invitees { get; set; }
+
+    /// <summary>For leaving: the pairings made through the group that end too.</summary>
+    public List<string> End { get; set; } = new();
+
+    /// <summary>For dissolving: the pairings the group made are kept.</summary>
+    public bool KeepPairings { get; set; } = true;
+}
+
+/// <summary>What this server offers a group, and the pool it lends it.</summary>
+public sealed class GroupSharingRequest
+{
+    public List<string> Libraries { get; set; } = new();
+
+    public LimitsRequest Pool { get; set; } = new();
+
+    /// <summary>This server accepts a member's request itself once it waited the group's days.</summary>
+    public bool Accept { get; set; }
 }
 
 /// <summary>A list of libraries, from the operator's page.</summary>
@@ -106,8 +158,15 @@ public class AdminController : ControllerBase
     [HttpPost("Codes")]
     public Task<ContentResult> MakeCode([FromBody] CodeRequest? request, CancellationToken ct) => Run(async e =>
     {
-        var (text, code) = await e.MakeCodeAsync(request?.Note, ct).ConfigureAwait(false);
-        return new { code = text, id = code.Id, expires = code.Expires };
+        var options = new CodeOptions
+        {
+            Note = request?.Note,
+            Uses = request?.Uses ?? 0,
+            Lifetime = TimeSpan.FromHours(request?.Hours ?? 0),
+            Group = string.IsNullOrEmpty(request?.Group) ? null : request.Group,
+        };
+        var (text, code) = await e.MakeCodeWithAsync(options, ct).ConfigureAwait(false);
+        return new { code = text, id = code.Id, expires = code.Expires, uses = code.Uses, group = code.Group };
     });
 
     /// <summary>The live codes (never their text).</summary>
@@ -300,6 +359,167 @@ public class AdminController : ControllerBase
         return Task.FromResult<object>(new { ok = true });
     });
 
+    // ---- Groups (MSFP groups part) ------------------------------------------
+
+    /// <summary>The groups this server is in, with members, requests and the pairings made through each.</summary>
+    [HttpGet("Groups")]
+    public Task<ContentResult> Groups(CancellationToken ct) => Run(async e =>
+    {
+        var peers = await e.PeersAsync(ct).ConfigureAwait(false);
+        return (await e.GroupsAsync(ct).ConfigureAwait(false)).Select(g => GroupJson(g, peers)).ToList();
+    });
+
+    /// <summary>Founds a group, this server its owner.</summary>
+    [HttpPost("Groups")]
+    public Task<ContentResult> CreateGroup([FromBody] GroupRequest request, CancellationToken ct) => Run(async e =>
+        GroupJson(await e.CreateGroupAsync(request.Name, new GroupSettings(request.WaitDays, request.CapPerDay), ct).ConfigureAwait(false), []));
+
+    /// <summary>Changes a group's name and settings (the owner only).</summary>
+    [HttpPost("Groups/{id}/Settings")]
+    public Task<ContentResult> GroupSettingsSet(string id, [FromBody] GroupRequest request, CancellationToken ct) =>
+        Act(e => e.SetGroupSettingsAsync(id, request.Name, new GroupSettings(request.WaitDays, request.CapPerDay), ct));
+
+    /// <summary>This server's libraries, those offered to the group marked, and the pool it lends.</summary>
+    [HttpGet("Groups/{id}/Sharing")]
+    public Task<ContentResult> GroupSharing(string id, CancellationToken ct) => Run(async e =>
+    {
+        var g = await e.GroupAsync(id, ct).ConfigureAwait(false);
+        var libs = await e.GroupOffersAsync(id, ct).ConfigureAwait(false);
+        return new
+        {
+            libraries = libs.Select(l => new { id = l.Id, name = l.Name, kind = l.Kind, offered = l.Offered }),
+            pool = g.Pool,
+            accept = g.Accept,
+        };
+    });
+
+    /// <summary>Sets what the group is offered, the pool, and how requests are answered.</summary>
+    [HttpPost("Groups/{id}/Sharing")]
+    public Task<ContentResult> SetGroupSharing(string id, [FromBody] GroupSharingRequest request, CancellationToken ct) => Act(async e =>
+    {
+        var ours = _catalog.Read().Libraries.Select(l => l.Id).ToHashSet(StringComparer.Ordinal);
+        if (request.Libraries.Any(l => !ours.Contains(l)))
+        {
+            throw new MsfpException(MsfpError.NotFound, "Not a library of this server.");
+        }
+
+        var p = request.Pool;
+        await e.SetGroupPoolAsync(id, new Limits { Streams = p.Streams, Transcodes = p.Transcodes, BitrateKbps = p.BitrateKbps }, ct).ConfigureAwait(false);
+        await e.SetGroupOffersAsync(id, request.Libraries, ct).ConfigureAwait(false);
+        await e.SetGroupAnswerAsync(id, request.Accept, ct).ConfigureAwait(false);
+        // A library newly offered: its titles are identified before they're listed.
+        _identifier.Poke();
+    });
+
+    /// <summary>Names a member admin, or removes its role (the owner only).</summary>
+    [HttpPost("Groups/{id}/Admin")]
+    public Task<ContentResult> GroupAdmin(string id, [FromBody] GroupActionRequest r, CancellationToken ct) => Act(e => e.SetAdminAsync(id, r.Member, r.On, ct));
+
+    /// <summary>Names the heir ("" for none).</summary>
+    [HttpPost("Groups/{id}/Heir")]
+    public Task<ContentResult> GroupHeir(string id, [FromBody] GroupActionRequest r, CancellationToken ct) =>
+        Act(e => e.SetHeirAsync(id, r.Member.Length == 0 ? null : r.Member, ct));
+
+    /// <summary>Gives the group to a member ("" for the successor).</summary>
+    [HttpPost("Groups/{id}/Give")]
+    public Task<ContentResult> GiveGroup(string id, [FromBody] GroupActionRequest r, CancellationToken ct) =>
+        Act(e => e.GiveGroupAsync(id, r.Member.Length == 0 ? null : r.Member, ct));
+
+    /// <summary>Bans a member, with an optional reason.</summary>
+    [HttpPost("Groups/{id}/Ban")]
+    public Task<ContentResult> Ban(string id, [FromBody] GroupActionRequest r, CancellationToken ct) =>
+        Act(e => e.BanAsync(id, r.Member, r.Reason.Trim().Length == 0 ? null : r.Reason.Trim(), ct));
+
+    /// <summary>Lifts a ban (the owner only).</summary>
+    [HttpPost("Groups/{id}/Unban")]
+    public Task<ContentResult> Unban(string id, [FromBody] GroupActionRequest r, CancellationToken ct) => Act(e => e.UnbanAsync(id, r.Member, ct));
+
+    /// <summary>Blocks a member: its pairing ends, it's ignored in every group.</summary>
+    [HttpPost("Groups/{id}/Block")]
+    public Task<ContentResult> Block(string id, [FromBody] GroupActionRequest r, CancellationToken ct) => Act(e => e.BlockAsync(id, r.Member, r.Invitees, ct));
+
+    /// <summary>Sends this server's request to a member.</summary>
+    [HttpPost("Groups/{id}/Ask")]
+    public Task<ContentResult> AskMember(string id, [FromBody] GroupActionRequest r, CancellationToken ct) => Act(e => e.RequestMemberAsync(id, r.Member, ct));
+
+    /// <summary>Hears a refused member's requests again.</summary>
+    [HttpPost("Groups/{id}/LiftRefusal")]
+    public Task<ContentResult> LiftRefusal(string id, [FromBody] GroupActionRequest r, CancellationToken ct) => Act(e => e.LiftRefusalAsync(id, r.Member, ct));
+
+    /// <summary>Accepts a member's request: the two pair through the group.</summary>
+    [HttpPost("Groups/{id}/Requests/{mail}/Accept")]
+    public Task<ContentResult> AcceptRequest(string id, string mail, CancellationToken ct) => Act(e => e.AcceptRequestAsync(id, mail, ct));
+
+    /// <summary>Refuses a member's request; it isn't told.</summary>
+    [HttpPost("Groups/{id}/Requests/{mail}/Refuse")]
+    public Task<ContentResult> RefuseRequest(string id, string mail, CancellationToken ct) => Act(e => e.RefuseRequestAsync(id, mail, ct));
+
+    /// <summary>Accepts a server already paired that used this server's code for the group.</summary>
+    [HttpPost("Groups/{id}/Joins/{peer}/Accept")]
+    public Task<ContentResult> AcceptJoin(string id, string peer, CancellationToken ct) => Act(e => e.AcceptJoinAsync(id, peer, ct));
+
+    /// <summary>Refuses it; it isn't told.</summary>
+    [HttpPost("Groups/{id}/Joins/{peer}/Refuse")]
+    public Task<ContentResult> RefuseJoin(string id, string peer, CancellationToken ct) => Act(e => e.RefuseJoinAsync(id, peer, ct));
+
+    /// <summary>Leaves a group (or gives up joining it); End lists the pairings that end too.</summary>
+    [HttpPost("Groups/{id}/Leave")]
+    public Task<ContentResult> LeaveGroup(string id, [FromBody] GroupActionRequest r, CancellationToken ct) => Act(e => e.LeaveGroupAsync(id, r.End, ct));
+
+    /// <summary>Dissolves a group (the owner only).</summary>
+    [HttpPost("Groups/{id}/Dissolve")]
+    public Task<ContentResult> DissolveGroup(string id, [FromBody] GroupActionRequest r, CancellationToken ct) => Act(e => e.DissolveGroupAsync(id, r.KeepPairings, ct));
+
+    // A group as the page shows it: the pairings with its members, and those
+    // made through it (Only: nothing else holds them).
+    private static object GroupJson(GroupView g, IReadOnlyList<PeerView> peers)
+    {
+        var names = g.Members.ToDictionary(m => m.Id, m => m.Name, StringComparer.Ordinal);
+        var byId = peers.ToDictionary(p => p.Id, StringComparer.Ordinal);
+        return new
+        {
+            id = g.Id,
+            name = g.Name,
+            waitDays = g.Settings.WaitDays,
+            capPerDay = g.Settings.CapPerDay,
+            role = g.Role,
+            me = g.Me,
+            owner = g.Owner,
+            heir = g.Heir,
+            accept = g.Accept,
+            offers = g.Offers.Count,
+            pool = g.Pool,
+            dissolved = g.Dissolved,
+            joining = g.Joining,
+            members = g.Members.Select(m => new
+            {
+                id = m.Id,
+                name = m.Name,
+                fingerprint = m.Fingerprint,
+                role = m.Role,
+                invitedBy = names.GetValueOrDefault(m.InvitedBy, ""),
+                joined = m.Joined,
+                peer = m.Peer,
+                paired = m.Peer.Length > 0 && byId.TryGetValue(m.Peer, out var p) && p.State == PeerState.Paired,
+                refused = m.Refused,
+                asked = m.Asked,
+                requested = g.Requests.Any(r => r.From == m.Id),
+                me = m.Id == g.Me,
+            }),
+            banned = g.Banned.Select(b => new { id = b.Id, name = b.Name, fingerprint = b.Fingerprint, reason = b.Reason }),
+            requests = g.Requests.Select(r => new { mail = r.Mail, from = r.From, name = r.Name, fingerprint = r.Fingerprint, received = r.Received, waited = r.Waited }),
+            joins = g.Joins.Select(j => new { peer = j.Peer, name = j.Name, fingerprint = j.Fingerprint, received = j.Received }),
+            links = peers.Where(p => p.Groups.Contains(g.Id)).Select(p => new { peer = p.Id, name = p.Name, only = !p.ByHand && p.Groups.Count == 1 }),
+        };
+    }
+
+    // An action that answers nothing but that it was done.
+    private Task<ContentResult> Act(Func<MsfpEngine, Task> action) => Run(async e =>
+    {
+        await action(e).ConfigureAwait(false);
+        return (object)new { ok = true };
+    });
+
     // Runs an action on the engine: the operator is told when federation is
     // off, and an engine error is a 400 with its code.
     private async Task<ContentResult> Run(Func<MsfpEngine, Task<object>> action, bool off = false)
@@ -345,6 +565,8 @@ public class AdminController : ControllerBase
         wants = p.Wants,
         wantsGone = p.WantsGone,
         parts = p.Parts.Keys,
+        groups = p.Groups,
+        byHand = p.ByHand,
     };
 
     private static ContentResult Json(object value, int status = 200)

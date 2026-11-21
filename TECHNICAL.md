@@ -5,7 +5,8 @@ is the plain overview for Jellyfin owners.
 
 The protocol is specified in
 [github.com/msfp-io/msfp-spec](https://github.com/msfp-io/msfp-spec)
-(version 1). The protocol's work is done by
+(version 0, a draft until version 1; numbered 1 before 2026-11-20). The
+protocol's work is done by
 [msfp-dotnet](https://github.com/msfp-io/msfp-dotnet), the MSFP engine for
 .NET: it signs and checks every call, keeps the pairings, keys, addresses
 and limits, and answers peers. This plugin is the engine's host inside

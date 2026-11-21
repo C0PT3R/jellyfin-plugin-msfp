@@ -16,8 +16,9 @@ with Overfin and with other servers that speak MSFP.
 
 ## What it does today
 
-- **Pair** your server with another, by exchanging a one-time code with
-  its owner.
+- **Pair** your server with another, by exchanging a code with its owner,
+  or **join a group**: friends' servers join with one code each, then pair
+  with every member that accepts.
 - **Choose what you share**: which of your libraries each paired server
   sees.
 - **Let their viewers play** your films and episodes. Your server sends
@@ -80,7 +81,8 @@ identifies it.
 ## Pairing with another server
 
 1. One of you clicks **Make a pairing code** and sends the code to the
-   other (it works once, for 24 hours).
+   other. It works once and for a day, unless you choose otherwise (up to
+   100 servers, up to 30 days).
 2. The other pastes it under **A code another operator sent** and clicks
    **Use this code**.
 3. The server that made the code sees the other in **Peers** and clicks
@@ -101,6 +103,27 @@ Then, for each paired server:
   conversions, and a bitrate cap per stream (2 streams and 1 conversion
   by default, no cap).
 - **End pairing** stops sharing with it, both ways.
+
+## Groups
+
+A group lets friends' servers pair with each other without a code for
+each pair. Under **Groups**, **Create a group**: you are its owner. Then:
+
+1. **Invite** makes a code for the group (or **Make a pairing code**,
+   choosing the group under **Leads to**). A server that uses it waits for
+   you to accept it, as for any code; once accepted, it's a member.
+2. It then asks every member to pair. Each member answers in the group's
+   window (**Open…**): **Pair** or **Refuse**. No fingerprint to compare:
+   the group vouches for its members. In **Sharing…**, a member can let
+   its server accept new members by itself after a few days.
+3. **Sharing…** sets what you offer the group, as if it were one server,
+   and one pool of streams and conversions for all its members together.
+
+The owner names admins (who invite and ban), an heir, changes the
+settings, and may give the group away or dissolve it. Any member can
+leave, keeping its pairings or ending them, and block a member, which
+nobody is told. A server already paired with you uses your group's code
+the same way, and waits for you to accept it.
 
 ## What the other server sees
 
