@@ -4,7 +4,7 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
-## Unreleased
+## 0.8.0 (2026-11-21)
 
 Servers you pair with yourself and servers you know through a group are
 told apart: MSFP's relations (msfp-dotnet 0.6.0-preview).
