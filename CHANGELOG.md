@@ -4,6 +4,14 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
+## Unreleased
+
+### Fixed
+
+- A library shared only with a group showed none of its titles to the
+  group's members: its titles were never identified. They are now, as for
+  a library shared with a server.
+
 ## 0.6.1 (2026-11-21)
 
 ### Changed

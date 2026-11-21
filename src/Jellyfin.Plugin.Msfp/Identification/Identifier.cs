@@ -142,15 +142,9 @@ public sealed class Identifier : BackgroundService
         return true;
     }
 
-    /// <summary>One pass: every film and series of the offered libraries, matched where needed.</summary>
-    internal async Task RunAsync(CancellationToken ct)
+    /// <summary>The libraries offered to a paired server or to a group: those whose titles get identified.</summary>
+    internal static async Task<HashSet<Guid>> OfferedAsync(global::Msfp.MsfpEngine engine, CancellationToken ct)
     {
-        var src = Tmdb();
-        if (src is null || _host.Engine is not { } engine)
-        {
-            return;
-        }
-
         var offered = new HashSet<Guid>();
         foreach (var peer in await engine.PeersAsync(ct).ConfigureAwait(false))
         {
@@ -163,8 +157,41 @@ public sealed class Identifier : BackgroundService
             }
         }
 
+        // A group's members read what is offered to the group.
+        IReadOnlyList<global::Msfp.GroupView> groups = [];
+        try
+        {
+            groups = await engine.GroupsAsync(ct).ConfigureAwait(false);
+        }
+        catch (global::Msfp.MsfpException e) when (e.Code == global::Msfp.MsfpError.NoGroups)
+        {
+        }
+
+        foreach (var g in groups.Where(g => !g.Dissolved))
+        {
+            foreach (var lib in g.Offers)
+            {
+                if (Guid.TryParseExact(lib, "N", out var id))
+                {
+                    offered.Add(id);
+                }
+            }
+        }
+
+        return offered;
+    }
+
+    /// <summary>One pass: every film and series of the offered libraries, matched where needed.</summary>
+    internal async Task RunAsync(CancellationToken ct)
+    {
+        var src = Tmdb();
+        if (src is null || _host.Engine is not { } engine)
+        {
+            return;
+        }
+
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var library in offered)
+        foreach (var library in await OfferedAsync(engine, ct).ConfigureAwait(false))
         {
             var items = _library.GetItemList(new InternalItemsQuery
             {
