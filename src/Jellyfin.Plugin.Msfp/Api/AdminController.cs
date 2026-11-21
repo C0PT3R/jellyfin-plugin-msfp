@@ -55,8 +55,8 @@ public sealed class GroupActionRequest
     /// <summary>For a block: the members it invited too, and theirs.</summary>
     public bool Invitees { get; set; }
 
-    /// <summary>For leaving: the pairings made through the group that end too.</summary>
-    public List<string> End { get; set; } = new();
+    /// <summary>For leaving: the servers only this group pairs us with, asked to stay paired directly first.</summary>
+    public List<string> Ask { get; set; } = new();
 
     /// <summary>For dissolving: the pairings the group made are kept.</summary>
     public bool KeepPairings { get; set; } = true;
@@ -217,6 +217,51 @@ public class AdminController : ControllerBase
     [HttpGet("Peers/{id}/Cuts")]
     public Task<ContentResult> Cuts(string id, CancellationToken ct) => Run(async e =>
         (await e.GroupsCutByAsync(id, ct).ConfigureAwait(false)).Select(g => new { id = g.Id, name = g.Name }).ToList());
+
+    /// <summary>Pairs directly with a server known through a group, accepts its ask, or keeps a server whose group was closed.</summary>
+    [HttpPost("Peers/{id}/Individual")]
+    public Task<ContentResult> Individual(string id, CancellationToken ct) => Run(async e =>
+        View(await e.AskIndividualAsync(id, ct).ConfigureAwait(false)));
+
+    /// <summary>Unpairs directly: a server still in a shared group stays paired through it; otherwise the pairing ends.</summary>
+    [HttpPost("Peers/{id}/Unpair")]
+    public Task<ContentResult> Unpair(string id, CancellationToken ct) => Run(async e =>
+    {
+        await e.EndIndividualAsync(id, ct).ConfigureAwait(false);
+        return await ForgetIfGoneAsync(e, id, ct).ConfigureAwait(false);
+    });
+
+    /// <summary>Refuses a server's ask to pair directly, or ends one whose group was closed.</summary>
+    [HttpPost("Peers/{id}/Refuse")]
+    public Task<ContentResult> RefuseIndividual(string id, CancellationToken ct) => Run(async e =>
+    {
+        await e.RefuseIndividualAsync(id, ct).ConfigureAwait(false);
+        return await ForgetIfGoneAsync(e, id, ct).ConfigureAwait(false);
+    });
+
+    /// <summary>Blocks a server: everything with it ends, and it is kept out of every group.</summary>
+    [HttpPost("Peers/{id}/Block")]
+    public Task<ContentResult> BlockPeer(string id, CancellationToken ct) => Run(async e =>
+    {
+        await e.BlockPeerAsync(id, ct).ConfigureAwait(false);
+        _wants.Forget(id);
+        return (object)new { ok = true };
+    });
+
+    // What a server's titles were read for goes with the pairing.
+    private async Task<object> ForgetIfGoneAsync(MsfpEngine e, string id, CancellationToken ct)
+    {
+        try
+        {
+            await e.PeerAsync(id, ct).ConfigureAwait(false);
+        }
+        catch (MsfpException x) when (x.Code == MsfpError.NotFound)
+        {
+            _wants.Forget(id);
+        }
+
+        return new { ok = true };
+    }
 
     /// <summary>Ends a pairing, or refuses a waiting one.</summary>
     [HttpPost("Peers/{id}/End")]
@@ -469,7 +514,7 @@ public class AdminController : ControllerBase
 
     /// <summary>Leaves a group (or gives up joining it); End lists the pairings that end too.</summary>
     [HttpPost("Groups/{id}/Leave")]
-    public Task<ContentResult> LeaveGroup(string id, [FromBody] GroupActionRequest r, CancellationToken ct) => Act(e => e.LeaveGroupAsync(id, r.End, ct));
+    public Task<ContentResult> LeaveGroup(string id, [FromBody] GroupActionRequest r, CancellationToken ct) => Act(e => e.LeaveGroupAsync(id, r.Ask, ct));
 
     /// <summary>Dissolves a group (the owner only).</summary>
     [HttpPost("Groups/{id}/Dissolve")]
@@ -507,6 +552,7 @@ public class AdminController : ControllerBase
                 joined = m.Joined,
                 peer = m.Peer,
                 paired = m.Peer.Length > 0 && byId.TryGetValue(m.Peer, out var p) && p.State == PeerState.Paired,
+                individual = m.Peer.Length > 0 && byId.TryGetValue(m.Peer, out var ip) && ip.Individual,
                 refused = m.Refused,
                 asked = m.Asked,
                 requested = g.Requests.Any(r => r.From == m.Id),
@@ -515,7 +561,7 @@ public class AdminController : ControllerBase
             banned = g.Banned.Select(b => new { id = b.Id, name = b.Name, fingerprint = b.Fingerprint, reason = b.Reason }),
             requests = g.Requests.Select(r => new { mail = r.Mail, from = r.From, name = r.Name, fingerprint = r.Fingerprint, received = r.Received, waited = r.Waited }),
             joins = g.Joins.Select(j => new { peer = j.Peer, name = j.Name, fingerprint = j.Fingerprint, received = j.Received }),
-            links = peers.Where(p => p.Groups.Contains(g.Id)).Select(p => new { peer = p.Id, name = p.Name, only = !p.ByHand && p.Groups.Count == 1 }),
+            links = peers.Where(p => p.Groups.Contains(g.Id)).Select(p => new { peer = p.Id, name = p.Name, only = !p.Individual && !p.IndividualAsked && p.Groups.Count == 1 }),
         };
     }
 
@@ -575,7 +621,10 @@ public class AdminController : ControllerBase
         wantsGone = p.WantsGone,
         parts = p.Parts.Keys,
         groups = p.Groups,
-        byHand = p.ByHand,
+        individual = p.Individual,
+        asked = p.IndividualAsked,
+        asks = p.IndividualAsks,
+        keepChoice = p.KeepChoice,
     };
 
     private static ContentResult Json(object value, int status = 200)

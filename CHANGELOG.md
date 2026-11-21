@@ -6,6 +6,27 @@ section here.
 
 ## Unreleased
 
+Servers you pair with yourself and servers you know through a group are
+told apart: MSFP's relations (msfp-dotnet 0.6.0-preview).
+
+### Changed
+
+- **Servers** lists the servers you paired with directly, those you asked,
+  and those asking you. Servers you know only through a group are under
+  that group, each with its own "Manage…".
+- Joining a group no longer pairs you directly with the server that
+  invited you: you are paired through the group.
+- A server you know through a group can ask to pair with you directly:
+  "Accept" or "Refuse" on its row. You can ask too, with "Pair directly" in
+  its window; its fingerprint is shown, to compare if you like.
+- "Unpair" ends only the direct pairing: a server still in one of your
+  groups stays paired through it.
+- Leaving a group unpairs you from the servers you knew only through it;
+  tick those you want to stay paired with, and their owners are asked.
+  Dissolving a group can let each member choose to stay paired.
+- "Block…" ends everything with a server and keeps it out of all your
+  groups. Ending a pairing in any other way no longer keeps a server out.
+
 ### Fixed
 
 - The plugin's files said version 0.5.3 since that release, whatever the

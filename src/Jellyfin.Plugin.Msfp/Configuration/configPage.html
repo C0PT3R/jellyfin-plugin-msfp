@@ -108,7 +108,7 @@
 
                 <div class="msfpPanel" data-panel="servers">
                     <div class="msfpBar">
-                        <span class="msfpLead">Servers you share with, and whose titles show on yours.</span>
+                        <span class="msfpLead">Servers you paired with directly. Those you know only through a group are under Groups.</span>
                         <button is="emby-button" type="button" id="MsfpMakeCode" class="raised button-submit emby-button"><span>Make a code</span></button>
                         <button is="emby-button" type="button" id="MsfpUseCode" class="raised emby-button"><span>Use a code</span></button>
                     </div>
@@ -287,14 +287,15 @@
                         <div id="MsfpManageSummary" class="fieldDescription"></div>
                     </div>
                     <div class="msfpDialogBody">
-                        <div class="msfpSectionTitle">You share with it</div>
-                        <div class="fieldDescription">Your libraries it may show. It sees their titles that have a TMDB ID, and nothing else of this server.</div>
-                        <div id="MsfpManageOffers" class="msfpChoices"></div>
+                        <div id="MsfpManageGroupNote" class="fieldDescription"></div>
+                        <div class="msfpDirect msfpSectionTitle">You share with it</div>
+                        <div class="msfpDirect fieldDescription">Your libraries it may show. It sees their titles that have a TMDB ID, and nothing else of this server.</div>
+                        <div id="MsfpManageOffers" class="msfpDirect msfpChoices"></div>
                         <div class="msfpSectionTitle">You show on your server</div>
                         <div class="fieldDescription">Its libraries whose titles appear on yours.</div>
                         <div id="MsfpManageWants" class="msfpChoices"></div>
-                        <div class="msfpSectionTitle">What its viewers may use here</div>
-                        <div class="msfpLimits">
+                        <div class="msfpDirect msfpSectionTitle">What its viewers may use here</div>
+                        <div class="msfpDirect msfpLimits">
                             <div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="MsfpLimitsStreams">Streams at once</label><input id="MsfpLimitsStreams" type="number" is="emby-input" min="0" max="50" step="1" /><div class="fieldDescription">0 to 50.</div></div>
                             <div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="MsfpLimitsTranscodes">Conversions at once</label><input id="MsfpLimitsTranscodes" type="number" is="emby-input" min="0" max="50" step="1" /><div class="fieldDescription">No more than the streams.</div></div>
                             <div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="MsfpLimitsBitrate">Bitrate cap (kbit/s)</label><input id="MsfpLimitsBitrate" type="number" is="emby-input" min="0" max="1000000" step="1" /><div class="fieldDescription">Per stream. 0: no cap.</div></div>
@@ -304,7 +305,9 @@
                         <div id="MsfpManageProblem" class="msfpProblem"></div>
                     </div>
                     <div class="msfpDialogFoot">
-                        <button is="emby-button" type="button" id="MsfpManageEnd" class="raised button-delete emby-button"><span>End the pairing</span></button>
+                        <button is="emby-button" type="button" id="MsfpManageEnd" class="raised button-delete emby-button"><span>Unpair</span></button>
+                        <button is="emby-button" type="button" id="MsfpManageDirect" class="raised emby-button"><span>Pair directly</span></button>
+                        <button is="emby-button" type="button" id="MsfpManageBlock" class="raised button-delete emby-button"><span>Block…</span></button>
                         <button is="emby-button" type="button" id="MsfpManageTitles" class="raised emby-button"><span>Its titles…</span></button>
                         <span class="msfpFootSpacer"></span>
                         <button is="emby-button" type="button" id="MsfpManageCancel" class="raised emby-button"><span>Cancel</span></button>
@@ -477,7 +480,18 @@
                 if (p.state === 'theirs') return ['Waiting for its owner', 'Info', 'You used its code; its owner accepts it on their side.'];
                 if (p.state === 'gone') return ['Gone', 'Err', 'It no longer knows this server: remove it.'];
                 if (p.pending) return ['New key to confirm', 'Warn', 'It changed its key: compare the new fingerprint with its owner, then confirm it.'];
+                if (p.keepChoice) return ['Its group was closed', 'Warn', 'You knew it through a group that no longer exists. Keep it paired with you, or let it go.'];
+                if (p.asks) return ['Asks to pair with you', 'Warn', 'You know it through ' + msfpGroupList(p) + '. Pairing directly lets you share with it on its own, and keeps you paired if the group goes.'];
+                if (p.asked) return ['Waiting for its owner', 'Info', 'You asked to pair directly; its owner answers on their side.'];
                 return ['Paired', 'Ok', ''];
+            }
+            function msfpGroupList(p) {
+                return (p.groups || []).map(function (id) { return '"' + msfpGroupName(id) + '"'; }).join(', ') || 'a group';
+            }
+            // Servers you paired with yourself, asked, or that ask you: the
+            // Servers list. Those you know only through a group are in the group.
+            function msfpOnServers(p) {
+                return p.state !== 'paired' || p.individual || p.asked || p.asks || p.keepChoice;
             }
             function msfpShareText(p) {
                 if (p.state !== 'paired') return '';
@@ -488,11 +502,13 @@
             }
             function msfpGroupsText(p) {
                 if (!p.groups || !p.groups.length) return '';
-                return (p.byHand ? 'Paired by hand and through ' : 'Through ') + p.groups.map(function (id) { return msfpGroupName(id); }).join(', ');
+                return (p.individual ? 'Also in ' : 'Through ') + msfpGroupList(p);
             }
 
             function msfpLoadServers() {
-                return ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers')).then(function (peers) {
+                return ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers')).then(function (all) {
+                    msfpPeers = all;
+                    var peers = all.filter(msfpOnServers);
                     var list = document.querySelector('#MsfpServers');
                     list.textContent = '';
                     document.querySelector('#MsfpNoServer').hidden = peers.length > 0;
@@ -501,7 +517,7 @@
                         var st = msfpServerState(p);
                         var state = [msfpTag(st[0], st[1])];
                         if (p.inbound === 'No') state.push(msfpTag("Can't be called", 'Info'));
-                        var detail = [msfpEl('div', null, msfpShareText(p) || st[2])];
+                        var detail = [msfpEl('div', null, (p.asks || p.asked || p.keepChoice ? '' : msfpShareText(p)) || st[2])];
                         if (p.wantsGone) detail.push(msfpEl('div', 'msfpSub', msfpPlural(p.wantsGone, 'library', 'libraries') + ' you show is no longer offered'));
                         if (msfpGroupsText(p)) detail.push(msfpEl('div', 'msfpSub', msfpGroupsText(p)));
                         var buttons = [];
@@ -513,6 +529,15 @@
                             }));
                             buttons.push(msfpButton('Refuse', function () {
                                 if (confirm('Refuse ' + p.name + '?')) msfpPost('Msfp/Peers/' + key + '/End').then(msfpLoad, msfpLoad);
+                            }, true));
+                        } else if (p.asks || p.keepChoice) {
+                            buttons.push(msfpPrimary(p.asks ? 'Accept' : 'Keep', function () {
+                                if (!p.asks || confirm('Pair directly with ' + p.name + '? Its fingerprint, to compare with its owner if you like: ' + p.fingerprint)) {
+                                    msfpPost('Msfp/Peers/' + key + '/Individual').then(msfpLoad, function (e) { msfpError(e, 'It could not be done.'); });
+                                }
+                            }));
+                            buttons.push(msfpButton(p.asks ? 'Refuse' : 'Let go', function () {
+                                msfpPost('Msfp/Peers/' + key + '/Refuse').then(msfpLoad, msfpLoad);
                             }, true));
                         } else if (p.pending && !msfpSet(p.suspended)) {
                             buttons.push(msfpPrimary('Confirm key', function () {
@@ -573,10 +598,24 @@
             // One server's window: what you share, what you show, its limits.
             var msfpManaged = null;
             var msfpTheirsRead = false;
+            var msfpPeers = [];
+            function msfpManageId(id) {
+                var p = msfpPeers.filter(function (x) { return x.id === id; })[0];
+                if (p) msfpManage(p);
+            }
             function msfpManage(p) {
                 msfpManaged = p;
                 msfpTheirsRead = false;
                 var key = encodeURIComponent(p.id);
+                // What it is offered and may use, as a direct pairing; through a
+                // group only, the group's sharing applies.
+                document.querySelectorAll('#MsfpManageDialog .msfpDirect').forEach(function (n) { n.style.display = p.individual ? '' : 'none'; });
+                document.querySelector('#MsfpManageGroupNote').textContent = p.individual ? '' : p.asked ?
+                    'You asked to pair directly; its owner answers on their side. Until then it gets what you share with ' + msfpGroupList(p) + '.' :
+                    'You know it through ' + msfpGroupList(p) + ': it gets what you share with the group, under the group\'s Sharing. Pair directly to share with it on its own.';
+                document.querySelector('#MsfpManageEnd').style.display = p.individual || p.asked ? '' : 'none';
+                document.querySelector('#MsfpManageEnd span').textContent = p.asked && !p.individual ? 'Withdraw your ask' : 'Unpair';
+                document.querySelector('#MsfpManageDirect').style.display = p.individual || p.asked ? 'none' : '';
                 document.querySelector('#MsfpManageName').textContent = p.name;
                 document.querySelector('#MsfpManageSummary').textContent = p.address + ' · paired ' + new Date(p.paired).toLocaleDateString(undefined, { dateStyle: 'medium' }) + (msfpGroupsText(p) ? ' · ' + msfpGroupsText(p) : '');
                 document.querySelector('#MsfpManageKey').textContent = 'Fingerprint ' + p.fingerprint;
@@ -619,33 +658,32 @@
             document.querySelector('#MsfpManageTitles').addEventListener('click', function () { msfpCatalog(msfpManaged); });
             document.querySelector('#MsfpManageEnd').addEventListener('click', function () {
                 var p = msfpManaged;
-                var end = function () {
-                    return msfpPost('Msfp/Peers/' + encodeURIComponent(p.id) + '/End').then(function () {
-                        document.querySelector('#MsfpManageDialog').close();
-                        msfpLoad();
-                    });
-                };
-                // Its last pairing through a group: that group can't reach this
-                // server afterwards (MSFP groups section 6, "No way in").
-                ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers/' + encodeURIComponent(p.id) + '/Cuts')).then(function (cuts) { return cuts; }, function () { return []; }).then(function (cuts) {
-                    if (!cuts.length) {
-                        if (confirm('End the pairing with ' + p.name + '? It ends on both servers at once; only a new code starts it again.')) {
-                            end().catch(function (e) { msfpError(e, 'The pairing could not be ended.'); });
-                        }
-                        return;
-                    }
-                    var names = cuts.map(function (g) { return '"' + g.name + '"'; }).join(', ');
-                    var nodes = cuts.map(function (g) {
-                        return msfpButton('Open "' + g.name + '" instead…', function () {
-                            msfpFormClose();
-                            document.querySelector('#MsfpManageDialog').close();
-                            msfpOpenGroup(g.id);
-                        });
-                    });
-                    msfpForm('End the pairing with ' + p.name, p.name + ' is this server\'s only pairing through ' + (cuts.length === 1 ? 'the group ' : 'the groups ') + names +
-                        '. Once it ends, nothing from ' + (cuts.length === 1 ? 'that group' : 'those groups') + ' reaches this server, and nothing from this server reaches ' + (cuts.length === 1 ? 'it' : 'them') +
-                        '. To stop being part of ' + (cuts.length === 1 ? 'it' : 'them') + ', leave instead: open the group and choose Leave.', nodes, 'End anyway', end, true);
-                });
+                var groups = p.groups && p.groups.length;
+                var what = p.asked && !p.individual ? 'Withdraw your ask to pair directly with ' + p.name + '?' :
+                    groups ? 'Unpair from ' + p.name + '? You stay paired through ' + msfpGroupList(p) + ', and it keeps what you share with the group.' :
+                    'Unpair from ' + p.name + '? It ends on both servers; a new code pairs you again.';
+                if (!confirm(what)) return;
+                msfpPost('Msfp/Peers/' + encodeURIComponent(p.id) + '/Unpair').then(function () {
+                    document.querySelector('#MsfpManageDialog').close();
+                    msfpLoad();
+                }, function (e) { msfpError(e, 'It could not be done.'); });
+            });
+            document.querySelector('#MsfpManageDirect').addEventListener('click', function () {
+                var p = msfpManaged;
+                if (!confirm('Ask ' + p.name + ' to pair directly? Its owner answers on their side. Its fingerprint, to compare with its owner if you like: ' + p.fingerprint)) return;
+                msfpPost('Msfp/Peers/' + encodeURIComponent(p.id) + '/Individual').then(function () {
+                    document.querySelector('#MsfpManageDialog').close();
+                    msfpLoad();
+                }, function (e) { msfpError(e, 'It could not be asked.'); });
+            });
+            document.querySelector('#MsfpManageBlock').addEventListener('click', function () {
+                var p = msfpManaged;
+                var groups = p.groups && p.groups.length ? ' It is also cut off from you in ' + msfpGroupList(p) + '.' : '';
+                if (!confirm('Block ' + p.name + '? Everything with it ends, and it is kept out of all your groups. Only a new code from you lets it back.' + groups)) return;
+                msfpPost('Msfp/Peers/' + encodeURIComponent(p.id) + '/Block').then(function () {
+                    document.querySelector('#MsfpManageDialog').close();
+                    msfpLoad();
+                }, function (e) { msfpError(e, 'It could not be blocked.'); });
             });
             document.querySelector('#MsfpManageSave').addEventListener('click', function () {
                 var p = msfpManaged;
@@ -657,7 +695,7 @@
                     return;
                 }
                 var picked = function (sel) { return Array.prototype.map.call(document.querySelectorAll(sel + ' input:checked'), function (b) { return b.value; }).filter(function (v) { return v !== 'all'; }); };
-                var steps = [msfpPost('Msfp/Peers/' + key + '/Offers', { libraries: picked('#MsfpManageOffers') }), msfpPost('Msfp/Peers/' + key + '/Limits', l)];
+                var steps = p.individual ? [msfpPost('Msfp/Peers/' + key + '/Offers', { libraries: picked('#MsfpManageOffers') }), msfpPost('Msfp/Peers/' + key + '/Limits', l)] : [];
                 if (msfpTheirsRead) {
                     steps.push(msfpPost('Msfp/Peers/' + key + '/Wants', { all: document.querySelector('#MsfpWantsAll').checked, libraries: picked('#MsfpManageWants') }));
                 }
@@ -1095,10 +1133,11 @@
                     var name = msfpLine(m.name || 'A server');
                     if (m.role !== 'member') name.appendChild(msfpBadge(msfpRoles[m.role]));
                     if (g.heir === m.id) name.appendChild(msfpBadge('Heir'));
-                    var state = m.me ? 'This server' : m.paired ? 'Paired' : m.peer ? 'Pairing' : m.requested ? 'Asks to pair: see above' : m.refused ? 'You refused it' : m.asked ? 'Asked, waiting for its operator' : 'Not paired';
+                    var state = m.me ? 'This server' : m.paired ? (m.individual ? 'Paired, also directly' : 'Paired') : m.peer ? 'Pairing' : m.requested ? 'Asks to pair: see above' : m.refused ? 'You refused it' : m.asked ? 'Asked, waiting for its operator' : 'Not paired';
                     var buttons = [];
                     if (!m.me && !m.peer && !m.refused && !m.asked && !m.requested) buttons.push(msfpButton('Ask to pair', function () { msfpGroupAct('Ask', { member: m.id }).catch(msfpLoad); }));
                     if (m.refused) buttons.push(msfpButton('Hear it again', function () { msfpGroupAct('LiftRefusal', { member: m.id }).catch(msfpLoad); }));
+                    if (m.paired) buttons.push(msfpButton('Manage…', function () { document.querySelector('#MsfpGroupDialog').close(); msfpManageId(m.peer); }));
                     if (!m.me) buttons.push(msfpButton('More…', function () { msfpMember(g, m); }));
                     members.appendChild(msfpRow([[name, msfpLine((m.invitedBy ? 'Invited by ' + m.invitedBy + ', joined ' : 'Joined ') + new Date(m.joined).toLocaleDateString() + ' · ' + state, 'fieldDescription'),
                         msfpLine(m.fingerprint, 'msfpMono fieldDescription'), buttons.length ? msfpRowActions(buttons) : msfpLine('')]]));
@@ -1217,20 +1256,22 @@
                 var nodes = [];
                 var list = document.createElement('div');
                 list.className = 'msfpChoices';
-                g.links.forEach(function (l) { list.appendChild(msfpChoice('checkbox', '', l.peer, false, l.name + (l.only ? '' : ' (also from another group, or by hand)'))); });
-                if (g.links.length) {
-                    nodes.push(msfpLine('End these pairings too', 'msfpDialogLabel'), list,
+                var only = g.links.filter(function (l) { return l.only; });
+                only.forEach(function (l) { list.appendChild(msfpChoice('checkbox', '', l.peer, false, l.name)); });
+                if (only.length) {
+                    nodes.push(msfpLine('Stay paired with', 'msfpDialogLabel'), list,
                         msfpButton('Tick all', function () { list.querySelectorAll('input').forEach(function (b) { b.checked = true; }); }));
                 }
-                msfpForm('Leave "' + g.name + '"', 'Pairings made through the group stay unless you tick them: one only the group held becomes a pairing by hand, keeping what the group gave it.',
+                msfpForm('Leave "' + g.name + '"', only.length ? 'You are paired with these servers only through the group: leaving unpairs you from them. Tick those you want to stay paired with; their owners are asked first.' :
+                    'The servers you are also paired with directly, or through another group, stay paired.',
                     nodes, 'Leave', function () {
-                        var end = Array.prototype.map.call(list.querySelectorAll('input:checked'), function (b) { return b.value; });
-                        return msfpGroupAct('Leave', { end: end });
+                        var ask = Array.prototype.map.call(list.querySelectorAll('input:checked'), function (b) { return b.value; });
+                        return msfpGroupAct('Leave', { ask: ask });
                     }, true);
             }
             function msfpDissolve(g) {
-                var keep = msfpChoice('checkbox', '', 'keep', true, 'Keep the pairings it made');
-                msfpForm('Dissolve "' + g.name + '"', "Every member removes the group. It can't be undone. Kept, each pairing becomes a pairing by hand; otherwise those only this group held end, on every member.",
+                var keep = msfpChoice('checkbox', '', 'keep', true, 'Let members choose to stay paired');
+                msfpForm('Dissolve "' + g.name + '"', "Every member removes the group. It can't be undone. Members paired only through it are unpaired, unless you tick the box: then each member chooses, for each of them, to stay paired or not.",
                     [keep], 'Dissolve', function () { return msfpGroupAct('Dissolve', { keepPairings: keep.querySelector('input').checked }); }, true);
             }
             function msfpGive(g, to) {
