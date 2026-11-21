@@ -4,6 +4,30 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
+## 0.10.0 (2026-11-21)
+
+The Federation page reads better and keeps itself up to date
+(msfp-dotnet 0.7.1-preview).
+
+### Changed
+
+- A group's window: under its name, a row of short badges (what you share,
+  its streams, how new members are accepted), each opening **Settings…**;
+  then tabs **Members**, **Waiting for you**, **Invites** and **Banned**.
+- One **Settings…** window for a group: what you share with it and its
+  limits, what you show from it, how new members are accepted, and for
+  the owner its name and invites a day. The three **Change…** windows are
+  gone.
+- Invites can be copied again, at any time: **Copy** on each one not used
+  yet, under Individual and in a group's **Invites** tab.
+- The page updates by itself when something happens (a server asking,
+  accepted, gone), without reloading it.
+- In a member's **More…**, **Ban…** comes last.
+- **Invite a server** and **Create a group** look the same as **Use a code**.
+- Libraries are listed by their name alone.
+- Windows keep their title and buttons in place; only what is between them
+  scrolls.
+
 ## 0.9.0 (2026-11-21)
 
 A group is managed as a whole, like a server, and invites come from where
