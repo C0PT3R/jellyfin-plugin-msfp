@@ -1,3 +1,4 @@
+[![Listed on JellyWatch Hub](https://jellywatch.app/hub/msfp-federation/badge.svg)](https://jellywatch.app/hub/msfp-federation)
 <img src="logo.png" alt="" width="64" align="left">
 
 # MSFP Federation for Jellyfin
