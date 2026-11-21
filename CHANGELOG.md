@@ -4,6 +4,19 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
+## 0.6.3 (2026-11-21)
+
+### Fixed
+
+- After a paired server's key was stolen and replaced, its group events
+  (a member leaving, a ban, a new name) could take up to 10 minutes to
+  reach the other members. They now arrive as soon as each member has
+  moved to its new key.
+
+### Changed
+
+- msfp-dotnet 0.4.1-preview.
+
 ## 0.6.2 (2026-11-21)
 
 ### Fixed

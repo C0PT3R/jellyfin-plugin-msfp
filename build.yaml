@@ -1,7 +1,7 @@
 ---
 name: "MSFP Federation"
 guid: "505184bf-b92c-487f-a406-bf6b3570fb7f"
-version: "0.6.2.0"
+version: "0.6.3.0"
 targetAbi: "12.2.0.0"
 framework: "net10.0"
 overview: "Federate Jellyfin servers over MSFP, the Media Server Federation Protocol"
@@ -16,7 +16,6 @@ artifacts:
 - "Msfp.Protocol.dll"
 - "BouncyCastle.Cryptography.dll"
 changelog: >
-  Fixes: libraries shared with a group now show their titles to its
-  members; playing a paired server's title right after another pairing
-  ended no longer fails; films sitting directly in a library's folder are
-  identified by their file name instead of waiting to be checked.
+  After a paired server replaces a stolen key, its group events (a member
+  leaving, a ban, a new name) reach the other members at once instead of
+  up to 10 minutes later.
