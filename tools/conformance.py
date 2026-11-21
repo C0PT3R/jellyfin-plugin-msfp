@@ -109,8 +109,9 @@ def confirm_held(wait=60):
 class Operator:
     """The suite's operator steps, through the plugin's API."""
 
-    def __init__(self, suite_address, watch_pause=0):
+    def __init__(self, suite_address, watch_pause=0, group=None):
         self.watch_pause = watch_pause
+        self.group = group      # the group made for the suite: the group steps act on it only
         # The suite moves between its port and the next two (address changes).
         u = urllib.parse.urlsplit(suite_address)
         self.suite_addresses = {"https://%s:%d" % (u.hostname, u.port + i) for i in range(3)}
@@ -149,7 +150,7 @@ class Operator:
 
     def op_admin(self):
         for _ in range(60):
-            for g in call("GET", "/Msfp/Groups")[1] or []:
+            for g in [g for g in call("GET", "/Msfp/Groups")[1] or [] if g["id"] == self.group]:
                 for m in g.get("members") or []:
                     if m.get("role") == "member":
                         print("  [operator] admin named: %s" % call(
@@ -159,7 +160,7 @@ class Operator:
 
     def op_request_accept(self):
         for _ in range(60):
-            for g in call("GET", "/Msfp/Groups")[1] or []:
+            for g in [g for g in call("GET", "/Msfp/Groups")[1] or [] if g["id"] == self.group]:
                 for r in g.get("requests") or []:
                     print("  [operator] request accepted: %s" % call(
                         "POST", "/Msfp/Groups/%s/Requests/%s/Accept" % (g["id"], r["mail"]))[0])
@@ -168,7 +169,7 @@ class Operator:
 
     def op_join_accept(self):
         for _ in range(60):
-            for g in call("GET", "/Msfp/Groups")[1] or []:
+            for g in [g for g in call("GET", "/Msfp/Groups")[1] or [] if g["id"] == self.group]:
                 for j in g.get("joins") or []:
                     print("  [operator] join accepted: %s" % call(
                         "POST", "/Msfp/Groups/%s/Joins/%s/Accept" % (g["id"], j["peer"]))[0])
@@ -263,7 +264,7 @@ def main():
     info = call("GET", "/System/Info/Public")[1]
     report.note("MSFP version 0 conformance suite, %s, against the Jellyfin plugin in Jellyfin %s, "
                 "its operator played through the plugin's API" % (time.strftime("%Y-%m-%d %H:%M:%S %Z"), info.get("Version")))
-    suite = Suite(args, report, operator_hook=Operator(address, getattr(args, "watch_pause", 0)))
+    suite = Suite(args, report, operator_hook=Operator(address, getattr(args, "watch_pause", 0), group))
     try:
         suite.run()
     finally:
