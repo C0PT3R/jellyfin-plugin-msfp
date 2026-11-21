@@ -1,6 +1,7 @@
-<img src="logo.png" alt="" width="128" align="right">
+<img src="logo.png" alt="" width="64" align="left">
 
 # MSFP Federation for Jellyfin
+<div style="clear: both;"></div>
 
 Share your Jellyfin libraries with servers you trust, and let their viewers
 watch your films and series, without giving anyone an account on your
