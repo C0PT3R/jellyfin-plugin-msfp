@@ -4,6 +4,25 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
+## 0.6.1 (2026-11-21)
+
+### Changed
+
+- The configuration page is redesigned. Its tabs are Servers, Groups,
+  Identification, This server and Settings.
+- Servers and groups are compact lists, each with its status in a colored
+  badge (paired, waiting for you, new key to confirm, can't be called…) and
+  only the button it needs now. Everything else about a server is in one
+  window: what you share with it, what you show of it, what its viewers
+  may use, its key, its titles, and ending the pairing.
+- "Make a code" and "Use a code" are buttons; codes not used yet are listed,
+  and can be withdrawn.
+- The titles waiting for identification are a compact table (one line
+  each: the folder, why, the best match), and the ones you chose are folded
+  under "Your choices".
+- Plainer words: library kinds as words, dates in your format, no doubled
+  messages; a peer's titles link to TMDB.
+
 ## 0.6.0 (2026-11-20)
 
 ### Added

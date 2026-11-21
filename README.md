@@ -65,55 +65,58 @@ Updates then come through the same catalog. To build it yourself, see
 
 ## Setting it up
 
-Open the plugin's page (Dashboard, Plugins, MSFP Federation) and fill in:
+Open the plugin's page (Dashboard, Plugins, MSFP Federation) and, under
+**Settings**, fill in:
 
 - **This server's address**: where other servers reach yours, for example
   `https://media.example.org`. Federation stays off until it is set, and
   the page says why.
 - **This server's name**: the name other servers show for yours (optional).
-- **Transcodes at once on this server**: how many conversions may run at
+- **Transcodes at once**: how many conversions may run at
   once, your users' and paired servers' together (2 by default; 0 means
   paired servers only get what plays without conversion).
 
-Save. The page then shows your server's **fingerprint**, a short code that
-identifies it.
+Save. **This server** then shows your server's **fingerprint**, a short
+code that identifies it.
 
 ## Pairing with another server
 
-1. One of you clicks **Make a pairing code** and sends the code to the
-   other. It works once and for a day, unless you choose otherwise (up to
-   100 servers, up to 30 days).
-2. The other pastes it under **A code another operator sent** and clicks
-   **Use this code**.
-3. The server that made the code sees the other in **Peers** and clicks
-   **Accept**.
+1. Under **Servers**, one of you clicks **Make a code** and sends the code
+   to the other. It works once and for a day, unless you choose otherwise
+   (up to 100 servers, up to 30 days). Codes not used yet are listed, and
+   can be withdrawn.
+2. The other clicks **Use a code** and pastes it; the page says what it
+   leads to before anything happens.
+3. The server that made the code sees the other in **Servers**, marked
+   **Waiting for you**, and clicks **Accept**.
 
 Before accepting, compare fingerprints with the other owner by phone or
 another way you trust. If they match, you are pairing with the server you
 think.
 
-Then, for each paired server:
+Each server's row shows its status at a glance (paired, waiting for you,
+new key to confirm, can't be called) and what you share. **Manage…** opens
+its window:
 
-- **Offers…** picks which of your libraries it sees. By default it sees
-  none.
-- **Read…** picks which of its libraries you read (by default all of them,
-  and the ones it adds later).
-- **Titles read…** shows what you have read from it.
-- **Limits…** sets what it may use on your server at once: streams,
-  conversions, and a bitrate cap per stream (2 streams and 1 conversion
-  by default, no cap).
-- **End pairing** stops sharing with it, both ways.
+- **You share with it**: which of your libraries it sees. By default it
+  sees none.
+- **You show on your server**: which of its libraries appear on yours (by
+  default all of them, and the ones it adds later).
+- **What its viewers may use here**: streams, conversions, and a bitrate
+  cap per stream (2 streams and 1 conversion by default, no cap).
+- **Its titles…** lists what you read from it; **End the pairing** stops
+  sharing with it, both ways.
 
 ## Groups
 
 A group lets friends' servers pair with each other without a code for
 each pair. Under **Groups**, **Create a group**: you are its owner. Then:
 
-1. **Invite** makes a code for the group (or **Make a pairing code**,
-   choosing the group under **Leads to**). A server that uses it waits for
+1. **Invite…** makes a code for the group (or **Make a code**, choosing
+   the group under **Leads to**). A server that uses it waits for
    you to accept it, as for any code; once accepted, it's a member.
 2. It then asks every member to pair. Each member answers in the group's
-   window (**Open…**): **Pair** or **Refuse**. No fingerprint to compare:
+   window (**Answer…** or **Open…**): **Pair** or **Refuse**. No fingerprint to compare:
    the group vouches for its members. In **Sharing…**, a member can let
    its server accept new members by itself after a few days.
 3. **Sharing…** sets what you offer the group, as if it were one server,
@@ -134,7 +137,7 @@ users or what they watch. When one of its viewers plays a title, your
 server only learns that a viewer of that server is playing it, not who.
 
 Each pairing has its own limits on your server (2 streams and 1
-conversion at once by default), which **Limits…** changes.
+conversion at once by default), changed in its window (**Manage…**).
 
 ## If something goes wrong
 
