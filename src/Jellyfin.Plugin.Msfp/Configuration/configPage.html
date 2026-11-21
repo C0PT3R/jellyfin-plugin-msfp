@@ -61,49 +61,110 @@
                     #MsfpConfigPage .msfpBadge.msfpWarn { background: rgba(255, 170, 0, 0.3); }
                     #MsfpConfigPage .msfpSection { margin: 1.2em 0 0.4em; opacity: 0.8; }
                     #MsfpConfigPage .msfpStack { display: flex; flex-direction: column; gap: 0.5em; }
+                
+                    /* Lists: one row per server, group, code or title. */
+                    #MsfpConfigPage .msfpBar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6em; margin: 0 0 1em; }
+                    #MsfpConfigPage .msfpBar .emby-button { margin: 0; }
+                    #MsfpConfigPage .msfpBar .msfpLead { flex: 1 1 20em; opacity: 0.75; }
+                    #MsfpConfigPage .msfpList { border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 0.4em; margin: 0 0 1.5em; }
+                    #MsfpConfigPage .msfpList:empty { display: none; }
+                    #MsfpConfigPage .msfpItem { display: grid; grid-template-columns: minmax(0, 16em) minmax(0, 1fr) 16em; gap: 0.3em 1.2em; align-items: center; padding: 0.55em 0.9em; border-top: 1px solid rgba(128, 128, 128, 0.15); }
+                    #MsfpConfigPage .msfpItem:first-child { border-top: 0; }
+                    #MsfpConfigPage .msfpItem.msfpFour { grid-template-columns: minmax(0, 15em) minmax(0, 1fr) minmax(0, 13em) 7em; }
+                    #MsfpConfigPage dialog .msfpChoices .checkboxContainer { margin: 0 0 0.1em; }
+                    #MsfpConfigPage .msfpName { font-weight: 600; overflow-wrap: anywhere; }
+                    #MsfpConfigPage .msfpSub { opacity: 0.65; font-size: 0.85em; overflow-wrap: anywhere; }
+                    #MsfpConfigPage .msfpCellActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.4em; }
+                    #MsfpConfigPage .msfpItem .emby-button { margin: 0; font-size: 0.85em; padding: 0.35em 0.9em; }
+                    #MsfpConfigPage .msfpBadge { display: inline-block; font-size: 0.78em; font-weight: 600; padding: 0.1em 0.6em; margin: 0 0.4em 0 0; border-radius: 1em; white-space: nowrap; background: rgba(128, 128, 128, 0.25); }
+                    #MsfpConfigPage .msfpBadge.msfpOk { background: rgba(76, 175, 80, 0.3); }
+                    #MsfpConfigPage .msfpBadge.msfpWarn { background: rgba(255, 170, 0, 0.35); }
+                    #MsfpConfigPage .msfpBadge.msfpErr { background: rgba(229, 57, 53, 0.4); }
+                    #MsfpConfigPage .msfpBadge.msfpInfo { background: rgba(0, 164, 220, 0.3); }
+                    #MsfpConfigPage .msfpHeading { display: flex; align-items: baseline; gap: 0.6em; margin: 1.5em 0 0.5em; }
+                    #MsfpConfigPage .msfpHeading h3 { margin: 0; }
+                    #MsfpConfigPage .msfpSectionTitle { font-weight: 600; margin: 1.2em 0 0.3em; }
+                    #MsfpConfigPage .msfpSectionTitle:first-child { margin-top: 0; }
+                    #MsfpConfigPage details.msfpFold summary { cursor: pointer; opacity: 0.8; margin: 0.5em 0; }
+                    #MsfpConfigPage .msfpLimits { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 1em; }
+                    @media (max-width: 50em) {
+                        #MsfpConfigPage .msfpItem, #MsfpConfigPage .msfpItem.msfpFour { grid-template-columns: 1fr; }
+                        #MsfpConfigPage .msfpCellActions { justify-content: flex-start; }
+                        #MsfpConfigPage .msfpLimits { grid-template-columns: 1fr; }
+                    }
                 </style>
                 <h2 class="sectionTitle">MSFP Federation</h2>
                 <div class="emby-tabs msfpTabs" role="tablist">
                     <div class="emby-tabs-slider">
-                        <button is="emby-button" type="button" class="emby-tab-button" data-tab="peers" role="tab"><div class="emby-button-foreground">Peers</div></button>
+                        <button is="emby-button" type="button" class="emby-tab-button" data-tab="servers" role="tab"><div class="emby-button-foreground">Servers</div></button>
                         <button is="emby-button" type="button" class="emby-tab-button" data-tab="groups" role="tab"><div class="emby-button-foreground">Groups</div></button>
-                        <button is="emby-button" type="button" class="emby-tab-button" data-tab="settings" role="tab"><div class="emby-button-foreground">Settings</div></button>
+                        <button is="emby-button" type="button" class="emby-tab-button" data-tab="identification" role="tab"><div class="emby-button-foreground">Identification</div></button>
                         <button is="emby-button" type="button" class="emby-tab-button" data-tab="server" role="tab"><div class="emby-button-foreground">This server</div></button>
-                        <button is="emby-button" type="button" class="emby-tab-button" data-tab="titles" role="tab"><div class="emby-button-foreground">Titles</div></button>
+                        <button is="emby-button" type="button" class="emby-tab-button" data-tab="settings" role="tab"><div class="emby-button-foreground">Settings</div></button>
                     </div>
                 </div>
                 <div id="MsfpProblem" class="msfpNotice"></div>
                 <div id="MsfpMessage" class="msfpNotice"></div>
 
-                <div class="msfpPanel" data-panel="peers">
-                    <div class="msfpCard">
-                        <h3>Pair with another server</h3>
-                        <div class="fieldDescription">Send a pairing code to the other operator: it pairs their server with this one, or brings it into one of your groups. You accept each server that uses it, after comparing fingerprints.</div>
-                        <div class="msfpActions">
-                            <button is="emby-button" type="button" id="MsfpMakeCode" class="raised emby-button"><span>Make a pairing code</span></button>
-                        </div>
-                        <textarea id="MsfpCode" is="emby-textarea" class="emby-textarea msfpMono" readonly rows="3" style="width:100%;display:none;margin-top:0.8em"></textarea>
-                        <div class="inputContainer" style="margin:1.5em 0 0">
-                            <label class="inputLabel inputLabelUnfocused" for="MsfpRedeem">Or paste a code another operator sent</label>
-                            <textarea id="MsfpRedeem" is="emby-textarea" class="emby-textarea msfpMono" rows="3" style="width:100%"></textarea>
-                        </div>
-                        <div class="msfpActions">
-                            <button is="emby-button" type="button" id="MsfpRedeemButton" class="raised emby-button"><span>Use this code</span></button>
-                        </div>
+                <div class="msfpPanel" data-panel="servers">
+                    <div class="msfpBar">
+                        <span class="msfpLead">Servers you share with, and whose titles show on yours.</span>
+                        <button is="emby-button" type="button" id="MsfpMakeCode" class="raised button-submit emby-button"><span>Make a code</span></button>
+                        <button is="emby-button" type="button" id="MsfpUseCode" class="raised emby-button"><span>Use a code</span></button>
                     </div>
-                    <h3>Paired servers</h3>
-                    <div id="MsfpPeers"></div>
+                    <div id="MsfpServers" class="msfpList"></div>
+                    <div id="MsfpNoServer" class="fieldDescription" hidden>No server yet. Make a code and send it to another server's owner, or use the code they sent you.</div>
+                    <div id="MsfpCodesBlock" hidden>
+                        <div class="msfpHeading"><h3>Codes not used yet</h3></div>
+                        <div id="MsfpCodes" class="msfpList"></div>
+                    </div>
+                    <div class="msfpHeading"><h3>Their titles on your server</h3></div>
+                    <div class="fieldDescription" id="MsfpPaired"></div>
+                    <div class="fieldDescription">Users who see all libraries see them; for the others, tick them in each user's library access.</div>
+                    <div class="msfpActions">
+                        <button is="emby-button" type="button" id="MsfpPairedAgain" class="raised emby-button" style="display:none"><span>Make the libraries again</span></button>
+                    </div>
                 </div>
 
                 <div class="msfpPanel" data-panel="groups" hidden>
-                    <div class="msfpCard">
-                        <h3>Groups</h3>
-                        <div class="fieldDescription">In a group, every server pairs with the others without a code for each pair: create one, then invite servers with a code (Peers, Make a pairing code). Each member answers the others' requests for itself.</div>
-                        <div class="msfpActions">
-                            <button is="emby-button" type="button" id="MsfpCreateGroup" class="raised emby-button"><span>Create a group</span></button>
-                        </div>
+                    <div class="msfpBar">
+                        <span class="msfpLead">In a group, every server pairs with the others without a code for each pair. Invite with a code; each member answers the others' requests for itself.</span>
+                        <button is="emby-button" type="button" id="MsfpCreateGroup" class="raised button-submit emby-button"><span>Create a group</span></button>
                     </div>
-                    <div id="MsfpGroups"></div>
+                    <div id="MsfpGroups" class="msfpList"></div>
+                    <div id="MsfpNoGroup" class="fieldDescription" hidden>No group yet.</div>
+                </div>
+
+                <div class="msfpPanel" data-panel="identification" hidden>
+                    <div class="msfpBar">
+                        <span class="msfpLead" id="MsfpIdentified"></span>
+                    </div>
+                    <div class="fieldDescription" style="margin-bottom:1em">Before a film or a series is shared, the plugin checks which TMDB title it is. Those it isn't sure of wait for you here; they aren't shared until you choose.</div>
+                    <div id="MsfpToCheck" class="msfpList"></div>
+                    <details class="msfpFold" id="MsfpChosenBlock" hidden>
+                        <summary id="MsfpChosenSummary"></summary>
+                        <div id="MsfpChosen" class="msfpList"></div>
+                    </details>
+                    <div class="fieldDescription" style="margin-top:1.5em">This product uses the TMDB API but is not endorsed or certified by TMDB.</div>
+                </div>
+
+                <div class="msfpPanel" data-panel="server" hidden>
+                    <dl class="msfpFacts">
+                        <dt>Fingerprint</dt><dd><strong id="MsfpFingerprint" class="msfpMono"></strong></dd>
+                        <dt>Address</dt><dd id="MsfpOwnAddress"></dd>
+                        <dt>Next key</dt><dd id="MsfpNextKey" class="msfpMono"></dd>
+                        <dt>Playing here</dt><dd id="MsfpPlaying"></dd>
+                        <dt>Transcodes now</dt><dd id="MsfpTranscoding"></dd>
+                    </dl>
+                    <div class="fieldDescription">The fingerprint is what other owners compare with you, by phone or another way you trust, before they accept your server.</div>
+                    <div class="msfpActions">
+                        <button is="emby-button" type="button" id="MsfpRotate" class="raised emby-button"><span>Change this server's key</span></button>
+                    </div>
+                    <div class="fieldDescription">Moves to the next key, made in advance; paired servers know it and follow by themselves.</div>
+                    <div class="msfpDanger">
+                        <button is="emby-button" type="button" id="MsfpStolen" class="raised button-delete emby-button"><span>This server's key was stolen</span></button>
+                        <div class="fieldDescription">Revokes the key: paired servers stop trusting it, and follow to the next key.</div>
+                    </div>
                 </div>
 
                 <div class="msfpPanel" data-panel="settings" hidden>
@@ -156,43 +217,6 @@
                     </form>
                 </div>
 
-                <div class="msfpPanel" data-panel="server" hidden>
-                    <dl class="msfpFacts">
-                        <dt>Fingerprint</dt><dd><strong id="MsfpFingerprint" class="msfpMono"></strong></dd>
-                        <dt>Address</dt><dd id="MsfpOwnAddress"></dd>
-                        <dt>Next key</dt><dd id="MsfpNextKey" class="msfpMono"></dd>
-                        <dt>Playing here</dt><dd id="MsfpPlaying"></dd>
-                        <dt>Transcodes now</dt><dd id="MsfpTranscoding"></dd>
-                    </dl>
-                    <div class="fieldDescription">Compare fingerprints with the other operator, by phone or another channel you trust, before you accept a pairing.</div>
-                    <div class="msfpActions">
-                        <button is="emby-button" type="button" id="MsfpRotate" class="raised emby-button"><span>Change to the next key</span></button>
-                    </div>
-                    <div class="fieldDescription">Paired servers are told, and follow by themselves.</div>
-                    <div class="msfpDanger">
-                        <button is="emby-button" type="button" id="MsfpStolen" class="raised button-delete emby-button"><span>This server's key was stolen</span></button>
-                        <div class="fieldDescription">Revokes the key: paired servers stop trusting it and follow to the next one.</div>
-                    </div>
-                </div>
-
-                <div class="msfpPanel" data-panel="titles" hidden>
-                    <div class="msfpCard">
-                        <h3>Titles from paired servers</h3>
-                        <p id="MsfpPaired"></p>
-                        <div class="fieldDescription">Two libraries of their films and series, without the titles you have yourself. Users with access to all libraries see them; for the others, tick them in each user's library access.</div>
-                        <div class="msfpActions">
-                            <button is="emby-button" type="button" id="MsfpPairedAgain" class="raised emby-button" style="display:none"><span>Make the libraries again</span></button>
-                        </div>
-                    </div>
-                    <div class="msfpCard">
-                        <h3>Identification</h3>
-                        <p id="MsfpIdentified"></p>
-                        <div class="fieldDescription">Before a film or a series is shared, the plugin checks which TMDB title it is. Only titles clearly identified, or that you chose, are shared; the others wait for you below.</div>
-                    </div>
-                    <div id="MsfpToCheck"></div>
-                    <div class="fieldDescription" style="margin-top:1.5em">This product uses the TMDB API but is not endorsed or certified by TMDB.</div>
-                </div>
-
                 <dialog id="MsfpCheckDialog" class="msfpDialog">
                     <div class="msfpDialogHead">
                         <h3 id="MsfpCheckName"></h3>
@@ -216,70 +240,25 @@
                         <button is="emby-button" type="button" id="MsfpCheckSave" class="raised button-submit emby-button"><span>Save</span></button>
                     </div>
                 </dialog>
-
-                <dialog id="MsfpOffersDialog" class="msfpDialog">
+                <dialog id="MsfpCatalogDialog" class="msfpDialog msfpDialogWide">
                     <div class="msfpDialogHead">
-                        <h3>Offered to <span id="MsfpOffersPeer"></span></h3>
-                        <div class="fieldDescription">It sees the titles of these libraries that have a TMDB ID, and nothing else of this server.</div>
+                        <h3>Titles read from <span id="MsfpCatalogPeer"></span></h3>
+                        <div id="MsfpCatalogSummary" class="fieldDescription"></div>
                     </div>
                     <div class="msfpDialogBody">
-                        <div id="MsfpOffersList" class="msfpChoices"></div>
+                        <table class="msfpTable">
+                            <thead><tr><th>Title</th><th>Kind</th><th>Video</th><th>Audio</th><th>Subtitles</th></tr></thead>
+                            <tbody id="MsfpCatalogTitles"></tbody>
+                        </table>
                     </div>
                     <div class="msfpDialogFoot">
-                        <button is="emby-button" type="button" id="MsfpOffersCancel" class="raised emby-button"><span>Cancel</span></button>
-                        <button is="emby-button" type="button" id="MsfpOffersSave" class="raised button-submit emby-button"><span>Save</span></button>
+                        <button is="emby-button" type="button" id="MsfpCatalogPrev" class="raised emby-button"><span>Previous</span></button>
+                        <button is="emby-button" type="button" id="MsfpCatalogNext" class="raised emby-button"><span>Next</span></button>
+                        <span class="msfpFootSpacer"></span>
+                        <button is="emby-button" type="button" id="MsfpCatalogRead" class="raised emby-button"><span>Read now</span></button>
+                        <button is="emby-button" type="button" id="MsfpCatalogClose" class="raised button-submit emby-button"><span>Close</span></button>
                     </div>
                 </dialog>
-
-                <dialog id="MsfpWantsDialog" class="msfpDialog">
-                    <div class="msfpDialogHead">
-                        <h3>Read from <span id="MsfpWantsPeer"></span></h3>
-                        <div class="fieldDescription">Its titles in these libraries appear in yours.</div>
-                    </div>
-                    <div class="msfpDialogBody">
-                        <div class="checkboxContainer">
-                            <label>
-                                <input type="checkbox" is="emby-checkbox" id="MsfpWantsAll" />
-                                <span>Every library it offers, those it adds later too</span>
-                            </label>
-                        </div>
-                        <div id="MsfpWantsList" class="msfpChoices"></div>
-                    </div>
-                    <div class="msfpDialogFoot">
-                        <button is="emby-button" type="button" id="MsfpWantsCancel" class="raised emby-button"><span>Cancel</span></button>
-                        <button is="emby-button" type="button" id="MsfpWantsSave" class="raised button-submit emby-button"><span>Save</span></button>
-                    </div>
-                </dialog>
-
-                <dialog id="MsfpLimitsDialog" class="msfpDialog">
-                    <div class="msfpDialogHead">
-                        <h3>Limits for <span id="MsfpLimitsPeer"></span></h3>
-                        <div class="fieldDescription">What its viewers may use here, from their next play on.</div>
-                    </div>
-                    <div class="msfpDialogBody">
-                        <div class="inputContainer">
-                            <label class="inputLabel inputLabelUnfocused" for="MsfpLimitsStreams">Streams at once</label>
-                            <input id="MsfpLimitsStreams" type="number" is="emby-input" min="0" max="50" step="1" />
-                            <div class="fieldDescription">0 to 50. 0: none.</div>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel inputLabelUnfocused" for="MsfpLimitsTranscodes">Transcodes at once</label>
-                            <input id="MsfpLimitsTranscodes" type="number" is="emby-input" min="0" max="50" step="1" />
-                            <div class="fieldDescription">No more than the streams. This server's own limit applies as well.</div>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel inputLabelUnfocused" for="MsfpLimitsBitrate">Bitrate cap (kbit/s)</label>
-                            <input id="MsfpLimitsBitrate" type="number" is="emby-input" min="0" max="1000000" step="1" />
-                            <div class="fieldDescription">Per stream, as 8000 for 8 Mbit/s; a file above it is converted. 0: no cap.</div>
-                        </div>
-                        <div id="MsfpLimitsProblem" class="msfpProblem"></div>
-                    </div>
-                    <div class="msfpDialogFoot">
-                        <button is="emby-button" type="button" id="MsfpLimitsCancel" class="raised emby-button"><span>Cancel</span></button>
-                        <button is="emby-button" type="button" id="MsfpLimitsSave" class="raised button-submit emby-button"><span>Save</span></button>
-                    </div>
-                </dialog>
-
                 <dialog id="MsfpGroupDialog" class="msfpDialog msfpDialogWide">
                     <div class="msfpDialogHead">
                         <h3 id="MsfpGroupName"></h3>
@@ -302,23 +281,34 @@
                         <button is="emby-button" type="button" id="MsfpFormSave" class="raised button-submit emby-button"><span>Save</span></button>
                     </div>
                 </dialog>
-                <dialog id="MsfpCatalogDialog" class="msfpDialog msfpDialogWide">
+                <dialog id="MsfpManageDialog" class="msfpDialog msfpDialogWide">
                     <div class="msfpDialogHead">
-                        <h3>Titles read from <span id="MsfpCatalogPeer"></span></h3>
-                        <div id="MsfpCatalogSummary" class="fieldDescription"></div>
+                        <h3 id="MsfpManageName"></h3>
+                        <div id="MsfpManageSummary" class="fieldDescription"></div>
                     </div>
                     <div class="msfpDialogBody">
-                        <table class="msfpTable">
-                            <thead><tr><th>Title</th><th>Kind</th><th>Video</th><th>Audio</th><th>Subtitles</th></tr></thead>
-                            <tbody id="MsfpCatalogTitles"></tbody>
-                        </table>
+                        <div class="msfpSectionTitle">You share with it</div>
+                        <div class="fieldDescription">Your libraries it may show. It sees their titles that have a TMDB ID, and nothing else of this server.</div>
+                        <div id="MsfpManageOffers" class="msfpChoices"></div>
+                        <div class="msfpSectionTitle">You show on your server</div>
+                        <div class="fieldDescription">Its libraries whose titles appear on yours.</div>
+                        <div id="MsfpManageWants" class="msfpChoices"></div>
+                        <div class="msfpSectionTitle">What its viewers may use here</div>
+                        <div class="msfpLimits">
+                            <div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="MsfpLimitsStreams">Streams at once</label><input id="MsfpLimitsStreams" type="number" is="emby-input" min="0" max="50" step="1" /><div class="fieldDescription">0 to 50.</div></div>
+                            <div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="MsfpLimitsTranscodes">Conversions at once</label><input id="MsfpLimitsTranscodes" type="number" is="emby-input" min="0" max="50" step="1" /><div class="fieldDescription">No more than the streams.</div></div>
+                            <div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="MsfpLimitsBitrate">Bitrate cap (kbit/s)</label><input id="MsfpLimitsBitrate" type="number" is="emby-input" min="0" max="1000000" step="1" /><div class="fieldDescription">Per stream. 0: no cap.</div></div>
+                        </div>
+                        <div class="msfpSectionTitle">Its key</div>
+                        <div id="MsfpManageKey" class="fieldDescription msfpMono"></div>
+                        <div id="MsfpManageProblem" class="msfpProblem"></div>
                     </div>
                     <div class="msfpDialogFoot">
-                        <button is="emby-button" type="button" id="MsfpCatalogPrev" class="raised emby-button"><span>Previous</span></button>
-                        <button is="emby-button" type="button" id="MsfpCatalogNext" class="raised emby-button"><span>Next</span></button>
+                        <button is="emby-button" type="button" id="MsfpManageEnd" class="raised button-delete emby-button"><span>End the pairing</span></button>
+                        <button is="emby-button" type="button" id="MsfpManageTitles" class="raised emby-button"><span>Its titles…</span></button>
                         <span class="msfpFootSpacer"></span>
-                        <button is="emby-button" type="button" id="MsfpCatalogRead" class="raised emby-button"><span>Read now</span></button>
-                        <button is="emby-button" type="button" id="MsfpCatalogClose" class="raised button-submit emby-button"><span>Close</span></button>
+                        <button is="emby-button" type="button" id="MsfpManageCancel" class="raised emby-button"><span>Cancel</span></button>
+                        <button is="emby-button" type="button" id="MsfpManageSave" class="raised button-submit emby-button"><span>Save</span></button>
                     </div>
                 </dialog>
             </div>
@@ -431,181 +421,383 @@
             });
             var msfpTabChosen = false;
 
-            function msfpLoad() {
-                msfpIdentification();
-                msfpPaired();
-                ApiClient.getJSON(ApiClient.getUrl('Msfp/Status')).then(function (s) {
-                    document.querySelector('#MsfpProblem').textContent = s.on ? '' : (s.problem || 'Federation is off.');
-                    document.querySelector('#MsfpFingerprint').textContent = s.on ? s.fingerprint : '—';
-                    document.querySelector('#MsfpOwnAddress').textContent = s.on ? s.address + (s.waiting ? ' (moving: not reached there yet)' : '') : '—';
-                    document.querySelector('#MsfpNextKey').textContent = s.on ? s.nextKey + (s.nextOnServer ? '' : ' (not on this server)') : '—';
-                    document.querySelector('#MsfpPlaying').textContent = s.on ? s.playing + (s.playing === 1 ? " paired server's viewer" : " paired servers' viewers") : '—';
-                    document.querySelector('#MsfpTranscoding').textContent = s.on && s.transcodes
-                        ? (s.transcodes.own + s.transcodes.peers) + ' of ' + s.transcodes.most + ' (your users ' + s.transcodes.own + ', paired servers ' + s.transcodes.peers + ')'
-                        : '—';
-                    document.querySelector('#MsfpRotate').disabled = !s.on;
-                    document.querySelector('#MsfpStolen').disabled = !s.on;
-                    // First shown: the peers, or the settings while federation is off.
-                    if (!msfpTabChosen) {
-                        msfpTabChosen = true;
-                        msfpTab(s.on ? 'peers' : 'settings');
-                    }
+
+            function msfpError(e, fallback) {
+                if (e && e.json) {
+                    e.json().then(function (r) { msfpMessage(r.error || fallback); }, function () { msfpMessage(fallback); });
+                } else {
+                    msfpMessage(fallback);
+                }
+            }
+
+            // ---- Lists ----------------------------------------------------------
+
+            var msfpKinds = { movies: 'Films', tvshows: 'Series', mixed: 'Films and series', homevideos: 'Home videos', musicvideos: 'Music videos', boxsets: 'Collections' };
+            function msfpKind(k) { return msfpKinds[k] || (k ? k.charAt(0).toUpperCase() + k.slice(1) : ''); }
+            // A library's name, with its kind when the name doesn't say it.
+            function msfpLibrary(l) {
+                var k = msfpKind(l.kind);
+                return k && k.toLowerCase() !== String(l.name).toLowerCase() ? l.name + ' · ' + k : l.name;
+            }
+            function msfpWhen(d) { return new Date(d).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }); }
+            function msfpNum(n) { return Number(n || 0).toLocaleString(); }
+            function msfpEl(tag, cls, text) {
+                var e = document.createElement(tag);
+                if (cls) e.className = cls;
+                if (text != null) e.textContent = text;
+                return e;
+            }
+            function msfpTag(text, kind) { return msfpEl('span', 'msfpBadge' + (kind ? ' msfp' + kind : ''), text); }
+            // A row of a list: cells of nodes; the last cell holds buttons.
+            function msfpItem(cells, buttons, four) {
+                var row = msfpEl('div', 'msfpItem' + (four ? ' msfpFour' : ''));
+                cells.forEach(function (c) {
+                    var cell = msfpEl('div');
+                    (Array.isArray(c) ? c : [c]).forEach(function (n) { if (n) cell.appendChild(typeof n === 'string' ? document.createTextNode(n) : n); });
+                    row.appendChild(cell);
                 });
-                msfpLoadGroups().then(function () { return ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers')); }).then(function (peers) {
-                    var list = document.querySelector('#MsfpPeers');
+                var acts = msfpEl('div', 'msfpCellActions');
+                (buttons || []).forEach(function (b) { acts.appendChild(b); });
+                row.appendChild(acts);
+                return row;
+            }
+            function msfpPrimary(label, onClick) {
+                var b = msfpButton(label, onClick);
+                b.className = 'raised button-submit emby-button';
+                return b;
+            }
+            function msfpSet(date) { return date && String(date).indexOf('0001-') !== 0; }
+
+            // ---- Servers --------------------------------------------------------
+
+            // A server's state, in a word and a color, and what it waits for.
+            function msfpServerState(p) {
+                if (msfpSet(p.suspended)) return ['Key revoked', 'Err', "It said its key was stolen: nothing is shared until it moves to its next key."];
+                if (p.state === 'ours') return ['Waiting for you', 'Warn', 'It used your code. Compare fingerprints with its owner, then accept it.'];
+                if (p.state === 'theirs') return ['Waiting for its owner', 'Info', 'You used its code; its owner accepts it on their side.'];
+                if (p.state === 'gone') return ['Gone', 'Err', 'It no longer knows this server: remove it.'];
+                if (p.pending) return ['New key to confirm', 'Warn', 'It changed its key: compare the new fingerprint with its owner, then confirm it.'];
+                return ['Paired', 'Ok', ''];
+            }
+            function msfpShareText(p) {
+                if (p.state !== 'paired') return '';
+                var parts = [];
+                parts.push(p.offers ? 'You share ' + msfpPlural(p.offers, 'library', 'libraries') : 'You share nothing');
+                parts.push(p.wants ? 'you show ' + msfpPlural(p.wants, 'of its libraries', 'of its libraries') : 'you show none of its libraries');
+                return parts.join(' · ');
+            }
+            function msfpGroupsText(p) {
+                if (!p.groups || !p.groups.length) return '';
+                return (p.byHand ? 'Paired by hand and through ' : 'Through ') + p.groups.map(function (id) { return msfpGroupName(id); }).join(', ');
+            }
+
+            function msfpLoadServers() {
+                return ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers')).then(function (peers) {
+                    var list = document.querySelector('#MsfpServers');
                     list.textContent = '';
-                    if (!peers.length) {
-                        list.innerHTML = '<div class="fieldDescription">None yet. Make a pairing code, or use one another operator sent.</div>';
-                    }
-                    var states = {
-                        ours: 'Used your code; waiting for you to accept',
-                        theirs: 'Waiting for its operator to accept',
-                        paired: 'Paired',
-                        gone: 'No longer knows this server'
-                    };
+                    document.querySelector('#MsfpNoServer').hidden = peers.length > 0;
                     peers.forEach(function (p) {
                         var key = encodeURIComponent(p.id);
-                        var lines = [(states[p.state] || p.state) + ' · ' + p.address,
-                            'Fingerprint: ' + p.fingerprint + (p.pending ? '. New key to confirm: ' + p.pending : '')];
-                        if (p.groups && p.groups.length) {
-                            lines.push((p.byHand ? 'Paired by hand, and through ' : 'Through ') + p.groups.map(function (id) { return '"' + msfpGroupName(id) + '"'; }).join(', '));
-                        }
+                        var st = msfpServerState(p);
+                        var state = [msfpTag(st[0], st[1])];
+                        if (p.inbound === 'No') state.push(msfpTag("Can't be called", 'Info'));
+                        var detail = [msfpEl('div', null, msfpShareText(p) || st[2])];
+                        if (p.wantsGone) detail.push(msfpEl('div', 'msfpSub', msfpPlural(p.wantsGone, 'library', 'libraries') + ' you show is no longer offered'));
+                        if (msfpGroupsText(p)) detail.push(msfpEl('div', 'msfpSub', msfpGroupsText(p)));
                         var buttons = [];
-                        if (p.state === 'paired') {
-                            lines.push('Offered: ' + (p.offers || 'nothing') + ' · Read: ' + (p.wants || 'nothing'));
-                            lines.push('Here, at most ' + p.limits.streams + ' streams and ' + p.limits.transcodes + ' transcodes' +
-                                (p.limits.bitrateKbps ? ', ' + p.limits.bitrateKbps + ' kbit/s each' : ''));
-                            buttons.push(msfpButton('Offered…', function () { msfpOffers(p); }));
-                            buttons.push(msfpButton('Read…', function () { msfpWants(p); }));
-                            buttons.push(msfpButton('Titles read…', function () { msfpCatalog(p); }));
-                            buttons.push(msfpButton('Limits…', function () { msfpLimits(p); }));
-                        }
                         if (p.state === 'ours') {
-                            buttons.push(msfpButton('Accept', function () {
-                                msfpPost('Msfp/Peers/' + key + '/Accept').then(msfpLoad, msfpLoad);
+                            buttons.push(msfpPrimary('Accept', function () {
+                                if (confirm('Accept ' + p.name + '? Its fingerprint, to compare with its owner: ' + p.fingerprint)) {
+                                    msfpPost('Msfp/Peers/' + key + '/Accept').then(msfpLoad, function (e) { msfpError(e, 'It could not be accepted.'); });
+                                }
                             }));
-                        }
-                        if (p.pending) {
-                            buttons.push(msfpButton('Confirm the new key', function () {
-                                if (confirm('Confirm ' + p.name + "'s new key " + p.pending + '? Compare it with its operator first.')) {
+                            buttons.push(msfpButton('Refuse', function () {
+                                if (confirm('Refuse ' + p.name + '?')) msfpPost('Msfp/Peers/' + key + '/End').then(msfpLoad, msfpLoad);
+                            }, true));
+                        } else if (p.pending && !msfpSet(p.suspended)) {
+                            buttons.push(msfpPrimary('Confirm key', function () {
+                                if (confirm(p.name + "'s new key: " + p.pending + '. Confirm it only if its owner reads you the same.')) {
                                     msfpPost('Msfp/Peers/' + key + '/Confirm').then(msfpLoad, msfpLoad);
                                 }
                             }));
                         }
-                        buttons.push(msfpButton('Check', function () {
-                            msfpPost('Msfp/Peers/' + key + '/Hello').then(msfpLoad, msfpLoad);
-                        }));
-                        buttons.push(msfpButton(p.state === 'paired' ? 'End pairing' : 'Remove', function () {
-                            if (confirm('End the pairing with ' + p.name + '? Only a new code can start it again.')) {
-                                msfpPost('Msfp/Peers/' + key + '/End').then(msfpLoad, msfpLoad);
-                            }
-                        }, true));
-                        list.appendChild(msfpCard(p.name, lines, buttons));
+                        if (p.state === 'paired') {
+                            buttons.push(msfpButton('Manage…', function () { msfpManage(p); }));
+                        } else if (p.state !== 'ours') {
+                            buttons.push(msfpButton('Remove', function () {
+                                if (confirm('Remove ' + p.name + '?')) msfpPost('Msfp/Peers/' + key + '/End').then(msfpLoad, msfpLoad);
+                            }, true));
+                        }
+                        list.appendChild(msfpItem([[msfpEl('div', 'msfpName', p.name), msfpEl('div', 'msfpSub', p.address)], detail], buttons));
+                        // The badges go under the name.
+                        var first = list.lastChild.firstChild;
+                        var badges = msfpEl('div');
+                        state.forEach(function (b) { badges.appendChild(b); });
+                        first.appendChild(badges);
                     });
-                }, function () {
-                    document.querySelector('#MsfpPeers').innerHTML = '<div class="fieldDescription">None yet.</div>';
-                });
+                }, function () { document.querySelector('#MsfpServers').textContent = ''; });
             }
 
-            var msfpOffersFor = null;
-            function msfpOffers(p) {
-                msfpOffersFor = p;
-                document.querySelector('#MsfpOffersPeer').textContent = p.name;
-                ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers/' + encodeURIComponent(p.id) + '/Offers')).then(function (libs) {
-                    var list = document.querySelector('#MsfpOffersList');
+            function msfpLoadCodes() {
+                ApiClient.getJSON(ApiClient.getUrl('Msfp/Codes')).then(function (codes) {
+                    var list = document.querySelector('#MsfpCodes');
                     list.textContent = '';
-                    if (!libs.length) {
-                        list.innerHTML = '<div class="fieldDescription">This server has no film or series library.</div>';
-                    }
-                    libs.forEach(function (l) {
-                        list.appendChild(msfpChoice('checkbox', '', l.id, l.offered, l.name + (l.kind ? ' (' + l.kind + ')' : '')));
+                    document.querySelector('#MsfpCodesBlock').hidden = !codes.length;
+                    codes.forEach(function (c) {
+                        var leads = c.group ? 'Joins "' + msfpGroupName(c.group) + '"' : 'Pairs with this server';
+                        list.appendChild(msfpItem([[msfpEl('div', 'msfpName', c.note || 'No note')],
+                            [msfpEl('div', null, leads + (c.uses > 1 ? ' · ' + c.uses + ' uses left' : '')), msfpEl('div', 'msfpSub', 'Works until ' + msfpWhen(c.expires))]],
+                            [msfpButton('Withdraw', function () {
+                                if (confirm('Withdraw this code? It stops working at once.')) msfpPost('Msfp/Codes/' + encodeURIComponent(c.id) + '/Delete').then(msfpLoad, msfpLoad);
+                            }, true)]));
                     });
-                    document.querySelector('#MsfpOffersDialog').showModal();
-                });
+                }, function () { document.querySelector('#MsfpCodesBlock').hidden = true; });
             }
-
-            document.querySelector('#MsfpOffersSave').addEventListener('click', function () {
-                var ids = Array.prototype.map.call(document.querySelectorAll('#MsfpOffersList input:checked'), function (b) { return b.value; });
-                msfpPost('Msfp/Peers/' + encodeURIComponent(msfpOffersFor.id) + '/Offers', { libraries: ids }).then(function () {
-                    document.querySelector('#MsfpOffersDialog').close();
-                    msfpLoad();
-                }, function () { msfpMessage('The offer could not be saved.'); });
-            });
-            document.querySelector('#MsfpOffersCancel').addEventListener('click', function () {
-                document.querySelector('#MsfpOffersDialog').close();
-            });
-
-            var msfpWantsFor = null;
-            function msfpWants(p) {
-                msfpWantsFor = p;
-                document.querySelector('#MsfpWantsPeer').textContent = p.name;
-                ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers/' + encodeURIComponent(p.id) + '/Theirs')).then(function (r) {
-                    document.querySelector('#MsfpWantsAll').checked = r.all;
-                    var list = document.querySelector('#MsfpWantsList');
-                    list.textContent = '';
-                    r.libraries.forEach(function (l) {
-                        list.appendChild(msfpChoice('checkbox', '', l.id, l.wanted, l.name + (l.kind ? ' (' + l.kind + ')' : '') + (l.gone ? ' (no longer offered)' : '')));
-                    });
-                    msfpWantsAllChanged();
-                    document.querySelector('#MsfpWantsDialog').showModal();
-                }, function () { msfpMessage('Its libraries could not be read.'); });
-            }
-
-            // Every library: the list is then what it means, ticked and locked.
-            function msfpWantsAllChanged() {
-                var all = document.querySelector('#MsfpWantsAll').checked;
-                document.querySelectorAll('#MsfpWantsList input').forEach(function (b) {
-                    if (all) { b.checked = true; }
-                    b.disabled = all;
-                });
-            }
-            document.querySelector('#MsfpWantsAll').addEventListener('change', msfpWantsAllChanged);
-
-            document.querySelector('#MsfpWantsSave').addEventListener('click', function () {
-                var ids = Array.prototype.map.call(document.querySelectorAll('#MsfpWantsList input:checked'), function (b) { return b.value; });
-                msfpPost('Msfp/Peers/' + encodeURIComponent(msfpWantsFor.id) + '/Wants', { all: document.querySelector('#MsfpWantsAll').checked, libraries: ids }).then(function () {
-                    document.querySelector('#MsfpWantsDialog').close();
-                    msfpLoad();
-                }, function () { msfpMessage('The libraries to read could not be saved.'); });
-            });
-            document.querySelector('#MsfpWantsCancel').addEventListener('click', function () {
-                document.querySelector('#MsfpWantsDialog').close();
-            });
 
             function msfpPaired() {
                 ApiClient.getJSON(ApiClient.getUrl('Msfp/Paired')).then(function (r) {
-                    function lib(state, name, fallback, count) {
-                        if (state === 'removed') return fallback + ': removed';
-                        if (state === 'making') return (name || fallback) + ': being made';
-                        if (state === 'ready') return (name || fallback) + ': ' + count;
-                        return fallback + ': not made yet';
-                    }
-                    document.querySelector('#MsfpPaired').textContent =
-                        lib(r.Films, r.FilmsName, 'Films from paired servers', r.FilmCount + (r.FilmCount === 1 ? ' film' : ' films')) + '. ' +
-                        lib(r.Series, r.SeriesName, 'Series from paired servers', r.SeriesCount + ' series, ' + r.EpisodeCount + (r.EpisodeCount === 1 ? ' episode' : ' episodes')) + '.';
-                    document.querySelector('#MsfpPairedAgain').style.display = r.Films === 'removed' || r.Series === 'removed' ? '' : 'none';
-                }, function () { document.querySelector('#MsfpPaired').textContent = "The paired servers' titles could not be read."; });
+                    var parts = [];
+                    if (r.Films === 'ready') parts.push(msfpNum(r.FilmCount) + ' films in "' + (r.FilmsName || 'Films from paired servers') + '"');
+                    if (r.Series === 'ready') parts.push(msfpNum(r.SeriesCount) + ' series (' + msfpNum(r.EpisodeCount) + ' episodes) in "' + (r.SeriesName || 'Series from paired servers') + '"');
+                    var removed = r.Films === 'removed' || r.Series === 'removed';
+                    var making = r.Films === 'making' || r.Series === 'making';
+                    document.querySelector('#MsfpPaired').textContent = parts.length ? parts.join(', ') + '.' :
+                        removed ? 'Their libraries on your server were removed.' : making ? 'Their libraries are being made on your server.' : 'Nothing yet: their titles show once you show some of their libraries.';
+                    document.querySelector('#MsfpPairedAgain').style.display = removed ? '' : 'none';
+                }, function () { document.querySelector('#MsfpPaired').textContent = "Their titles on your server couldn't be read."; });
             }
             document.querySelector('#MsfpPairedAgain').addEventListener('click', function () {
                 msfpPost('Msfp/Paired/MakeAgain').then(msfpPaired, msfpPaired);
             });
 
-            var msfpCheckFor = null;
+            // One server's window: what you share, what you show, its limits.
+            var msfpManaged = null;
+            var msfpTheirsRead = false;
+            function msfpManage(p) {
+                msfpManaged = p;
+                msfpTheirsRead = false;
+                var key = encodeURIComponent(p.id);
+                document.querySelector('#MsfpManageName').textContent = p.name;
+                document.querySelector('#MsfpManageSummary').textContent = p.address + ' · paired ' + new Date(p.paired).toLocaleDateString(undefined, { dateStyle: 'medium' }) + (msfpGroupsText(p) ? ' · ' + msfpGroupsText(p) : '');
+                document.querySelector('#MsfpManageKey').textContent = 'Fingerprint ' + p.fingerprint;
+                document.querySelector('#MsfpManageProblem').textContent = '';
+                document.querySelector('#MsfpLimitsStreams').value = p.limits.streams;
+                document.querySelector('#MsfpLimitsTranscodes').value = p.limits.transcodes;
+                document.querySelector('#MsfpLimitsBitrate').value = p.limits.bitrateKbps || 0;
+                var offers = document.querySelector('#MsfpManageOffers');
+                var wants = document.querySelector('#MsfpManageWants');
+                offers.textContent = 'Reading…';
+                wants.textContent = 'Asking ' + p.name + '…';
+                ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers/' + key + '/Offers')).then(function (libs) {
+                    offers.textContent = '';
+                    if (!libs.length) offers.appendChild(msfpText('This server has no film or series library.'));
+                    libs.forEach(function (l) { offers.appendChild(msfpChoice('checkbox', '', l.id, l.offered, msfpLibrary(l))); });
+                });
+                ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers/' + key + '/Theirs')).then(function (r) {
+                    wants.textContent = '';
+                    var all = msfpChoice('checkbox', '', 'all', r.all, 'Every library it offers, those it adds later too');
+                    all.querySelector('input').id = 'MsfpWantsAll';
+                    wants.appendChild(all);
+                    r.libraries.forEach(function (l) {
+                        wants.appendChild(msfpChoice('checkbox', '', l.id, l.wanted, msfpLibrary(l) + (l.gone ? ' · no longer offered' : '')));
+                    });
+                    var sync = function () {
+                        var on = all.querySelector('input').checked;
+                        wants.querySelectorAll('input:not(#MsfpWantsAll)').forEach(function (b) { if (on) b.checked = true; b.disabled = on; });
+                    };
+                    all.querySelector('input').addEventListener('change', sync);
+                    sync();
+                    msfpTheirsRead = true;
+                }, function () {
+                    wants.textContent = '';
+                    wants.appendChild(msfpText(p.name + " can't be reached now: what you show of it can't be changed until it can."));
+                });
+                msfpThemeDialogs();
+                document.querySelector('#MsfpManageDialog').showModal();
+            }
+            document.querySelector('#MsfpManageCancel').addEventListener('click', function () { document.querySelector('#MsfpManageDialog').close(); });
+            document.querySelector('#MsfpManageTitles').addEventListener('click', function () { msfpCatalog(msfpManaged); });
+            document.querySelector('#MsfpManageEnd').addEventListener('click', function () {
+                var p = msfpManaged;
+                if (confirm('End the pairing with ' + p.name + '? It ends on both servers at once; only a new code starts it again.')) {
+                    msfpPost('Msfp/Peers/' + encodeURIComponent(p.id) + '/End').then(function () {
+                        document.querySelector('#MsfpManageDialog').close();
+                        msfpLoad();
+                    }, function (e) { msfpError(e, 'The pairing could not be ended.'); });
+                }
+            });
+            document.querySelector('#MsfpManageSave').addEventListener('click', function () {
+                var p = msfpManaged;
+                var key = encodeURIComponent(p.id);
+                var problem = document.querySelector('#MsfpManageProblem');
+                var l = msfpLimitsTyped();
+                if (!l) {
+                    problem.textContent = 'Streams go from 0 to 50, conversions from 0 to the streams, the bitrate cap from 0 to 1,000,000.';
+                    return;
+                }
+                var picked = function (sel) { return Array.prototype.map.call(document.querySelectorAll(sel + ' input:checked'), function (b) { return b.value; }).filter(function (v) { return v !== 'all'; }); };
+                var steps = [msfpPost('Msfp/Peers/' + key + '/Offers', { libraries: picked('#MsfpManageOffers') }), msfpPost('Msfp/Peers/' + key + '/Limits', l)];
+                if (msfpTheirsRead) {
+                    steps.push(msfpPost('Msfp/Peers/' + key + '/Wants', { all: document.querySelector('#MsfpWantsAll').checked, libraries: picked('#MsfpManageWants') }));
+                }
+                Promise.all(steps).then(function () {
+                    document.querySelector('#MsfpManageDialog').close();
+                    msfpLoad();
+                }, function () { problem.textContent = 'It could not all be saved: try again.'; });
+            });
+
+            // Another server's code: what it leads to, said first.
+            document.querySelector('#MsfpUseCode').addEventListener('click', function () {
+                var field = msfpField('Code', '<textarea is="emby-textarea" class="emby-textarea msfpMono" rows="4" style="width:100%"></textarea>', 'The code another server\'s owner sent you, starting with msfp-pair-0.');
+                msfpForm('Use a code', 'It pairs your server with theirs, or brings it into their group. Their owner accepts it on their side.', [field], 'Read the code', function () {
+                    var code = field.querySelector('textarea').value.trim();
+                    return msfpPost('Msfp/Preview', { code: code }).then(function (p) {
+                        var what = p.groupName ? 'This code invites your server to the group "' + p.groupName + '", from ' + p.address + '. Once its owner accepts, your server joins the group and asks every member to pair.'
+                            : 'This code pairs your server with ' + p.address + '.';
+                        if (!confirm(what + ' Its fingerprint, to compare with its owner: ' + p.fingerprint + '. Go on?')) return;
+                        return msfpPost('Msfp/Redeem', { code: code }).then(function (r) {
+                            msfpMessage('Waiting for ' + r.name + "'s owner to accept" + (p.groupName ? '; your server then joins "' + p.groupName + '".' : '.'));
+                            msfpLoad();
+                        });
+                    });
+                });
+            });
+            document.querySelector('#MsfpMakeCode').addEventListener('click', function () { msfpMessage(''); msfpNewCode(''); });
+
+            // ---- Identification ---------------------------------------------------
+
             function msfpIdentification() {
                 ApiClient.getJSON(ApiClient.getUrl('Msfp/Identification')).then(function (r) {
                     var keys = { own: 'with your TMDB key', plugin: "with the plugin's TMDB key", none: 'not possible yet: no TMDB key (set yours in Settings)' };
-                    document.querySelector('#MsfpIdentified').textContent = 'Identified and shared: ' + r.taken + '; waiting for you: ' + r.toCheck +
-                        '. Identification ' + (keys[r.key] || r.key) + (r.running ? '; identifying now…' : '.');
-                    var list = document.querySelector('#MsfpToCheck');
-                    list.textContent = '';
+                    document.querySelector('#MsfpIdentified').textContent = msfpNum(r.taken) + ' identified and shared · ' + (r.toCheck ? r.toCheck + ' waiting for you' : 'none waiting for you') +
+                        ' · identified ' + (keys[r.key] || r.key) + (r.running ? ' · identifying now…' : '');
+                    var waiting = document.querySelector('#MsfpToCheck');
+                    var chosen = document.querySelector('#MsfpChosen');
+                    waiting.textContent = '';
+                    chosen.textContent = '';
+                    var nChosen = 0;
                     r.titles.forEach(function (t) {
-                        list.appendChild(msfpCard((t.folder || t.name) + (t.kind === 'series' ? ' (series)' : ' (film)'),
-                            [t.chosen ? 'Your choice: ' + (t.chosenName || 'TMDB ' + t.chosen) : t.match ? 'To check' : 'Not found on TMDB',
-                                t.chosen ? '' : (t.reasons || []).join(' ')],
-                            [msfpButton('Check…', function () { msfpCheck(t); })]));
+                        var title = [msfpEl('div', 'msfpName', t.folder || t.name), msfpEl('div', 'msfpSub', t.kind === 'series' ? 'Series' : 'Film')];
+                        if (t.chosen) {
+                            nChosen++;
+                            chosen.appendChild(msfpItem([title, [msfpEl('div', null, t.chosenName || 'TMDB ' + t.chosen)]],
+                                [msfpButton('Change…', function () { msfpCheck(t); })]));
+                            return;
+                        }
+                        var best = (t.candidates || []).filter(function (c) { return c.tmdb === t.match; })[0];
+                        var why = (t.reasons || []).join(' ');
+                        var match = best ? best.name + ' (' + (best.year || '?') + ')' : '—';
+                        waiting.appendChild(msfpItem([title, [msfpEl('div', null, why)], [msfpEl('div', 'msfpSub', best ? 'Best match' : ''), msfpEl('div', null, match)]],
+                            [msfpPrimary('Choose…', function () { msfpCheck(t); })], true));
                     });
+                    var block = document.querySelector('#MsfpChosenBlock');
+                    block.hidden = nChosen === 0;
+                    document.querySelector('#MsfpChosenSummary').textContent = 'Your choices (' + nChosen + ')';
                 }, function () { document.querySelector('#MsfpIdentified').textContent = 'The identification could not be read.'; });
             }
+
+            // ---- Loading ----------------------------------------------------------
+
+            function msfpLoad() {
+                msfpIdentification();
+                msfpPaired();
+                ApiClient.getJSON(ApiClient.getUrl('Msfp/Status')).then(function (s) {
+                    document.querySelector('#MsfpProblem').textContent = s.on ? '' : (s.problem || 'Federation is off: set this server\'s address in Settings.');
+                    document.querySelector('#MsfpFingerprint').textContent = s.on ? s.fingerprint : '—';
+                    document.querySelector('#MsfpOwnAddress').textContent = s.on ? s.address + (s.waiting ? ' (moving: not reached there yet)' : '') : '—';
+                    document.querySelector('#MsfpNextKey').textContent = s.on ? s.nextKey + (s.nextOnServer ? '' : ' (not on this server)') : '—';
+                    document.querySelector('#MsfpPlaying').textContent = s.on ? (s.playing ? msfpPlural(s.playing, 'viewer') + ' of other servers' : 'Nobody from other servers') : '—';
+                    document.querySelector('#MsfpTranscoding').textContent = s.on && s.transcodes
+                        ? (s.transcodes.own + s.transcodes.peers) + ' of ' + s.transcodes.most + ' (your users ' + s.transcodes.own + ', other servers ' + s.transcodes.peers + ')'
+                        : '—';
+                    document.querySelector('#MsfpRotate').disabled = !s.on;
+                    document.querySelector('#MsfpStolen').disabled = !s.on;
+                    if (!msfpTabChosen) {
+                        msfpTabChosen = true;
+                        msfpTab(s.on ? 'servers' : 'settings');
+                    }
+                });
+                msfpLoadGroups().then(function () {
+                    msfpLoadServers();
+                    msfpLoadCodes();
+                });
+            }
+
+            var msfpCatalogFor = null;
+            // The keys each shown batch starts after: the last is the one shown.
+            var msfpCatalogAfters = [''];
+            var msfpCatalogNext = null;
+            var msfpKindNames = { movie: 'films', series: 'series', season: 'seasons', episode: 'episodes', artist: 'artists', album: 'albums', track: 'tracks' };
+            var msfpKindName = { movie: 'film', series: 'series', season: 'season', episode: 'episode', artist: 'artist', album: 'album', track: 'track' };
+            function msfpCatalog(p, after) {
+                if (msfpCatalogFor !== p || after === undefined) {
+                    msfpCatalogAfters = [''];
+                }
+                msfpCatalogFor = p;
+                var from = msfpCatalogAfters[msfpCatalogAfters.length - 1];
+                document.querySelector('#MsfpCatalogPeer').textContent = p.name;
+                ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers/' + encodeURIComponent(p.id) + '/Catalog', { after: from })).then(function (c) {
+                    var n = function (x) { return x.toLocaleString(); };
+                    var kinds = Object.keys(c.kinds).map(function (k) { return n(c.kinds[k]) + ' ' + (msfpKindNames[k] || k); }).join(', ');
+                    var first = (msfpCatalogAfters.length - 1) * 1000;
+                    document.querySelector('#MsfpCatalogSummary').textContent =
+                        n(c.total) + ' titles' + (kinds ? ' (' + kinds + ')' : '') + ', from ' +
+                        c.libraries.filter(function (l) { return l.wanted; }).map(function (l) { return l.name; }).join(', ') +
+                        (c.total > 1000 ? '. Showing ' + n(first + 1) + ' to ' + n(first + c.titles.length) + '.' : '.');
+                    msfpCatalogNext = c.next;
+                    document.querySelector('#MsfpCatalogNext').disabled = !c.next;
+                    document.querySelector('#MsfpCatalogPrev').disabled = msfpCatalogAfters.length < 2;
+                    var body = document.querySelector('#MsfpCatalogTitles');
+                    body.textContent = '';
+                    c.titles.forEach(function (t) {
+                        var tr = document.createElement('tr');
+                        var tmdb = /^(movie|series)\/tmdb\/(\d+)$/.exec(t.key);
+                        var first = document.createElement('td');
+                        if (tmdb) {
+                            var a = document.createElement('a');
+                            a.href = 'https://www.themoviedb.org/' + (tmdb[1] === 'series' ? 'tv' : 'movie') + '/' + tmdb[2];
+                            a.target = '_blank';
+                            a.rel = 'noopener noreferrer';
+                            a.textContent = 'TMDB ' + tmdb[2];
+                            first.appendChild(a);
+                        } else {
+                            first.textContent = t.key;
+                        }
+                        tr.appendChild(first);
+                        [msfpKindName[t.kind] || t.kind, t.height ? t.height + 'p' : '', t.audio.join(', '), t.subtitles.join(', ')].forEach(function (v) {
+                            var td = document.createElement('td');
+                            td.textContent = v;
+                            tr.appendChild(td);
+                        });
+                        body.appendChild(tr);
+                    });
+                    var d = document.querySelector('#MsfpCatalogDialog');
+                    if (!d.open) { d.showModal(); }
+                });
+            }
+
+            document.querySelector('#MsfpCatalogNext').addEventListener('click', function () {
+                if (msfpCatalogNext) {
+                    msfpCatalogAfters.push(msfpCatalogNext);
+                    msfpCatalog(msfpCatalogFor, msfpCatalogNext);
+                }
+            });
+            document.querySelector('#MsfpCatalogPrev').addEventListener('click', function () {
+                if (msfpCatalogAfters.length > 1) {
+                    msfpCatalogAfters.pop();
+                    msfpCatalog(msfpCatalogFor, msfpCatalogAfters[msfpCatalogAfters.length - 1]);
+                }
+            });
+            document.querySelector('#MsfpCatalogRead').addEventListener('click', function () {
+                document.querySelector('#MsfpCatalogSummary').textContent = 'Reading…';
+                msfpPost('Msfp/Peers/' + encodeURIComponent(msfpCatalogFor.id) + '/Read').then(function () {
+                    msfpCatalog(msfpCatalogFor);
+                }, function () { msfpCatalog(msfpCatalogFor); });
+            });
+            document.querySelector('#MsfpCatalogClose').addEventListener('click', function () {
+                document.querySelector('#MsfpCatalogDialog').close();
+            });
+
             function msfpCheck(t) {
                 msfpCheckFor = t;
                 document.querySelector('#MsfpCheckName').textContent = t.folder || t.name;
@@ -669,16 +861,6 @@
                 document.querySelector('#MsfpCheckDialog').close();
             });
 
-            var msfpLimitsFor = null;
-            function msfpLimits(p) {
-                msfpLimitsFor = p;
-                document.querySelector('#MsfpLimitsPeer').textContent = p.name;
-                document.querySelector('#MsfpLimitsStreams').value = p.limits.streams;
-                document.querySelector('#MsfpLimitsTranscodes').value = p.limits.transcodes;
-                document.querySelector('#MsfpLimitsBitrate').value = p.limits.bitrateKbps || 0;
-                document.querySelector('#MsfpLimitsProblem').textContent = '';
-                document.querySelector('#MsfpLimitsDialog').showModal();
-            }
             // The limits typed, as whole numbers within MSFP's ranges; null when not.
             function msfpLimitsTyped() {
                 var n = function (sel) {
@@ -690,96 +872,6 @@
                     return null;
                 }
                 return l;
-            }
-            document.querySelector('#MsfpLimitsSave').addEventListener('click', function () {
-                var l = msfpLimitsTyped();
-                var problem = document.querySelector('#MsfpLimitsProblem');
-                if (!l) {
-                    problem.textContent = 'Streams go from 0 to 50, transcodes from 0 to the streams, the bitrate cap from 0 to 1,000,000.';
-                    return;
-                }
-                msfpPost('Msfp/Peers/' + encodeURIComponent(msfpLimitsFor.id) + '/Limits', l).then(function () {
-                    document.querySelector('#MsfpLimitsDialog').close();
-                    msfpLoad();
-                }, function () { problem.textContent = 'The limits could not be saved.'; });
-            });
-            document.querySelector('#MsfpLimitsCancel').addEventListener('click', function () {
-                document.querySelector('#MsfpLimitsDialog').close();
-            });
-
-            var msfpCatalogFor = null;
-            // The keys each shown batch starts after: the last is the one shown.
-            var msfpCatalogAfters = [''];
-            var msfpCatalogNext = null;
-            var msfpKindNames = { movie: 'films', series: 'series', season: 'seasons', episode: 'episodes', artist: 'artists', album: 'albums', track: 'tracks' };
-            var msfpKindName = { movie: 'film', series: 'series', season: 'season', episode: 'episode', artist: 'artist', album: 'album', track: 'track' };
-            function msfpCatalog(p, after) {
-                if (msfpCatalogFor !== p || after === undefined) {
-                    msfpCatalogAfters = [''];
-                }
-                msfpCatalogFor = p;
-                var from = msfpCatalogAfters[msfpCatalogAfters.length - 1];
-                document.querySelector('#MsfpCatalogPeer').textContent = p.name;
-                ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers/' + encodeURIComponent(p.id) + '/Catalog', { after: from })).then(function (c) {
-                    var n = function (x) { return x.toLocaleString(); };
-                    var kinds = Object.keys(c.kinds).map(function (k) { return n(c.kinds[k]) + ' ' + (msfpKindNames[k] || k); }).join(', ');
-                    var first = (msfpCatalogAfters.length - 1) * 1000;
-                    document.querySelector('#MsfpCatalogSummary').textContent =
-                        n(c.total) + ' titles' + (kinds ? ' (' + kinds + ')' : '') + ', from ' +
-                        c.libraries.filter(function (l) { return l.wanted; }).map(function (l) { return l.name; }).join(', ') +
-                        (c.total > 1000 ? '. Showing ' + n(first + 1) + ' to ' + n(first + c.titles.length) + '.' : '.');
-                    msfpCatalogNext = c.next;
-                    document.querySelector('#MsfpCatalogNext').disabled = !c.next;
-                    document.querySelector('#MsfpCatalogPrev').disabled = msfpCatalogAfters.length < 2;
-                    var body = document.querySelector('#MsfpCatalogTitles');
-                    body.textContent = '';
-                    c.titles.forEach(function (t) {
-                        var tr = document.createElement('tr');
-                        [t.key, msfpKindName[t.kind] || t.kind, t.height ? t.height + 'p' : '', t.audio.join(', '), t.subtitles.join(', ')].forEach(function (v) {
-                            var td = document.createElement('td');
-                            td.textContent = v;
-                            tr.appendChild(td);
-                        });
-                        body.appendChild(tr);
-                    });
-                    var d = document.querySelector('#MsfpCatalogDialog');
-                    if (!d.open) { d.showModal(); }
-                });
-            }
-
-            document.querySelector('#MsfpCatalogNext').addEventListener('click', function () {
-                if (msfpCatalogNext) {
-                    msfpCatalogAfters.push(msfpCatalogNext);
-                    msfpCatalog(msfpCatalogFor, msfpCatalogNext);
-                }
-            });
-            document.querySelector('#MsfpCatalogPrev').addEventListener('click', function () {
-                if (msfpCatalogAfters.length > 1) {
-                    msfpCatalogAfters.pop();
-                    msfpCatalog(msfpCatalogFor, msfpCatalogAfters[msfpCatalogAfters.length - 1]);
-                }
-            });
-            document.querySelector('#MsfpCatalogRead').addEventListener('click', function () {
-                document.querySelector('#MsfpCatalogSummary').textContent = 'Reading…';
-                msfpPost('Msfp/Peers/' + encodeURIComponent(msfpCatalogFor.id) + '/Read').then(function () {
-                    msfpCatalog(msfpCatalogFor);
-                }, function () { msfpCatalog(msfpCatalogFor); });
-            });
-            document.querySelector('#MsfpCatalogClose').addEventListener('click', function () {
-                document.querySelector('#MsfpCatalogDialog').close();
-            });
-
-            document.querySelector('#MsfpMakeCode').addEventListener('click', function () {
-                msfpMessage('');
-                msfpNewCode('');
-            });
-
-            function msfpError(e, fallback) {
-                if (e && e.json) {
-                    e.json().then(function (r) { msfpMessage(r.error || fallback); }, function () { msfpMessage(fallback); });
-                } else {
-                    msfpMessage(fallback);
-                }
             }
 
             document.querySelector('#MsfpRotate').addEventListener('click', function () {
@@ -793,25 +885,6 @@
                     msfpPost('Msfp/Key/Stolen', {}).then(function () { msfpMessage('Key revoked; this server moved to its next key.'); msfpLoad(); },
                         function (e) { msfpError(e, 'The key could not be revoked.'); });
                 }
-            });
-
-            document.querySelector('#MsfpRedeemButton').addEventListener('click', function () {
-                var code = document.querySelector('#MsfpRedeem').value;
-                msfpMessage('Reading the code…');
-                // A group's code says so first: using it joins the group.
-                msfpPost('Msfp/Preview', { code: code }).then(function (p) {
-                    if (p.groupName && !confirm('This code invites this server to the group "' + p.groupName + '", from ' + p.address + ' (fingerprint ' + p.fingerprint +
-                        '). Once its operator accepts, this server joins the group and asks every member to pair. Join?')) {
-                        msfpMessage('');
-                        return;
-                    }
-                    msfpMessage('Using the code…');
-                    msfpPost('Msfp/Redeem', { code: code }).then(function (r) {
-                        msfpMessage('Waiting for ' + r.name + "'s operator to accept" + (p.groupName ? '; this server then joins "' + p.groupName + '"' : '') + '. Its fingerprint: ' + r.fingerprint);
-                        document.querySelector('#MsfpRedeem').value = '';
-                        msfpLoad();
-                    }, function (e) { msfpError(e, 'That code could not be used.'); });
-                }, function (e) { msfpError(e, 'That code could not be used.'); });
             });
 
             // ---- Forms in a dialog -------------------------------------------
@@ -886,19 +959,21 @@
                     msfpGroups = groups;
                     var list = document.querySelector('#MsfpGroups');
                     list.textContent = '';
-                    if (!groups.length) {
-                        list.appendChild(msfpText('No group yet.'));
-                    }
+                    document.querySelector('#MsfpNoGroup').hidden = groups.length > 0;
                     groups.forEach(function (g) {
+                        var others = g.members.length - 1;
                         var paired = g.members.filter(function (m) { return m.paired; }).length;
-                        var lines = [msfpRoles[g.role] + ' · ' + msfpPlural(g.members.length, 'server') + ', paired with ' + paired + ' of ' + (g.members.length - 1) +
-                            (g.joining ? ' · joining: the list comes once its operator accepts' : '') + (g.dissolved ? ' · dissolved' : '')];
-                        if (msfpWaiting(g)) lines.push(msfpPlural(msfpWaiting(g), 'request') + ' waiting for you');
-                        var buttons = [msfpButton('Open…', function () { msfpOpenGroup(g.id); })];
-                        if ((g.role === 'owner' || g.role === 'admin') && !g.dissolved) {
-                            buttons.push(msfpButton('Invite…', function () { msfpNewCode(g.id); }));
-                        }
-                        list.appendChild(msfpCard(g.name || 'A group', lines, buttons));
+                        var badges = msfpEl('div');
+                        badges.appendChild(msfpTag({ owner: 'Owner', admin: 'Admin', member: 'Member' }[g.role], g.role === 'member' ? '' : 'Info'));
+                        if (msfpWaiting(g)) badges.appendChild(msfpTag(msfpPlural(msfpWaiting(g), 'request') + ' for you', 'Warn'));
+                        if (g.joining) badges.appendChild(msfpTag('Joining', 'Info'));
+                        var buttons = [];
+                        if (msfpWaiting(g)) buttons.push(msfpPrimary('Answer…', function () { msfpOpenGroup(g.id); }));
+                        if ((g.role === 'owner' || g.role === 'admin') && !g.dissolved) buttons.push(msfpButton('Invite…', function () { msfpNewCode(g.id); }));
+                        buttons.push(msfpButton('Open…', function () { msfpOpenGroup(g.id); }));
+                        list.appendChild(msfpItem([[msfpEl('div', 'msfpName', g.name || 'A group'), badges],
+                            [msfpEl('div', null, msfpPlural(g.members.length, 'server') + (!others ? '' : paired === others ? ', paired with ' + (others === 1 ? 'the other' : 'all ' + others + ' others') : ', paired with ' + paired + ' of the ' + others + ' others')),
+                                msfpEl('div', 'msfpSub', 'You share ' + msfpPlural(g.offers, 'library', 'libraries') + ' with it')]], buttons));
                     });
                     if (msfpGroupOpen) {
                         if (groups.some(function (g) { return g.id === msfpGroupOpen; })) {
@@ -1154,7 +1229,6 @@
             }
 
             // ---- Codes ---------------------------------------------------------
-
             function msfpNewCode(group) {
                 var note = msfpField('For', '<input type="text" is="emby-input" maxlength="80" placeholder="Marc\'s server" />', 'A note for you, to tell your codes apart.');
                 var leads = msfpField('Leads to', '<select is="emby-select" class="emby-select-withcolor emby-select"></select>', "A group's code: the server joins the group once you accept it, then asks every member to pair.");
@@ -1177,15 +1251,22 @@
                     [note, leads, uses, hours], 'Make the code', function () {
                         var body = { note: note.querySelector('input').value.trim(), group: select.value, uses: parseInt(uses.querySelector('input').value, 10) || 1, hours: parseInt(hours.querySelector('select').value, 10) };
                         return msfpPost('Msfp/Codes', body).then(function (r) {
-                            msfpTab('peers');
-                            var box = document.querySelector('#MsfpCode');
-                            box.value = r.code;
-                            box.style.display = 'block';
-                            box.select();
-                            msfpMessage('Copy the code now: it is not shown again. It works ' + (r.uses > 1 ? 'for ' + r.uses + ' servers' : 'once') + ', until ' + new Date(r.expires).toLocaleString() +
+                            msfpTab('servers');
+                            msfpLoad();
+                            msfpShowCode(r.code, 'Copy the code now: it is not shown again. It works ' + (r.uses > 1 ? 'for ' + r.uses + ' servers' : 'once') + ', until ' + msfpWhen(r.expires) +
                                 (r.group ? ', and brings the server into "' + msfpGroupName(r.group) + '".' : '.'));
                         });
                     });
+            }
+
+            // A new code, shown once, ready to copy.
+            function msfpShowCode(code, text) {
+                setTimeout(function () {
+                    var box = msfpField('Code', '<textarea is="emby-textarea" class="emby-textarea msfpMono" rows="4" readonly style="width:100%"></textarea>', text);
+                    box.querySelector('textarea').value = code;
+                    msfpForm('Your code', 'Copy it now and send it to the other server\'s owner: it isn\'t shown again. Compare fingerprints with them by phone or another way you trust before you accept their server.', [box], null, null);
+                    box.querySelector('textarea').select();
+                }, 0);
             }
 
             document.querySelector('#MsfpConfigPage')
