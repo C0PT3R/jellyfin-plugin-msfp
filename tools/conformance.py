@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Runs msfp-spec's version 1 conformance suite against the plugin in a
+"""Runs msfp-spec's version 0 conformance suite against the plugin in a
 Jellyfin, playing the server's operator through the plugin's API
 (accept, offer, want, confirm, key changes), so that every check that
 needs an operator runs too.
@@ -228,7 +228,7 @@ def main():
                                     "--listen", host_port, "--json", json_out] + rest)
     report = Report(verbose=args.verbose)
     info = call("GET", "/System/Info/Public")[1]
-    report.note("MSFP version 1 conformance suite, %s, against the Jellyfin plugin in Jellyfin %s, "
+    report.note("MSFP version 0 conformance suite, %s, against the Jellyfin plugin in Jellyfin %s, "
                 "its operator played through the plugin's API" % (time.strftime("%Y-%m-%d %H:%M:%S %Z"), info.get("Version")))
     suite = Suite(args, report, operator_hook=Operator(address, getattr(args, "watch_pause", 0)))
     try:

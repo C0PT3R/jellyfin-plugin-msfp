@@ -5,8 +5,8 @@ while building this plugin. Each entry names the section, the issue, and
 what the plugin assumed.
 
 Since 2026-11-19 the plugin is a host of msfp-dotnet, the MSFP engine for
-.NET, on [MSFP version 1](https://github.com/msfp-io/msfp-spec/tree/main/spec/v1)
-(msfp-spec `9aa6166`), renumbered version 0 on 2026-11-20 (spec/v0): the protocol is the engine's, and gaps in it are
+.NET, on MSFP version 1 (msfp-spec `9aa6166`), renumbered
+[version 0](https://github.com/msfp-io/msfp-spec/tree/main/spec/v0) on 2026-11-20: the protocol is the engine's, and gaps in it are
 msfp-dotnet's and msfp-go's to raise. What is left here is what a host
 inside a media server meets: the first section. The second is the plugin's
 own protocol code on version 0, before the engine, kept as history: every
