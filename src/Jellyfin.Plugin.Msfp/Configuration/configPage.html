@@ -973,7 +973,7 @@
                         buttons.push(msfpButton('Open…', function () { msfpOpenGroup(g.id); }));
                         list.appendChild(msfpItem([[msfpEl('div', 'msfpName', g.name || 'A group'), badges],
                             [msfpEl('div', null, msfpPlural(g.members.length, 'server') + (!others ? '' : paired === others ? ', paired with ' + (others === 1 ? 'the other' : 'all ' + others + ' others') : ', paired with ' + paired + ' of the ' + others + ' others')),
-                                msfpEl('div', 'msfpSub', 'You share ' + msfpPlural(g.offers, 'library', 'libraries') + ' with it')]], buttons));
+                                msfpEl('div', 'msfpSub', g.offers ? 'You share ' + msfpPlural(g.offers, 'library', 'libraries') + ' with it' : 'You share nothing with it yet')]], buttons));
                     });
                     if (msfpGroupOpen) {
                         if (groups.some(function (g) { return g.id === msfpGroupOpen; })) {
