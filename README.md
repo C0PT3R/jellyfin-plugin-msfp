@@ -1,8 +1,6 @@
-[![Listed on JellyWatch Hub](https://jellywatch.app/hub/msfp-federation/badge.svg)](https://jellywatch.app/hub/msfp-federation)
-<img src="logo.png" alt="" width="96" align="left">
+<img src="cover.png" alt="MSFP Federation for Jellyfin: pair Jellyfin servers and watch each other's libraries">
 
-# MSFP Federation for Jellyfin
-<div style="clear: both;"></div>
+[![Listed on JellyWatch Hub](https://jellywatch.app/hub/msfp-federation/badge.svg)](https://jellywatch.app/hub/msfp-federation)
 
 Share your Jellyfin libraries with friends who run their own Jellyfin, and
 watch theirs from yours. Each of you keeps your own server and your own
