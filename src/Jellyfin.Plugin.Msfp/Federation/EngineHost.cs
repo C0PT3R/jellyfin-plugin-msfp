@@ -67,6 +67,9 @@ public sealed class EngineHost : IHostedService, IDisposable
     /// <summary>The engine's events, as they happen (a reading of a peer's catalog ended, a pairing ended, ...).</summary>
     public event Action<MsfpEvent>? Events;
 
+    /// <summary>Federation's changes, counted, for the configuration page to follow.</summary>
+    public Changes Changes { get; } = new();
+
     /// <summary>The prefix the routes are under: Jellyfin's base URL, "" without one.</summary>
     public string Prefix { get; private set; } = string.Empty;
 
@@ -207,6 +210,7 @@ public sealed class EngineHost : IHostedService, IDisposable
         finally
         {
             _opening.Release();
+            Changes.Bump();
         }
     }
 
@@ -227,7 +231,11 @@ public sealed class EngineHost : IHostedService, IDisposable
             Discovery = config.Discovery,
             Pins = pins.Count > 0 ? pins : null,
             AllowLoopback = config.AllowLoopback,
-            Notifier = new LogNotifier(_loggers.CreateLogger("Jellyfin.Plugin.Msfp.Events"), e => Events?.Invoke(e)),
+            Notifier = new LogNotifier(_loggers.CreateLogger("Jellyfin.Plugin.Msfp.Events"), e =>
+            {
+                Changes.Bump();
+                Events?.Invoke(e);
+            }),
             Logger = _loggers.CreateLogger("Jellyfin.Plugin.Msfp.Engine"),
             Parts = Parts,
             Catalog = _catalog,

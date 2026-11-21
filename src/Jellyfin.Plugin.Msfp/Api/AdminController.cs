@@ -196,9 +196,25 @@ public class AdminController : ControllerBase
         return new { code = text, id = code.Id, expires = code.Expires, uses = code.Uses, group = code.Group };
     });
 
-    /// <summary>The live codes (never their text).</summary>
+    /// <summary>The live codes, without their text (Codes/{id}/Text gives it).</summary>
     [HttpGet("Codes")]
     public Task<ContentResult> Codes(CancellationToken ct) => Run(async e => await e.CodesAsync(ct).ConfigureAwait(false));
+
+    /// <summary>A live code's text again, to copy once more.</summary>
+    [HttpGet("Codes/{id}/Text")]
+    public Task<ContentResult> CodeText(string id, CancellationToken ct) => Run(async e =>
+        new { code = await e.CodeTextAsync(id, ct).ConfigureAwait(false) });
+
+    /// <summary>
+    /// Waits, 25 seconds at most, for federation to change past the count
+    /// the page last saw, and says the count: the page reloads when it moved.
+    /// </summary>
+    [HttpGet("Changes")]
+    public async Task<ContentResult> Changes([FromQuery] long after, CancellationToken ct)
+    {
+        var seq = await _host.Changes.WaitAsync(after, TimeSpan.FromSeconds(25), ct).ConfigureAwait(false);
+        return Content(JsonSerializer.Serialize(new { seq }, Options), "application/json");
+    }
 
     /// <summary>Deletes a code.</summary>
     [HttpPost("Codes/{id}/Delete")]
