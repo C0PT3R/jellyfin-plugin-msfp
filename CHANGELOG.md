@@ -4,6 +4,14 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
+## Unreleased
+
+### Fixed
+
+- The plugin's files said version 0.5.3 since that release, whatever the
+  plugin's version: the assembly and file versions were set by hand and
+  no longer followed it. They now come from the plugin's version.
+
 ## 0.7.0 (2026-11-21)
 
 ### Added
