@@ -4,7 +4,7 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
-## Unreleased
+## 0.9.0 (2026-11-21)
 
 A group is managed as a whole, like a server, and invites come from where
 they belong (msfp-dotnet 0.7.0-preview).

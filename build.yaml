@@ -1,7 +1,7 @@
 ---
 name: "MSFP Federation"
 guid: "505184bf-b92c-487f-a406-bf6b3570fb7f"
-version: "0.8.0.0"
+version: "0.9.0.0"
 targetAbi: "12.2.0.0"
 framework: "net10.0"
 overview: "Federate Jellyfin servers over MSFP, the Media Server Federation Protocol"
@@ -16,8 +16,7 @@ artifacts:
 - "Msfp.Protocol.dll"
 - "BouncyCastle.Cryptography.dll"
 changelog: >
-  Servers you pair with yourself and servers you know through a group are
-  told apart: Servers lists your direct pairings, and a group's members
-  are in that group. Unpair ends only the direct pairing; Block keeps a
-  server out of everything. Joining a group no longer pairs you directly
-  with its inviter. The plugin's files now carry its real version.
+  A group is managed as a whole, like a server: what you share with it,
+  what you show from it and how new members are accepted, set in the
+  group. Invites come from where they belong (Invite a server, a group's
+  Invite), and a server joining a group waits in that group.
