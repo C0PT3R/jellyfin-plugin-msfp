@@ -19,7 +19,9 @@ JSON_OUT    where the suite writes its report
 
 The suite comes from $MSFP_CONFORMANCE, else ../msfp-spec/conformance.
 It makes two pairing codes, pairs twice (the second as a server that
-can't be called), offers every films library, confirms the titles held
+can't be called), makes a group whose code the suite uses (it joins
+through group-join, accepted here, then leaves; the group is dissolved
+at the end), offers every films library, confirms the titles held
 "to check" there with their match, and changes the server's key twice
 (rotation, then "stolen"): use a test server, never one paired with
 servers that matter."""
@@ -115,7 +117,7 @@ class Operator:
 
     def __call__(self, action):
         print("  [operator] %s" % action, flush=True)
-        getattr(self, "op_" + action)()
+        getattr(self, "op_" + action.replace("-", "_"))()
 
     def suite(self, uncallable, states):
         found = [p for p in call("GET", "/Msfp/Peers")[1]
@@ -144,6 +146,34 @@ class Operator:
 
     def op_accept2(self):
         self.accept(True)
+
+    def op_admin(self):
+        for _ in range(60):
+            for g in call("GET", "/Msfp/Groups")[1] or []:
+                for m in g.get("members") or []:
+                    if m.get("role") == "member":
+                        print("  [operator] admin named: %s" % call(
+                            "POST", "/Msfp/Groups/%s/Admin" % g["id"], {"Member": m["id"], "On": True})[0])
+                        return
+            time.sleep(0.5)
+
+    def op_request_accept(self):
+        for _ in range(60):
+            for g in call("GET", "/Msfp/Groups")[1] or []:
+                for r in g.get("requests") or []:
+                    print("  [operator] request accepted: %s" % call(
+                        "POST", "/Msfp/Groups/%s/Requests/%s/Accept" % (g["id"], r["mail"]))[0])
+                    return
+            time.sleep(0.5)
+
+    def op_join_accept(self):
+        for _ in range(60):
+            for g in call("GET", "/Msfp/Groups")[1] or []:
+                for j in g.get("joins") or []:
+                    print("  [operator] join accepted: %s" % call(
+                        "POST", "/Msfp/Groups/%s/Joins/%s/Accept" % (g["id"], j["peer"]))[0])
+                    return
+            time.sleep(0.5)
 
     def op_want(self):
         pid = self.suite(False, ("paired",))
@@ -224,8 +254,11 @@ def main():
         confirm_identification(extra)
     code = call("POST", "/Msfp/Codes", {"Note": "conformance"})[1]["code"]
     code2 = call("POST", "/Msfp/Codes", {"Note": "conformance 2"})[1]["code"]
-    args = run.parser().parse_args(["--code", code, "--code2", code2, "--operator", "--address", address,
-                                    "--listen", host_port, "--json", json_out] + rest)
+    # A group of this server's, for the group checks: the suite joins it.
+    group = call("POST", "/Msfp/Groups", {"Name": "Conformance"})[1]["id"]
+    group_code = call("POST", "/Msfp/Codes", {"Note": "conformance group", "Group": group, "Uses": 2})[1]["code"]
+    args = run.parser().parse_args(["--code", code, "--code2", code2, "--group-code", group_code, "--operator",
+                                    "--address", address, "--listen", host_port, "--json", json_out] + rest)
     report = Report(verbose=args.verbose)
     info = call("GET", "/System/Info/Public")[1]
     report.note("MSFP version 0 conformance suite, %s, against the Jellyfin plugin in Jellyfin %s, "
@@ -234,6 +267,7 @@ def main():
     try:
         suite.run()
     finally:
+        call("POST", "/Msfp/Groups/%s/Dissolve" % group, {"KeepPairings": False})
         if media:
             for f in (extra, added):
                 if os.path.exists(f):
