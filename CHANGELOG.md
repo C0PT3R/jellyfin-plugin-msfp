@@ -11,6 +11,11 @@ section here.
 - A library shared only with a group showed none of its titles to the
   group's members: its titles were never identified. They are now, as for
   a library shared with a server.
+- Playing a paired server's title in the 30 seconds after a pairing ended
+  could fail with "No paired server could play this title now", though
+  another paired server held it: the plugin tried only the servers its
+  last pass had found. It now looks again when one of them isn't paired
+  any more.
 
 ## 0.6.1 (2026-11-21)
 

@@ -109,9 +109,10 @@ public sealed class StandIns : IHostedService, IDisposable
     /// A film's or an episode's copies, by its key, as the last pass found
     /// them: the paired servers holding it, best copy first; null when none.
     /// </summary>
-    internal Playable? CopyOf(string key)
+    internal Playable? CopyOf(string key) => CopyOf(_wanted, key);
+
+    internal static Playable? CopyOf(Wanted? w, string key)
     {
-        var w = _wanted;
         if (w is null || !global::Msfp.Protocol.VideoKey.TryParse(key, out var k))
         {
             return null;
@@ -123,23 +124,42 @@ public sealed class StandIns : IHostedService, IDisposable
     }
 
     /// <summary>
-    /// <see cref="CopyOf"/>, also before the first pass since Jellyfin
-    /// started (2 minutes, or a catalog read): the copies are then taken
-    /// from the catalogs as stored, as a pass takes them.
+    /// <see cref="CopyOf"/> for a playback: the copies are taken from the
+    /// catalogs as stored, as a pass takes them, when the last pass is
+    /// behind: before the first one since Jellyfin started (2 minutes, or a
+    /// catalog read), and when a server it found has stopped being paired
+    /// (the next pass comes 30 seconds after; a server paired since may
+    /// hold the title).
     /// </summary>
     internal async Task<Playable?> CopyOfAsync(string key, CancellationToken ct)
     {
-        if (_wanted is null && _host.Engine is { } engine)
+        if (_host.Engine is not { } engine)
         {
-            var wanted = Wanted.Of(await LivePeersAsync(engine, ct).ConfigureAwait(false), Held());
-            lock (_lock)
+            return CopyOf(key);
+        }
+
+        var cached = CopyOf(key);
+        if (cached is not null)
+        {
+            var paired = (await engine.PeersAsync(ct).ConfigureAwait(false))
+                .Where(p => p.State == PeerState.Paired).Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
+            if (Fresh(cached, paired))
             {
-                _wanted ??= wanted;
+                return cached;
             }
         }
 
-        return CopyOf(key);
+        var wanted = Wanted.Of(await LivePeersAsync(engine, ct).ConfigureAwait(false), Held());
+        lock (_lock)
+        {
+            _wanted ??= wanted;
+        }
+
+        return CopyOf(wanted, key);
     }
+
+    /// <summary>Whether every server a copy names is still paired.</summary>
+    internal static bool Fresh(Playable copy, IReadOnlySet<string> paired) => copy.Holders.All(h => paired.Contains(h.Peer));
 
     /// <summary>What the page shows: the libraries and what is in them.</summary>
     public StandInStatus Status { get; private set; } = new();

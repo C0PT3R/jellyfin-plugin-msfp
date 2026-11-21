@@ -34,6 +34,20 @@ public class WantedTests
         Assert.Equal(["en", "fr"], f.Copy.Audio);
     }
 
+    // A pairing ended and another began since the last pass: the copy the
+    // pass found isn't fresh, and the one taken again names the new server.
+    [Fact]
+    public void ACopyNamingAServerNoLongerPairedIsTakenAgain()
+    {
+        var before = Wanted.Of([("a", [T("movie/tmdb/348")])], new Held());
+        var copy = StandIns.CopyOf(before, "movie/tmdb/348")!;
+        Assert.True(StandIns.Fresh(copy, new HashSet<string> { "a", "b" }));
+        Assert.False(StandIns.Fresh(copy, new HashSet<string> { "b" }));
+        var now = Wanted.Of([("b", [T("movie/tmdb/348")])], new Held());
+        Assert.Equal(["b"], StandIns.CopyOf(now, "movie/tmdb/348")!.Holders.Select(h => h.Peer));
+        Assert.Null(StandIns.CopyOf(now, "movie/tmdb/1"));
+    }
+
     [Fact]
     public void NothingForWhatThisServerHolds()
     {
