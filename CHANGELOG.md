@@ -16,6 +16,10 @@ section here.
   another paired server held it: the plugin tried only the servers its
   last pass had found. It now looks again when one of them isn't paired
   any more.
+- A film whose file sits directly in a library's folder (no folder of its
+  own) was held under Identification "to check", even with a TMDB tag in
+  its file name: the plugin compared the library folder's name with the
+  film's. It now goes by the file's name there.
 
 ## 0.6.1 (2026-11-21)
 

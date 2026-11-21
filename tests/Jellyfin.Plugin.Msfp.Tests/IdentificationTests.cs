@@ -198,6 +198,27 @@ public class IdentificationTests
         }
     }
 
+    // A film at the root of its library: the library's folder isn't its
+    // name, its file's is. Before, "films" was compared with TMDB's name,
+    // and every such film was held to check.
+    [Theory]
+    [InlineData("/media/films/The Matrix (1999) [tmdbid-603].mp4", "")]
+    [InlineData("/media/films/The Matrix (1999)/The Matrix (1999).mp4", "The Matrix (1999)")]
+    [InlineData("/elsewhere/Heat (1995).mkv", "elsewhere")]
+    public void FolderOfAFilmAtALibraryRoot(string path, string folder) =>
+        Assert.Equal(folder, Identifier.FolderOf(path, ["/media/films/", "/media/films2"]));
+
+    [Fact]
+    public async Task AFilmAtALibraryRootIsNamedByItsFile()
+    {
+        var (src, _) = MatchFixture();
+        var got = await Matcher.MatchAsync(src, new Files { Kind = "movie", Folder = "", File = "Heat (1995) [tmdbid-949].mkv" });
+        Assert.Equal("949", got.Tmdb);
+        Assert.True(got.Sure, string.Join("; ", got.Reasons.Select(r => r.Text)));
+        got = await Matcher.MatchAsync(src, new Files { Kind = "movie", Folder = "films", File = "Heat (1995) [tmdbid-949].mkv" });
+        Assert.False(got.Sure);
+    }
+
     [Fact]
     public async Task IdsInNamesAreTakenAndChecked()
     {

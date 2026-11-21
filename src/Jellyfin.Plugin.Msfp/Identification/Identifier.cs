@@ -200,6 +200,7 @@ public sealed class Identifier : BackgroundService
                 IsVirtualItem = false,
                 AncestorIds = [library],
             });
+            var roots = _library.GetItemById(library)?.PhysicalLocations ?? [];
             foreach (var item in items)
             {
                 ct.ThrowIfCancellationRequested();
@@ -208,7 +209,7 @@ public sealed class Identifier : BackgroundService
                     continue;
                 }
 
-                await IdentifyAsync(src, item, ct).ConfigureAwait(false);
+                await IdentifyAsync(src, item, roots, ct).ConfigureAwait(false);
             }
         }
 
@@ -217,10 +218,10 @@ public sealed class Identifier : BackgroundService
 
     // Matches the item when it has never been, or when its files changed;
     // maps a series' episodes when it's taken and they changed.
-    private async Task IdentifyAsync(ITmdbSource src, BaseItem item, CancellationToken ct)
+    private async Task IdentifyAsync(ITmdbSource src, BaseItem item, IReadOnlyList<string> roots, CancellationToken ct)
     {
         var episodes = item is Series series ? EpisodeFiles(series) : [];
-        var files = FilesOf(item, episodes);
+        var files = FilesOf(item, episodes, roots);
         var inputs = InputsOf(files);
         var known = Identities.Of(item.Id);
         var rematched = known is null || known.Inputs != inputs;
@@ -367,8 +368,10 @@ public sealed class Identifier : BackgroundService
         .ToList();
 
     // What matching reads of an item: its folder and file names, a film's
-    // length and audio languages, a series' episodes by season.
-    private static Files FilesOf(BaseItem item, IReadOnlyList<EpisodeFile> episodes)
+    // length and audio languages, a series' episodes by season. A film at
+    // the root of its library has no folder of its own: the library's
+    // folder isn't its name, the file's is.
+    private static Files FilesOf(BaseItem item, IReadOnlyList<EpisodeFile> episodes, IReadOnlyList<string> roots)
     {
         var path = item.Path ?? string.Empty;
         if (item is Series)
@@ -384,7 +387,7 @@ public sealed class Identifier : BackgroundService
         return new Files
         {
             Kind = "movie",
-            Folder = Path.GetFileName(Path.GetDirectoryName(path) ?? string.Empty),
+            Folder = FolderOf(path, roots),
             File = Path.GetFileName(path),
             RuntimeMs = (item.RunTimeTicks ?? 0) / TimeSpan.TicksPerMillisecond,
             Audio = item.GetMediaStreams().Where(s => s.Type == MediaStreamType.Audio && !string.IsNullOrEmpty(s.Language)).Select(s => s.Language!).Distinct().ToList(),
@@ -397,6 +400,14 @@ public sealed class Identifier : BackgroundService
             string.Join(',', f.Audio.Order(StringComparer.Ordinal)),
             string.Join(',', f.Episodes.OrderBy(e => e.Key).Select(e => e.Key.ToString(CultureInfo.InvariantCulture) + ":" + e.Value.ToString(CultureInfo.InvariantCulture))));
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..32];
+    }
+
+    /// <summary>A film's folder name: "" for a file at one of its library's roots.</summary>
+    internal static string FolderOf(string path, IReadOnlyList<string> roots)
+    {
+        var dir = Path.GetDirectoryName(path) ?? string.Empty;
+        var trimmed = dir.TrimEnd('/', '\\');
+        return roots.Any(r => string.Equals(r.TrimEnd('/', '\\'), trimmed, StringComparison.Ordinal)) ? string.Empty : Path.GetFileName(trimmed);
     }
 
     private TmdbClient? Tmdb()
