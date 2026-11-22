@@ -162,7 +162,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
             var source = SourceOf(item, playback, token);
             try
             {
-                await ProbeAsync(source, ct).ConfigureAwait(false);
+                live.VideoBitrateFilled = await ProbeAsync(source, ct).ConfigureAwait(false);
                 NameAudio(source, playback);
                 ListAllAudio(source, playback, live);
                 live.DurationMs = (source.RunTimeTicks ?? 0) / TimeSpan.TicksPerMillisecond;
@@ -295,7 +295,8 @@ public sealed class RemotePlays : IHostedService, IDisposable
     // Its streams, read here through the relay: Jellyfin's own probe of a
     // live stream keeps one video and one audio track only (made for live
     // TV), and every audio language counts here.
-    private async Task ProbeAsync(MediaSourceInfo source, CancellationToken ct)
+    // True when the video's bitrate was filled in (VideoBitrate).
+    private async Task<bool> ProbeAsync(MediaSourceInfo source, CancellationToken ct)
     {
         var info = await _encoder.GetMediaInfo(new MediaInfoRequest
         {
@@ -308,6 +309,29 @@ public sealed class RemotePlays : IHostedService, IDisposable
         source.Bitrate = info.Bitrate;
         source.RunTimeTicks = info.RunTimeTicks ?? source.RunTimeTicks;
         source.SupportsProbing = false;
+        return VideoBitrate(source);
+    }
+
+    // A video track without a bitrate (a Matroska file without statistics)
+    // gets the file's share left after its audio: Jellyfin guesses one from
+    // the picture's width for an opened live stream otherwise (8 Mbit/s for
+    // 720p, MediaSourceManager.AddMediaInfo), which a local file never
+    // gets, and which then caps the player's quality choices and makes
+    // Jellyfin convert for a viewer limited below it.
+    // The answer to the client then shows none, as for the local file
+    // (AudioSwitchFilter): Jellyfin's own decisions keep the share.
+    internal static bool VideoBitrate(MediaSourceInfo source)
+    {
+        var video = source.MediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Video);
+        if (video is null || video.BitRate is > 0 || source.Bitrate is not { } total || total <= 0)
+        {
+            return false;
+        }
+
+        var audio = source.MediaStreams.Where(s => s.Type == MediaStreamType.Audio).Sum(s => (long)(s.BitRate ?? 0));
+        var left = total - audio;
+        video.BitRate = (int)Math.Clamp(left > 0 ? left : total, 1, int.MaxValue);
+        return true;
     }
 
     // A converted stream carries one audio track and no language: the one
@@ -342,8 +366,14 @@ public sealed class RemotePlays : IHostedService, IDisposable
         var first = video.Count > 0 ? video.Max(v => v.Index) + 1 : 0;
         var playing = audio[0];
         playing.Index = first + at;
-        // The same labels for all, as players list them.
-        playing.Title ??= p.AudioTracks[at].Label.Length > 0 ? p.AudioTracks[at].Label : null;
+        // Named as Jellyfin names a local file's track: the language in the
+        // viewer's words; the paired server's label only without one.
+        if (string.IsNullOrEmpty(playing.Language) && p.AudioTracks[at].Label.Length > 0)
+        {
+            playing.Title ??= p.AudioTracks[at].Label;
+        }
+
+        Localize(playing);
         var list = new List<MediaStream>(video) { playing };
         live.AudioByIndex[playing.Index] = p.AudioTracks[at];
         for (var k = 0; k < p.AudioTracks.Count; k++)
@@ -355,17 +385,18 @@ public sealed class RemotePlays : IHostedService, IDisposable
 
             var t = p.AudioTracks[k];
             live.AudioByIndex[first + k] = t;
-            list.Add(new MediaStream
+            var lang = t.Language is { Length: > 0 } tag ? Three(tag) : null;
+            list.Add(Localize(new MediaStream
             {
                 Index = first + k,
                 Type = MediaStreamType.Audio,
                 Codec = playing.Codec,
                 Channels = t.Channels > 0 ? t.Channels : playing.Channels,
                 ChannelLayout = t.Channels <= 0 || t.Channels == playing.Channels ? playing.ChannelLayout : null,
-                Language = t.Language is { Length: > 0 } tag ? Three(tag) : null,
-                Title = t.Label.Length > 0 ? t.Label : null,
+                Language = lang,
+                Title = lang is null && t.Label.Length > 0 ? t.Label : null,
                 IsDefault = false,
-            });
+            }));
         }
 
         var next = first + p.AudioTracks.Count;
@@ -401,16 +432,26 @@ public sealed class RemotePlays : IHostedService, IDisposable
             var language = t.Language is { Length: > 0 } tag
                 ? Three(tag)
                 : null;
-            streams.Add(new MediaStream
+            streams.Add(Localize(new MediaStream
             {
                 Index = next++,
                 Type = MediaStreamType.Subtitle,
-                Codec = t.Pictures ? "PGSSUB" : "vtt",
+                // Named as Jellyfin names a local WebVTT file's track.
+                Codec = t.Pictures ? "PGSSUB" : "webvtt",
                 Language = language,
-                Title = t.Label.Length > 0 ? t.Label : null,
+                // No title of the paired server's: its label is the
+                // language's name in itself ("Français"), which Jellyfin
+                // would show beside its own ("Français - French"); a local
+                // track shows the language alone. Only a track without a
+                // language keeps it.
+                Title = language is null && t.Label.Length > 0 ? t.Label : null,
                 IsForced = forced || t.Forced,
                 IsHearingImpaired = t.HearingImpaired,
-                IsDefault = t.Id == (forced ? p.ForcedTrack : p.SubtitleTrack),
+                // Default as the file says, never because the paired server
+                // picked it for the viewer's language: Jellyfin then turns
+                // subtitles on as the viewer's settings say, as for a local
+                // file.
+                IsDefault = t.Default,
                 IsExternal = true,
                 // Served by Jellyfin's own subtitle route, never the relay's
                 // URL itself, which answers this machine only.
@@ -418,10 +459,36 @@ public sealed class RemotePlays : IHostedService, IDisposable
                 // PGS: a file here, which Jellyfin reads from disk only
                 // (PictureFiles); text: the relay, which Jellyfin converts.
                 Path = t.Pictures ? Subtitles.PictureFile(token, t.Id) : relay + t.Id + "/" + Subtitles.Whole,
-            });
+            }));
         }
 
         source.MediaStreams = streams;
+    }
+
+    // A track's words in the server's language, as Jellyfin's own reading
+    // of a file gives them (ProbeResultNormalizer): its language's name,
+    // "Default", "Forced", "External"...
+    private MediaStream Localize(MediaStream s)
+    {
+        if (!string.IsNullOrEmpty(s.Language))
+        {
+            s.LocalizedLanguage = _localization.GetLanguageDisplayName(s.Language);
+        }
+
+        s.LocalizedDefault = _localization.GetLocalizedString("Default");
+        s.LocalizedExternal = _localization.GetLocalizedString("External");
+        if (s.Type == MediaStreamType.Audio)
+        {
+            s.LocalizedOriginal = _localization.GetLocalizedString("Original");
+        }
+        else
+        {
+            s.LocalizedUndefined = _localization.GetLocalizedString("Undefined");
+            s.LocalizedForced = _localization.GetLocalizedString("Forced");
+            s.LocalizedHearingImpaired = _localization.GetLocalizedString("HearingImpaired");
+        }
+
+        return s;
     }
 
     private static string? ContainerOf(string mime) => mime switch
@@ -637,6 +704,9 @@ public sealed class RemotePlays : IHostedService, IDisposable
         public BaseItem Item { get; } = item;
 
         public string StreamId { get; set; } = string.Empty;
+
+        /// <summary>Whether the video's bitrate was filled in, the file stating none (<see cref="VideoBitrate"/>).</summary>
+        public bool VideoBitrateFilled { get; set; }
 
         /// <summary>The Jellyfin session playing it, once known (<see cref="LiveOf"/>).</summary>
         public string? SessionId { get; set; }

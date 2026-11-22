@@ -8,6 +8,19 @@ section here.
 
 ### Fixed
 
+- Subtitles from a paired server start as a local file's own would: off
+  unless your subtitle settings, or the file, say otherwise. Jellyfin
+  turned them on, as it does any subtitle file put beside a video.
+- Their tracks are named as Jellyfin names a local file's, in your
+  language ("English - WEBVTT - External"), without the paired server's
+  own label beside it ("Français - French").
+- The player's quality menu says "Auto 120 Mbps" for a paired server's
+  title as for a local one: Jellyfin guessed its picture's bitrate from
+  its width (8 Mbit/s for 720p) when the file states none, which also made
+  it convert for a viewer limited below that. The plugin gives Jellyfin
+  the file's real share instead, and players see none, as for the local
+  file.
+
 - A series from paired servers now shows how many of its episodes are
   left to watch, its watched percentage and its watched mark, as its
   seasons do; its whole list of episodes and "Next up" work again. The
