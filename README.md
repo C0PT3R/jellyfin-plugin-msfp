@@ -73,7 +73,7 @@ Jellyfin's own HTTPS configuration or a reverse proxy will work. A self-signed c
 In Jellyfin, open **Dashboard → Plugins → Repositories** and add the following repository:
 
 ```text
-https://github.com/C0PT3R/jellyfin-plugin-msfp/releases/latest/download/manifest.json
+https://c0pt3r.github.io/jellyfin-plugin-msfp/manifest.json
 ```
 
 Open the plugin **Catalog**, find **MSFP Federation**, and install it.

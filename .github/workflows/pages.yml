@@ -1,0 +1,44 @@
+# The plugin repository's manifest.json on GitHub Pages, so Jellyfin can
+# read it at the short address https://<owner>.github.io/<repo>/manifest.json:
+# the latest release's manifest.json, copied as it is. The release
+# workflow calls it after each release; it can also be run by hand. The
+# release keeps its own manifest.json too, for servers that added the
+# longer address (releases/latest/download/manifest.json).
+name: Pages
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: The latest release's manifest
+        run: |
+          mkdir site
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern manifest.json -D site
+          python3 -c 'import json,sys; json.load(open("site/manifest.json"))'
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -16,7 +16,7 @@ the end unless --keep is given."""
 import io, json, os, subprocess, sys, tempfile, time, urllib.error, urllib.request, urllib.parse, zipfile
 IMAGE, FROM, TO = sys.argv[1], sys.argv[2], sys.argv[3]
 LOCAL = TO.endswith(".zip")
-REPO = "https://github.com/C0PT3R/jellyfin-plugin-msfp/releases/latest/download/manifest.json"
+REPO = "https://c0pt3r.github.io/jellyfin-plugin-msfp/manifest.json"
 PID = "505184bfb92c487fa406bf6b3570fb7f"
 port = 18196; name = "msfp-upd"; base = "http://127.0.0.1:%d" % port
 auth = 'MediaBrowser Client="msfp-upd", Device="upd", DeviceId="msfp-upd", Version="1.0"'

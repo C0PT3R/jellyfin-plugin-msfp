@@ -115,12 +115,15 @@ version's section of CHANGELOG.md, which must exist, by
 `tools/release-notes.py`) holding the
 plugin's zip (`tools/package.py`: build.yaml's artifacts and Jellyfin's
 `meta.json`) and the repository's `manifest.json`, every version so far.
-Jellyfin owners add, once, as a repository (Dashboard, Plugins,
-Repositories):
+The `pages` job (`.github/workflows/pages.yml`, also run by hand) then
+copies that manifest to GitHub Pages. Jellyfin owners add, once, as a
+repository (Dashboard, Plugins, Repositories):
 
-    https://github.com/C0PT3R/jellyfin-plugin-msfp/releases/latest/download/manifest.json
+    https://c0pt3r.github.io/jellyfin-plugin-msfp/manifest.json
 
-and install and update from the catalog. Tried with Jellyfin 12.4 and
+and install and update from the catalog. The older address,
+`https://github.com/C0PT3R/jellyfin-plugin-msfp/releases/latest/download/manifest.json`,
+keeps working: each release still carries its manifest. Tried with Jellyfin 12.4 and
 a local copy of that manifest: listed, installed, Active after the
 restart.
 

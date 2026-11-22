@@ -3,6 +3,8 @@
 # built and tested, checked in each Jellyfin it supports, then published
 # as a GitHub release with the plugin's zip and the repository's
 # manifest.json (every version so far), which Jellyfin reads at
+# https://<owner>.github.io/<repo>/manifest.json (pages.yml copies it
+# there) or, for servers that added the older address,
 # https://github.com/<owner>/<repo>/releases/latest/download/manifest.json.
 # The publish job runs in the "release" environment: a reviewer set there
 # approves each release.
@@ -84,7 +86,15 @@ jobs:
           # The notes: the version's section of CHANGELOG.md (none: no
           # release), then how to install.
           python3 ../tools/release-notes.py ../CHANGELOG.md "${GITHUB_REF_NAME#v}" > notes.md
-          printf '\n### Install\n\nJellyfin 12.2 or later. Add `https://github.com/%s/releases/latest/download/manifest.json` as a plugin repository (Dashboard, Plugins, Repositories), then install MSFP Federation from the catalog. Servers that have it update by themselves.\n' \
-            "$GITHUB_REPOSITORY" >> notes.md
+          printf '\n### Install\n\nJellyfin 12.2 or later. Add `https://%s.github.io/%s/manifest.json` as a plugin repository (Dashboard, Plugins, Repositories), then install MSFP Federation from the catalog. Servers that have it update by themselves.\n' \
+            "$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')" "${GITHUB_REPOSITORY#*/}" >> notes.md
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
             --notes-file notes.md msfp-federation_*.zip manifest.json
+
+  pages:
+    needs: publish
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml
