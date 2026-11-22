@@ -532,6 +532,8 @@ public sealed class StandIns : IHostedService, IDisposable
                 created.Add(series.Id);
             }
 
+            await OutOfChannelAsync(series, library, ct).ConfigureAwait(false);
+
             var seasons = new Dictionary<int, Season>();
             foreach (var e in w.Episodes.Values)
             {
@@ -560,6 +562,7 @@ public sealed class StandIns : IHostedService, IDisposable
                         await _library.UpdateItemAsync(s, series, ItemUpdateType.MetadataEdit, ct).ConfigureAwait(false);
                     }
 
+                    await OutOfChannelAsync(s, series, ct).ConfigureAwait(false);
                     season = s;
                     seasons[e.Season] = season;
                 }
@@ -633,14 +636,32 @@ public sealed class StandIns : IHostedService, IDisposable
         return all;
     }
 
+    // A new stand-in. Only what plays (a film, an episode) belongs to the
+    // channel, which gives it a Play button; a series or a season stays a
+    // library item, or Jellyfin counts none of its episodes for it (unplayed
+    // count, watched percentage: Folder.SupportsUserDataFromChildren is
+    // false for an item from a channel).
     private void Prepare(BaseItem item, Guid parent)
     {
         var now = DateTime.UtcNow;
         item.ParentId = parent;
-        item.ChannelId = ChannelId();
+        item.ChannelId = item is Series or Season ? Guid.Empty : ChannelId();
         item.DateCreated = now;
         item.DateModified = now;
         item.Name = string.Empty;
+    }
+
+    // A series or a season made by an earlier version in the channel: taken
+    // out of it, so that Jellyfin counts its episodes.
+    private async Task OutOfChannelAsync(BaseItem item, BaseItem parent, CancellationToken ct)
+    {
+        if (item.ChannelId.Equals(Guid.Empty))
+        {
+            return;
+        }
+
+        item.ChannelId = Guid.Empty;
+        await _library.UpdateItemAsync(item, parent, ItemUpdateType.MetadataEdit, ct).ConfigureAwait(false);
     }
 
     private string SeasonName(int season) => season == 0

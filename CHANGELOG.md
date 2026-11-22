@@ -4,6 +4,18 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
+## Unreleased
+
+### Fixed
+
+- A series from paired servers now shows how many of its episodes are
+  left to watch, its watched percentage and its watched mark, as its
+  seasons do; its whole list of episodes and "Next up" work again. The
+  series and its seasons were made in the plugin's channel, and Jellyfin
+  counts no episodes for an item from a channel; they are now ordinary
+  library items (those made before are moved at the next pass). Only
+  films and episodes stay in the channel, for their Play button.
+
 ## 0.10.0 (2026-11-21)
 
 The Federation page reads better and keeps itself up to date
