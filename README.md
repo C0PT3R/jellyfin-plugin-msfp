@@ -2,195 +2,164 @@
 
 [![Listed on JellyWatch Hub](https://jellywatch.app/hub/msfp-federation/badge.svg)](https://jellywatch.app/hub/msfp-federation)
 
-Share your Jellyfin libraries with friends who run their own Jellyfin, and
-watch theirs from yours. Each of you keeps your own server and your own
-files. Your friends' films and series show up in your Jellyfin, beside
-yours, and your users watch them with the apps and accounts they already
-have. Nobody gets an account on anyone else's server, and there is no
-central server.
+Share your Jellyfin libraries with friends, and enjoy theirs alongside your own.
 
-> **Early.** It works, but it's young: try it on a test server first, and
-> only pair with people you know.
+MSFP Federation connects independently run media servers, allowing them to selectively share their libraries. Your friends' films and series appear right inside your Jellyfin, ready to watch with your usual apps and accounts.
+
+Everyone keeps their own server, their own files, and control over what they share. No shared accounts, no central server.
+
+> **Early development:** The plugin works, but it's still young. Try it on a test server first, and only pair with people you know.
+
+## A federation beyond Jellyfin
+
+MSFP (Media Server Federation Protocol) is an open protocol designed to let different media server platforms federate with one another.
+
+The idea is simple: you shouldn't have to run the same software as your friends to share your media libraries. A Jellyfin server should be able to share with an Overfin server, and eventually with other platforms, without relying on a central service or shared user accounts.
+
+This plugin brings MSFP to Jellyfin. [Overfin](https://github.com/Overfin/server) is another compatible implementation, and other media servers are welcome to join the ecosystem.
+
+See the [MSFP specification](https://github.com/msfp-io/msfp-spec).
+
+## What you get
+
+Your friends' libraries become part of your Jellyfin experience.
+
+- **Browse their collections:** Films and series appear in two additional libraries, complete with posters, descriptions and metadata.
+- **Use your usual apps:** Everything works through your existing Jellyfin clients. No additional accounts or applications.
+- **A proper playback experience:** Subtitles (including image-based ones), seek-bar previews, intro and credits markers, and audio track selection.
+- **Smart source selection:** When multiple friends have the same title, the best available source is tried first, with fallback to another server when one is busy.
+- **Progress that follows you:** If you get your own copy of something you were watching from a friend's server, your viewing progress carries over.
+
+Titles you already have aren't duplicated. Only films and series identified through TMDB are shared; music isn't supported.
+
+## Your server. Your rules.
+
+Federation doesn't mean giving someone access to your server. You decide exactly what other servers can see and how much of your resources they can use.
+
+- **Choose what you share.** Select which libraries are available to each server or an entire group. Nothing is shared until you explicitly allow it.
+- **Control access.** A server you pair with directly is accepted only after you verify its fingerprint with its owner; in a group, the group vouches for its members. You can disconnect a server, leave a group or block another server at any time.
+- **Set resource limits.** Configure simultaneous streams, transcoding sessions and bitrate. Your own users always take priority: friends' streams won't cause your own users to be refused.
+- **Keep viewers private.** The other server sees the metadata of the libraries you share, including language and picture quality information. It doesn't get access to your files, folders or users. When someone watches one of your titles, your server knows which remote server is streaming it, but not which individual user.
+
+### A note about bandwidth
+
+Your internet connection carries the streams. When a friend watches one of your films, your server sends it over your upload connection. When your users watch a friend's film, it comes in over your connection.
+
+A home internet connection with limited upload bandwidth may restrict how many people can watch simultaneously. That's why the plugin provides per-server and group resource limits.
 
 ## How it works
 
-1. **You pair your server with a friend's**, once, with a code one of you
-   sends the other. A few friends can also form a **group**: everyone
-   joins with one code, and each server pairs with the others.
-2. **Each of you picks what to share**: which of your libraries the other
-   server may show. Nothing is shared until you choose.
-3. **Their titles appear in your Jellyfin**, in two libraries the plugin
-   makes: "Films from paired servers" and "Series from paired servers",
-   with posters, summaries and the rest. Titles you already have aren't
-   repeated.
-4. **Your users press play as usual.** Your server fetches the film from
-   the friend's server and passes it on: your users only ever talk to your
-   server, and the friend's server never learns who is watching.
+Getting started with a friend is straightforward:
 
-Federation is done with MSFP, an [open protocol](https://github.com/msfp-io/msfp-spec)
-for servers to share their titles. Besides Jellyfin with this plugin,
-[Overfin](https://github.com/Overfin/server) speaks it too, and other
-media servers can.
+1. **Pair your servers.** One of you generates a pairing code and sends it to the other. The receiving server uses the code to initiate the connection, and the owner accepts it after verifying the server's fingerprint.
+2. **Choose what to share.** Each server independently decides which libraries the other is allowed to see.
+3. **Browse their libraries.** Shared films and series appear in the additional federation libraries created by the plugin.
+4. **Press play.** Your Jellyfin server retrieves the media from your friend's server and relays it to your users. They only communicate with your server, and the remote server never learns their identities.
 
-## What your users get
-
-- Your friends' films and series beside yours, in any Jellyfin app.
-- Subtitles (text and picture ones), seek-bar previews and skip markers
-  (intro, credits); the audio language can be changed while playing.
-- When several friends have a title, the best copy is asked first, and
-  the next server when one is busy.
-- When you get a title yourself that they were watching from a friend's
-  server, what they watched carries over.
-
-## What stays under your control
-
-- **What you share**, library by library, for each friend's server or for
-  a whole group. Only films and series known to [TMDB](https://www.themoviedb.org)
-  are shared; music isn't.
-- **How much they may use**: how many of their viewers may play from your
-  server at once, how many conversions (re-encoding a file their device
-  can't play) may run, and a bitrate cap. Your own users are never refused
-  because of a friend's.
-- **Who you're paired with**: you accept each server after comparing its
-  fingerprint with its owner, and you can end a pairing, leave a group or
-  block a server at any time.
-- **What the other server sees**: only the titles of the libraries you
-  share, with their languages and picture quality. Never your files,
-  folders, users or what they watch: when one of its viewers plays your
-  title, your server only learns that a viewer of that server is playing
-  it, not who.
-
-**Your internet connection carries it.** When a friend's viewer plays one
-of your films, your server sends it over your connection; when your users
-watch a friend's film, it comes in over yours. A home connection with a
-slow upload limits how many friends can watch at once: the limits above
-are there for that.
+A few friends can also form a **group**. Instead of manually pairing every server, members join through a group invitation and establish their connections through the group. Sharing permissions and resource limits can then be managed for the group as a whole.
 
 ## What you need
 
 - Jellyfin 12.2 or later.
-- Your Jellyfin reachable from the internet at an **HTTPS** address, as
-  when you watch away from home: Jellyfin's own HTTPS (Dashboard,
-  Networking) or a reverse proxy in front of it. A certificate you made
-  yourself is fine.
-- A friend with the same, or with [Overfin](https://github.com/Overfin/server).
+- A publicly reachable HTTPS address for your Jellyfin server, just as when accessing it away from home.
+- Another server running this plugin or a compatible MSFP implementation, such as [Overfin](https://github.com/Overfin/server).
+
+Jellyfin's own HTTPS configuration or a reverse proxy will work. A self-signed certificate is also supported.
 
 ## Getting started
 
 ### 1. Install the plugin
 
-1. In Jellyfin, open **Dashboard → Plugins → Repositories** (the **+**
-   button, or the Repositories tab), and add this repository:
+In Jellyfin, open **Dashboard → Plugins → Repositories** and add the following repository:
 
-   ```
-   https://github.com/C0PT3R/jellyfin-plugin-msfp/releases/latest/download/manifest.json
-   ```
+```text
+https://github.com/C0PT3R/jellyfin-plugin-msfp/releases/latest/download/manifest.json
+```
 
-2. In the **Catalog**, open **MSFP Federation** and install it.
-3. Restart Jellyfin.
+Open the plugin **Catalog**, find **MSFP Federation**, and install it.
 
-Updates then come through the same catalog. To build it yourself, see
-[TECHNICAL.md](TECHNICAL.md#building).
+Restart Jellyfin. Future updates will be available through the same catalog.
 
-### 2. Set it up
+### 2. Configure your server
 
-Open the plugin's page (**Dashboard → Plugins → MSFP Federation**) and,
-under **Settings**, fill in:
+Open **Dashboard → Plugins → MSFP Federation**.
 
-- **This server's address**: where other servers reach yours, for example
-  `https://media.example.org`. Federation stays off until it is set, and
-  the page says why.
-- **This server's name**: the name your friends see for your server
-  (optional).
-- **Transcodes at once**: how many conversions may run at once on your
-  server, your users' and friends' together (2 by default; 0 means friends
-  only get what plays without conversion).
+Under **Settings**, configure:
 
-Save. The **This server** tab then shows your server's **fingerprint**, a
-short code that identifies it.
+- **This server's address:** The HTTPS address other servers will use to reach yours (for example, `https://media.example.org`). Federation remains disabled until this is configured.
+- **This server's name:** An optional name that your friends will see.
+- **Transcodes at once:** The maximum number of simultaneous conversions allowed on your server, shared between your own users and remote viewers. The default is 2. Set it to 0 to prevent remote viewers from using transcoding.
+
+Save your settings. The **This server** tab displays your server's fingerprint, which identifies it to other servers.
 
 ### 3. Pair with a friend
 
-1. Under **Servers**, one of you clicks **Make a code** and sends it to the
-   other, by message or email. It works once and for a day, unless you
-   choose otherwise (up to 100 servers, up to 30 days).
-2. The other clicks **Use a code** and pastes it. The page says what it
-   leads to before anything happens.
-3. The server that made the code now lists the other as **Waiting for
-   you**. Before clicking **Accept**, compare fingerprints with its owner,
-   by phone or another way you trust: if they match, you're pairing with
-   the right server.
+Under **Individual**, one of you clicks **Invite a server** and sends the generated code to the other.
 
-Then each of you clicks **Manage…** on the other's row and picks:
+The other server clicks **Use a code** and enters it. The code's destination and details are displayed before proceeding.
 
-- **You share with it**: which of your libraries it sees. By default it
-  sees none.
-- **You show on your server**: which of its libraries appear on yours (by
-  default all of them, and the ones it adds later).
-- **What its viewers may use here**: streams, conversions, and a bitrate
-  cap per stream (2 streams and 1 conversion by default, no cap).
+The server that generated the code will now see the other server as **Waiting for you**.
 
-Their titles then appear in your two new libraries. Users who see all
-libraries see them; for the others, tick those two libraries in each
-user's library access.
+Before accepting, compare the two servers' fingerprints with their respective owners through a trusted communication channel, such as a phone call. If they match, click **Accept**.
 
-### 4. Or start a group
+Pairing codes are single-use and normally expire after one day. You can change their validity and capacity (up to 100 servers and 30 days).
 
-For a few friends, a group saves a code for every pair. Under **Groups**,
-**Create a group**: you're its owner.
+Once paired, click **Manage…** on the other server's entry to configure sharing:
 
-1. **Invite…** makes a code for the group. A server that uses it waits for
-   you to accept it, as for any code; once accepted, it's a member.
-2. It then asks every member to pair. Each member answers in the group's
-   window (**Answer…** or **Open…**): **Pair** or **Refuse**. No fingerprint
-   to compare: the group vouches for its members. In **Sharing…**, a
-   member can let its server accept new members by itself after a few
-   days.
-3. **Sharing…** sets what you share with the group, as if it were one
-   server, and one pool of streams and conversions for all its members
-   together.
+- **You share with it:** Choose which of your libraries the other server can access. Nothing is shared by default.
+- **You show on your server:** Choose which of its libraries appear in your Jellyfin. All libraries are shown by default, including new ones.
+- **What its viewers may use here:** Configure simultaneous streams, transcoding sessions and bitrate limits. The defaults are 2 streams, 1 transcode and no bitrate cap.
 
-The owner names admins (who can invite and ban), an heir, changes the
-settings, and may give the group away or dissolve it. Any member can leave,
-keeping its pairings or ending them, and block a member, which nobody is
-told. A server already paired with you uses your group's code the same way.
+Your friend's titles should now appear in the two federation libraries:
 
-## Titles waiting for you
+- Films from paired servers
+- Series from paired servers
 
-Before a film or a series is shared, the plugin checks which TMDB title it
-is. Those it isn't sure of (no year in the folder name, two films with the
-same name…) aren't shared, and wait under **Identification**: **Choose…**
-shows the likely matches, or takes a TMDB number you look up yourself.
+Users who can access all libraries will see them automatically. For other users, grant access to these two additional libraries in their Jellyfin library permissions.
 
-## If something goes wrong
+### 4. Create a group (optional)
 
-- **The other server says this one speaks another version of the
-  protocol**: one of you runs an older version of the plugin (or of
-  Overfin). Update both to the latest.
-- **Federation is off**: the page says why at the top; usually the
-  address under **Settings** is missing or isn't HTTPS.
-- **Your server's key was stolen** (a backup of your server leaked, for
-  example): under **This server**, click **This server's key was stolen**.
-  Paired servers stop trusting the old key and follow your server to a new
-  one, with nothing to do on their side.
-- **You move your server** to another address: change **This server's
-  address** and save. Paired servers are told.
+If you have several friends, groups make managing federation easier.
+
+Under **Groups**, click **Create a group**. You become its owner.
+
+- **Invite…** generates an invitation code for the group. A server that uses it waits for you to accept it, as with any code; once accepted, it's a member.
+- The new member then asks every other member to pair. Each member answers with **Answer…** or **Open…**: **Pair** or **Refuse**. No fingerprint to compare: the group vouches for its members.
+- **Settings…** configures which libraries you share with the group, one pool of streams and transcodes for all its members together, and whether your server automatically accepts new members.
+
+Group owners can appoint administrators, designate an heir, manage membership and settings, transfer ownership or dissolve the group.
+
+Members can leave a group while keeping or ending their existing pairings, and can block other members independently.
+
+A server already paired with you can also use your group's invitation code.
+
+## When titles aren't recognized
+
+Before sharing a film or series, the plugin identifies it through TMDB.
+
+Titles that cannot be confidently identified aren't shared automatically. Instead, they appear under **Identification**, where you can review the suggested matches or enter a TMDB ID manually.
+
+This avoids sharing the wrong film or series when folder names are ambiguous or metadata is incomplete.
+
+## Troubleshooting
+
+- **Federation is disabled:** The plugin displays the reason at the top of its page. Usually, the server address is missing or isn't HTTPS.
+- **The other server reports an incompatible protocol version:** Update both servers to their latest plugin or Overfin versions.
+- **Your server's key was stolen:** For example, if a backup containing your server's private key was exposed, use **This server's key was stolen** under the **This server** tab. Paired servers will stop trusting the old key and follow your server to its replacement.
+- **You move your server:** Update **This server's address** under Settings and save. Paired servers are notified of the change.
 
 ## Learn more
 
-- [TECHNICAL.md](TECHNICAL.md): building, certificates, reverse proxies,
-  how playback works.
-- [The MSFP specification](https://github.com/msfp-io/msfp-spec).
-- [SPEC-GAPS.md](SPEC-GAPS.md) and [DESIGN-NOTES.md](DESIGN-NOTES.md):
-  notes for the protocol and the plugin's next steps.
+- [MSFP specification](https://github.com/msfp-io/msfp-spec): the protocol itself.
+- [TECHNICAL.md](TECHNICAL.md): building, certificates, reverse proxies and playback architecture.
+- [SPEC-GAPS.md](SPEC-GAPS.md): known protocol gaps and areas for improvement.
+- [DESIGN-NOTES.md](DESIGN-NOTES.md): design decisions and future directions.
 
 ## How it's made
 
-MSFP Federation for Jellyfin is designed by its maintainer, who makes the
-architecture, security and product decisions, and written by Claude
-(Anthropic's AI); Claude's commits carry a `Co-Authored-By: Claude`
-trailer. The code is checked by its tests and MSFP's conformance suite; it
-hasn't had an independent security review yet.
+MSFP Federation for Jellyfin is designed and maintained by its project maintainer, who makes the architecture, security and product decisions. The code is written by Claude (Anthropic's AI), with its contributions identified through `Co-Authored-By: Claude` commit trailers.
+
+The project is tested through its automated test suite and MSFP's conformance suite, but has not yet undergone an independent security audit.
 
 ## License
 
