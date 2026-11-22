@@ -4,7 +4,10 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
-## Unreleased
+## 0.10.1 (2026-11-21)
+
+Titles from paired servers behave more like your own: series count their
+episodes, and subtitles and the quality menu work as for a local file.
 
 ### Fixed
 
@@ -20,7 +23,6 @@ section here.
   it convert for a viewer limited below that. The plugin gives Jellyfin
   the file's real share instead, and players see none, as for the local
   file.
-
 - A series from paired servers now shows how many of its episodes are
   left to watch, its watched percentage and its watched mark, as its
   seasons do; its whole list of episodes and "Next up" work again. The
@@ -28,6 +30,10 @@ section here.
   counts no episodes for an item from a channel; they are now ordinary
   library items (those made before are moved at the next pass). Only
   films and episodes stay in the channel, for their Play button.
+- This is also the likely cause of seasons and series from paired
+  servers disappearing and coming back, without the seek-bar previews
+  their episodes had: on the test servers, they now stay through library
+  scans and metadata refreshes.
 
 ## 0.10.0 (2026-11-21)
 
