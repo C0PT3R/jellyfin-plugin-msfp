@@ -90,6 +90,7 @@ public class OrdersTests
         var v = o.Video!;
         Assert.False(v.Copy);
         Assert.Equal("h264", v.Codec);
+        Assert.False(v.HeightAsked); // the baseline asks no height: Jellyfin's size for a low cap is fine
         Assert.Equal("high", v.Profile);
         Assert.Equal("41", v.Level);
         Assert.Equal(1080, v.MaxHeight);

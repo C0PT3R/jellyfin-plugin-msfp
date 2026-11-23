@@ -84,6 +84,11 @@ public class DeliveriesTests
         order.Video.MaxBitrate = 1_000_000;
         Assert.Contains("height-cap", Made.Parse(WidthOnly).Differences(order, Hd()));
 
+        // Only a bitrate asked (no maxHeight): Jellyfin's own size for it is fine.
+        order.Video.HeightAsked = false;
+        Assert.DoesNotContain("height-cap", Made.Parse(WidthOnly).Differences(order, Hd()));
+        order.Video.HeightAsked = true;
+
         // A bitrate lower than asked is fine; higher is not.
         order.Video.MaxHeight = 720;
         order.Video.MaxBitrate = 8_000_000;

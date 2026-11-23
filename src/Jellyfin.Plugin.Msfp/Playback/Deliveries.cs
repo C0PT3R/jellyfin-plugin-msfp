@@ -55,6 +55,13 @@ internal sealed class DeliveryVideo
 
     public int MaxHeight { get; set; }
 
+    /// <summary>
+    /// Whether the peer asked a height (maxHeight): when it asked only a
+    /// bitrate, Jellyfin's own size for that bitrate is what was asked
+    /// (MSFP's maxHeight is "at most that tall").
+    /// </summary>
+    public bool HeightAsked { get; set; } = true;
+
     public int MaxBitrate { get; set; }
 
     /// <summary>An HDR picture mapped to SDR; false keeps HDR (a GPU path only, refused this release).</summary>

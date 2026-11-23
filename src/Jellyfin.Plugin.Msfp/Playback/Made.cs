@@ -247,7 +247,7 @@ internal sealed partial class Made
 
                 var want = Math.Min(v.MaxHeight, s.Height ?? v.MaxHeight);
                 var (_, h) = Size(s);
-                if (h > 0 && h < want - 2)
+                if (v.HeightAsked && h > 0 && h < want - 2)
                 {
                     d.Add("height-cap");
                 }

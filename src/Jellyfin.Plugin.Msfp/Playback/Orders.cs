@@ -110,6 +110,7 @@ internal static class Orders
                 }
 
                 v.MaxHeight = height;
+                v.HeightAsked = t.MaxHeight > 0;
                 var kbps = t.MaxBitrateKbps > 0 ? t.MaxBitrateKbps : DefaultKbps(height);
                 if (r.MaxBitrateKbps > 0)
                 {
