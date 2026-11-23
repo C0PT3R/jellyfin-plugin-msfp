@@ -46,7 +46,6 @@ public sealed class RemotePlays : IHostedService, IDisposable
     private readonly StandIns _standIns;
     private readonly ISessionManager _sessions;
     private readonly IConfigurationManager _config;
-    private readonly ILibraryManager _library;
     private readonly ILogger<RemotePlays> _log;
 
     // Remembered: the paired servers that refused delivery file (until their
@@ -55,13 +54,12 @@ public sealed class RemotePlays : IHostedService, IDisposable
     private readonly ConcurrentDictionary<string, DateTimeOffset> _busyUntil = new(StringComparer.Ordinal);
     private Timer? _sweep;
 
-    public RemotePlays(EngineHost host, StandIns standIns, ISessionManager sessions, IConfigurationManager config, ILibraryManager library, ILogger<RemotePlays> log)
+    public RemotePlays(EngineHost host, StandIns standIns, ISessionManager sessions, IConfigurationManager config, ILogger<RemotePlays> log)
     {
         _host = host;
         _standIns = standIns;
         _sessions = sessions;
         _config = config;
-        _library = library;
         _log = log;
     }
 
@@ -375,9 +373,6 @@ public sealed class RemotePlays : IHostedService, IDisposable
                 break;
         }
     }
-
-    /// <summary>For tests: a refusal remembered.</summary>
-    internal void RememberForTest(string peer, MsfpError code) => Remember(peer, code);
 
     // ---- The HLS way (PairedSources) ----
 
@@ -738,12 +733,6 @@ public sealed class RemotePlays : IHostedService, IDisposable
 
     /// <summary>A play's live stream (the HLS way) by its stand-in, for Jellyfin closing it.</summary>
     internal Task CloseAsync(PlayToken play) => EndAsync(play, drop: true);
-
-    /// <summary>Whether a stand-in has a play live (for the library's own use: none).</summary>
-    internal bool Playing(Guid item) => Tokens.All.Any(t => t.Item == item && t.Playback is not null);
-
-    /// <summary>The item a play is of; null when gone.</summary>
-    internal BaseItem? ItemOf(PlayToken play) => _library.GetItemById(play.Item);
 }
 
 /// <summary>A play of the HLS way as Jellyfin's live stream: closing it stops the playback.</summary>
