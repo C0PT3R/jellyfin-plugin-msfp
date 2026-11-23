@@ -25,7 +25,11 @@
          the engine, which brings the protocol (Msfp.Engine.dll,
          Msfp.Protocol.dll) and their Ed25519 (BouncyCastle); all three
          shipped with the plugin. -->
-    <PackageReference Include="Msfp.Engine" Version="0.7.1-preview" />
+    <!-- During the migration to MSFP's revised version 0 (proposals 16
+         and 17): msfp-dotnet's branch `revision`, checked out beside this
+         repository, by project reference. Release day: back to the
+         published package (the migration plan, section 11). -->
+    <ProjectReference Include="../../../msfp-dotnet/src/Msfp.Engine/Msfp.Engine.csproj" />
   </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

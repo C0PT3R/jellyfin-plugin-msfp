@@ -37,17 +37,12 @@ public sealed class RemotePlays : IHostedService, IDisposable
     /// <summary>How long a playback nobody reports on nor reads lives.</summary>
     public static readonly TimeSpan Idle = TimeSpan.FromMinutes(3);
 
-    // Every value MSFP lists: the paired server sends its copy as it is
-    // whenever it can (direct play there costs it the least), and Jellyfin
-    // converts it here when the viewer's device needs it.
-    private static readonly Capabilities Everything = new()
-    {
-        Containers = ["mp4", "m4v", "mov", "webm", "mkv", "ts"],
-        AudioCodecs = ["aac", "mp3", "opus", "vorbis", "flac", "ac3", "eac3", "alac", "pcm_s16le"],
-        VideoCodecs = ["h264", "hevc", "av1", "vp8", "vp9"],
-        Hdr = ["hdr10", "hlg"],
-        MaxAudioChannels = 8,
-    };
+    /// <summary>Whether paired servers' titles are kept as stand-ins and play: not on this branch until phases 5 and 6 of the migration (see <see cref="OpenAsync"/>, StandIns.KeepAsync).</summary>
+    internal static bool ViewingOn { get; set; }
+
+    // Since MSFP's revision a play names its delivery (no capabilities):
+    // the viewer's side chooses it from the copy's facts in phase 6 of the
+    // migration (the hand-over at PlaybackInfo).
 
     private readonly EngineHost _host;
     private readonly StandIns _standIns;
@@ -125,13 +120,17 @@ public sealed class RemotePlays : IHostedService, IDisposable
     /// <exception cref="InvalidOperationException">No paired server could play it now; the message says why.</exception>
     internal async Task<PairedLiveStream> OpenAsync(BaseItem item, (string Audio, string Subtitles) wishes, CancellationToken ct, AudioSwitch? audioSwitch = null)
     {
-        var request = new PlayRequest
+        // Playing paired servers' titles is off on this branch until phase 6
+        // of the migration to MSFP's revised version 0 (the hand-over at
+        // PlaybackInfo, from the copies' facts); the code below is the draft
+        // before's, adapted only to compile.
+        if (!ViewingOn)
         {
-            Title = string.Empty,
-            Capabilities = Everything,
-            AudioLanguage = Tag(wishes.Audio),
-            SubtitleLanguage = Tag(wishes.Subtitles),
-        };
+            throw new InvalidOperationException("Playing paired servers' titles comes back with the migration's phase 6.");
+        }
+
+        _ = wishes;
+        var request = new PlayRequest { Title = string.Empty };
         var engine = _host.Engine ?? throw new InvalidOperationException("Federation is off on this server.");
         var key = item.Path![Wanted.PathOf(string.Empty).Length..];
         var copy = await _standIns.CopyOfAsync(key, ct).ConfigureAwait(false) ?? throw new InvalidOperationException("No paired server holds this title now.");
@@ -143,9 +142,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
             {
                 // A track picked during a playback: its ID on the server that
                 // played it; on another, the same language.
-                var asked = audioSwitch is null ? request
-                    : holder.Peer == audioSwitch.Peer ? request with { AudioTrack = audioSwitch.Track }
-                    : request with { AudioLanguage = Tag(audioSwitch.Language) };
+                var asked = audioSwitch is not null && holder.Peer == audioSwitch.Peer ? request with { AudioTrack = audioSwitch.Track } : request;
                 playback = await engine.PlayAsync(holder.Peer, asked with { Title = key }, ct).ConfigureAwait(false);
             }
             catch (MsfpException e)
@@ -171,7 +168,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
                 // PGS tracks are fetched before Jellyfin has the source: it
                 // may burn one in from its first segment. One not ready in
                 // 15 seconds is left out of this playback.
-                var pictures = playback.SubtitleTracks.Concat(playback.ForcedTracks).Where(t => t.Pictures).Select(t => t.Id).Distinct().ToList();
+                var pictures = new List<string>(); // the copy's PGS tracks: phase 6
                 var ready = await Subtitles.FetchPicturesAsync(engine, live, pictures, TimeSpan.FromSeconds(15), _log).ConfigureAwait(false);
                 AddSubtitles(source, playback, token, ready);
             }
@@ -187,8 +184,11 @@ public sealed class RemotePlays : IHostedService, IDisposable
             // The skip markers before Jellyfin hands the source over: clients ask for them as playing starts.
             try
             {
-                await PairedSegments.SaveAsync(_segments, item, playback.Segments, ct).ConfigureAwait(false);
-                source.HasSegments = playback.Segments.Count > 0;
+                // The copy's segments since MSFP's revision: saved at each
+                // catalog reading in phase 5, not at play.
+                IReadOnlyList<global::Msfp.Protocol.CopySegment> segments = [];
+                await PairedSegments.SaveAsync(_segments, item, segments, ct).ConfigureAwait(false);
+                source.HasSegments = segments.Count > 0;
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
@@ -338,12 +338,9 @@ public sealed class RemotePlays : IHostedService, IDisposable
     // the play answer says it chose.
     private void NameAudio(MediaSourceInfo source, RemotePlayback p)
     {
-        var audio = source.MediaStreams.Where(s => s.Type == MediaStreamType.Audio).ToList();
-        if (audio.Count == 1 && string.IsNullOrEmpty(audio[0].Language)
-            && p.AudioTracks.FirstOrDefault(t => t.Id == p.AudioTrack)?.Language is { Length: > 0 } tag)
-        {
-            audio[0].Language = Three(tag);
-        }
+        // The play answer names no track since MSFP's revision: the copy
+        // does (phase 6 of the migration names the stream from it; the
+        // hand-over then removes this, plan 4.2).
     }
 
     // A converted stream carries the chosen audio track only: the copy's
@@ -355,58 +352,9 @@ public sealed class RemotePlays : IHostedService, IDisposable
     // it (AudioSwitchFilter).
     private void ListAllAudio(MediaSourceInfo source, RemotePlayback p, Live live)
     {
-        var audio = source.MediaStreams.Where(s => s.Type == MediaStreamType.Audio).ToList();
-        var at = p.AudioTracks.Select((t, i) => (t, i)).FirstOrDefault(x => x.t.Id == p.AudioTrack, (null!, -1)).Item2;
-        if (audio.Count != 1 || p.AudioTracks.Count < 2 || at < 0)
-        {
-            return;
-        }
-
-        var video = source.MediaStreams.Where(s => s.Type == MediaStreamType.Video).ToList();
-        var first = video.Count > 0 ? video.Max(v => v.Index) + 1 : 0;
-        var playing = audio[0];
-        playing.Index = first + at;
-        // Named as Jellyfin names a local file's track: the language in the
-        // viewer's words; the paired server's label only without one.
-        if (string.IsNullOrEmpty(playing.Language) && p.AudioTracks[at].Label.Length > 0)
-        {
-            playing.Title ??= p.AudioTracks[at].Label;
-        }
-
-        Localize(playing);
-        var list = new List<MediaStream>(video) { playing };
-        live.AudioByIndex[playing.Index] = p.AudioTracks[at];
-        for (var k = 0; k < p.AudioTracks.Count; k++)
-        {
-            if (k == at)
-            {
-                continue;
-            }
-
-            var t = p.AudioTracks[k];
-            live.AudioByIndex[first + k] = t;
-            var lang = t.Language is { Length: > 0 } tag ? Three(tag) : null;
-            list.Add(Localize(new MediaStream
-            {
-                Index = first + k,
-                Type = MediaStreamType.Audio,
-                Codec = playing.Codec,
-                Channels = t.Channels > 0 ? t.Channels : playing.Channels,
-                ChannelLayout = t.Channels <= 0 || t.Channels == playing.Channels ? playing.ChannelLayout : null,
-                Language = lang,
-                Title = lang is null && t.Label.Length > 0 ? t.Label : null,
-                IsDefault = false,
-            }));
-        }
-
-        var next = first + p.AudioTracks.Count;
-        foreach (var other in source.MediaStreams.Where(s => s.Type is not (MediaStreamType.Video or MediaStreamType.Audio)))
-        {
-            other.Index = next++;
-            list.Add(other);
-        }
-
-        source.MediaStreams = list;
+        // The copy's tracks come from the catalog since MSFP's revision:
+        // phase 5 lists them on the stand-in before any play; this goes in
+        // phase 6 (plan 4.2).
     }
 
     /// <summary>A playback by Jellyfin's ID of its live stream (the provider's prefix, then ours), null when none.</summary>
@@ -419,50 +367,9 @@ public sealed class RemotePlays : IHostedService, IDisposable
     // (the same tracks, checked by the engine).
     private void AddSubtitles(MediaSourceInfo source, RemotePlayback p, string token, IReadOnlySet<string> picturesReady)
     {
-        var streams = source.MediaStreams.Where(s => s.Type != MediaStreamType.Subtitle).ToList();
-        var next = streams.Count > 0 ? streams.Max(s => s.Index) + 1 : 0;
-        var relay = source.Path[..(source.Path.IndexOf("/Msfp/Relay/", StringComparison.Ordinal) + "/Msfp/Relay/".Length)] + token + "/subtitles/";
-        foreach (var (t, forced) in p.SubtitleTracks.Select(t => (t, false)).Concat(p.ForcedTracks.Select(t => (t, true))))
-        {
-            if (t.Pictures && !picturesReady.Contains(t.Id))
-            {
-                continue;
-            }
-
-            var language = t.Language is { Length: > 0 } tag
-                ? Three(tag)
-                : null;
-            streams.Add(Localize(new MediaStream
-            {
-                Index = next++,
-                Type = MediaStreamType.Subtitle,
-                // Named as Jellyfin names a local WebVTT file's track.
-                Codec = t.Pictures ? "PGSSUB" : "webvtt",
-                Language = language,
-                // No title of the paired server's: its label is the
-                // language's name in itself ("Français"), which Jellyfin
-                // would show beside its own ("Français - French"); a local
-                // track shows the language alone. Only a track without a
-                // language keeps it.
-                Title = language is null && t.Label.Length > 0 ? t.Label : null,
-                IsForced = forced || t.Forced,
-                IsHearingImpaired = t.HearingImpaired,
-                // Default as the file says, never because the paired server
-                // picked it for the viewer's language: Jellyfin then turns
-                // subtitles on as the viewer's settings say, as for a local
-                // file.
-                IsDefault = t.Default,
-                IsExternal = true,
-                // Served by Jellyfin's own subtitle route, never the relay's
-                // URL itself, which answers this machine only.
-                SupportsExternalStream = false,
-                // PGS: a file here, which Jellyfin reads from disk only
-                // (PictureFiles); text: the relay, which Jellyfin converts.
-                Path = t.Pictures ? Subtitles.PictureFile(token, t.Id) : relay + t.Id + "/" + Subtitles.Whole,
-            }));
-        }
-
-        source.MediaStreams = streams;
+        // Since MSFP's revision the subtitles are the copy's tracks (in the
+        // file) and the answer's served ones (RemotePlayback.Subtitles):
+        // phase 6 of the migration adds them (plan 4.2). None until then.
     }
 
     // A track's words in the server's language, as Jellyfin's own reading
@@ -725,7 +632,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
         public ConcurrentDictionary<string, Lazy<Task<byte[]?>>> Subtitles { get; } = new(StringComparer.Ordinal);
 
         /// <summary>A converted stream's audio tracks by the Index Jellyfin shows; empty otherwise.</summary>
-        public Dictionary<int, Track> AudioByIndex { get; } = new();
+        public Dictionary<int, global::Msfp.Protocol.CopyAudio> AudioByIndex { get; } = new();
     }
 
     /// <summary>

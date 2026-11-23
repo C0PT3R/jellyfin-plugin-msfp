@@ -27,8 +27,8 @@ public class OfferedTests
         var kids = Guid.NewGuid();
         var catalog = new HostCatalog(new Source(
         [
-            new() { Id = films.ToString("N"), Name = "Films", Kind = "movies" },
-            new() { Id = kids.ToString("N"), Name = "Kids", Kind = "movies" },
+            new() { Id = films.ToString("N"), Name = "Films" },
+            new() { Id = kids.ToString("N"), Name = "Kids" },
         ]));
         using var engine = await MsfpEngine.OpenAsync(new MsfpConfig
         {

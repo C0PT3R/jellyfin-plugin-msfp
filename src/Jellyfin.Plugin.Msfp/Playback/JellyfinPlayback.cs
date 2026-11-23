@@ -21,6 +21,8 @@ using Msfp;
 using Msfp.Protocol;
 using Video = MediaBrowser.Controller.Entities.Video;
 
+using ByteRange = Msfp.ByteRange;
+
 namespace Jellyfin.Plugin.Msfp.Playback;
 
 /// <summary>
@@ -91,58 +93,13 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia
             && s.DeviceId?.StartsWith("msfp-", StringComparison.Ordinal) != true);
 
     /// <inheritdoc />
-    public async ValueTask<CopyInfo> DescribeAsync(string copy, CancellationToken ct)
+    // Since MSFP's revision the tracks and previews are the copy's facts in
+    // the catalog (phase 2 of the migration); what stays here is what can't
+    // be served apart and the ASS fonts (phase 3).
+    public ValueTask<CopyInfo> DescribeAsync(string copy, CancellationToken ct)
     {
-        var item = Item(copy);
-        var streams = item.GetMediaStreams();
-        var info = new CopyInfo
-        {
-            DurationMs = (item is Video whole ? Joined.Parts(whole).Sum(p => p.RunTimeTicks ?? 0) : item.RunTimeTicks ?? 0) / TimeSpan.TicksPerMillisecond,
-            Parts = item is Video v ? Joined.Parts(v).Count : 1,
-        };
-        var audio = streams.Where(s => s.Type == MediaStreamType.Audio && s.Index is >= 0 and <= 999).ToList();
-        if (audio.Count > 0)
-        {
-            info.AudioTracks = audio.Select(s => new Track
-            {
-                Id = "a" + s.Index.ToString(CultureInfo.InvariantCulture),
-                Label = Label(s),
-                Language = Lang(s.Language),
-                Channels = s.Channels ?? 0,
-                Default = s.IsDefault,
-            }).ToList();
-        }
-
-        // Text tracks as WebVTT, PGS ones as they are (MSFP video section 6.2).
-        var subtitles = TextSubtitles(streams).Concat(PgsSubtitles(streams)).OrderBy(s => s.Index).ToList();
-        if (subtitles.Count > 0)
-        {
-            info.SubtitleTracks = subtitles.Select(s => new Track
-            {
-                Id = "s" + s.Index.ToString(CultureInfo.InvariantCulture),
-                Label = Label(s),
-                Language = Lang(s.Language),
-                Default = s.IsDefault,
-                Forced = s.IsForced,
-                HearingImpaired = s.IsHearingImpaired,
-                Pictures = !s.IsTextSubtitleStream,
-            }).ToList();
-        }
-
-        if (item is Video)
-        {
-            try
-            {
-                info.Trickplay = await _previews.ForAsync(item).ConfigureAwait(false);
-            }
-            catch (Exception e) when (e is not OperationCanceledException)
-            {
-                // Previews are optional (MSFP video section 5.5): played without.
-                _log.LogWarning(e, "MSFP: the previews of {Title} couldn't be read", item.Name);
-            }
-        }
-
-        return info;
+        _ = Item(copy);
+        return ValueTask.FromResult(new CopyInfo());
     }
 
     /// <inheritdoc />
@@ -162,96 +119,33 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia
             audio = file.AudioTracks.FirstOrDefault(a => a.Index == index) ?? audio;
         }
 
+        // Since MSFP's revision the engine decides the delivery (Served)
+        // and the host makes exactly that or refuses it. Until phase 3 of
+        // the migration ports the companion plugin's checked deliveries,
+        // only the plain file is made; remux, transcode, the baseline and
+        // copies of several files (Joined) are refused.
+        if (request.Delivery != global::Msfp.Protocol.Playback.DeliveryFile || Joined.Parts(video).Count > 1)
+        {
+            _log.LogInformation("MSFP: {Peer} asked {Title} as {Delivery}: not made until the deliveries are back (migration phase 3)", request.Peer.Name, request.Title, request.Delivery);
+            throw new MsfpException(MsfpError.DeliveryRefused);
+        }
+
         var handle = Base64UrlText.Encode(RandomNumberGenerator.GetBytes(16));
-        Started started;
-        Live live;
-        var parts = Joined.Parts(video);
-        if (parts.Count > 1)
-        {
-            // A copy of several files comes whole as HLS (MSFP media section
-            // 1), joined here by copying only (Joined): Jellyfin plays its
-            // parts apart.
-            var join = Hls.Choose(file, audio, request);
-            if (!Joined.SameStreams(parts) || join.Method != "remux" || audio is not null && join.AudioCodec != audio.Codec?.ToLowerInvariant())
-            {
-                _log.LogInformation("MSFP: {Peer} can't play {Title} here: its {Parts} parts can't be joined as they are for that device", request.Peer.Name, request.Title, parts.Count);
-                throw new MsfpException(MsfpError.NotPlayable);
-            }
-
-            request.Admit?.Invoke("remux");
-            var folder = Path.Combine(Plugin.Instance?.DataFolderPath ?? Path.GetTempPath(), "joined", handle);
-            var joined = Joined.Start(_encoder.EncoderPath, folder, parts, audio?.Index ?? -1, join.Segments, Math.Max(file.BitrateKbps, 1) * 1000L);
-            live = new Live(item.Id, video.Path, request.Peer.Name, null, false) { Joined = joined };
-            started = new Started { Handle = handle, Method = "remux", Protocol = "hls" };
-        }
-        else if (Direct.Plays(file, request))
-        {
-            request.Admit?.Invoke("direct");
-            live = new Live(item.Id, video.Path, request.Peer.Name, null, false);
-            started = new Started { Handle = handle, Method = "direct", Protocol = "file", MimeType = file.MimeType };
-        }
-        else
-        {
-            if (file.Video is null)
-            {
-                throw new MsfpException(MsfpError.NotPlayable);
-            }
-
-            var choice = Hls.Choose(file, audio, request);
-            var transcode = choice.Method == "transcode";
-            if (transcode && !_limit.TryTake())
-            {
-                _log.LogInformation("MSFP: {Peer} can't play {Title} here: transcodes at once on this server are all in use", request.Peer.Name, request.Title);
-                throw new MsfpException(MsfpError.ServerBusy);
-            }
-
-            ISlot? slot = null;
-            try
-            {
-                slot = request.Admit?.Invoke(choice.Method);
-                var master = await _hls.MasterAsync(item.Id, handle, choice, audio?.Index ?? -1, ct).ConfigureAwait(false);
-                live = new Live(item.Id, video.Path, request.Peer.Name, master, transcode) { Slot = slot };
-                started = new Started { Handle = handle, Method = choice.Method, Protocol = "hls" };
-                if (!transcode)
-                {
-                    WatchRemux(handle, request.Title);
-                }
-            }
-            catch
-            {
-                slot?.Release();
-                if (transcode)
-                {
-                    _limit.Give();
-                }
-
-                throw;
-            }
-        }
-
+        request.Admit?.Invoke("direct");
+        var live = new Live(item.Id, video.Path, request.Peer.Name, null, false);
+        var started = new Started { Handle = handle, Method = "direct", Protocol = "file" };
         _live[handle] = live;
         live.Method = started.Method;
         live.Session = await _peerSessions.StartAsync(handle, request.Peer.Name, item.Id, started.Method, request.StartMs).ConfigureAwait(false);
         _log.LogInformation("MSFP: {Peer} plays {Title} here, {Method}", request.Peer.Name, request.Title, started.Method);
-        return started with
-        {
-            PositionMs = request.StartMs,
-            Segments = await SegmentsOfAsync(item, ct).ConfigureAwait(false),
-            Info = new PlaybackInfo
-            {
-                Container = started.Protocol == "file" ? file.Container : null,
-                BitrateKbps = started.Protocol == "file" ? file.BitrateKbps : 0,
-                Video = started.Method != "transcode" && file.Video is { } vs
-                    ? new StreamInfo { Codec = vs.Codec, Profile = vs.Profile, Width = vs.Width ?? 0, Height = vs.Height ?? 0, BitDepth = vs.BitDepth ?? 0 }
-                    : null,
-                Audio = audio is { } a ? new StreamInfo { Codec = a.Codec, Channels = a.Channels ?? 0, Language = Lang(a.Language) } : null,
-            },
-        };
+        // Segments and the stream facts are the catalog's copy since MSFP's
+        // revision (phase 2).
+        return started with { PositionMs = request.StartMs };
     }
 
     // The copy's skip markers, as Jellyfin keeps them (its own providers', or
     // a plugin's), in MSFP's kinds (video section 5.3); none when it has none.
-    private async Task<IReadOnlyList<Segment>?> SegmentsOfAsync(BaseItem item, CancellationToken ct)
+    internal async Task<IReadOnlyList<CopySegment>?> SegmentsOfAsync(BaseItem item, CancellationToken ct)
     {
         try
         {
@@ -259,7 +153,7 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia
             var markers = found
                 .Select(s => (Kind: Viewing.PairedSegments.KindOf(s.Type), s.StartTicks, s.EndTicks))
                 .Where(s => s.Kind is not null && s.StartTicks >= 0)
-                .Select(s => new Segment(s.Kind!, s.StartTicks / TimeSpan.TicksPerMillisecond, Math.Max(s.EndTicks, 0) / TimeSpan.TicksPerMillisecond))
+                .Select(s => new CopySegment(s.Kind!, s.StartTicks / TimeSpan.TicksPerMillisecond, Math.Max(s.EndTicks, 0) / TimeSpan.TicksPerMillisecond))
                 .ToList();
             return markers.Count > 0 ? markers : null;
         }
@@ -272,12 +166,19 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia
     }
 
     /// <inheritdoc />
-    public ValueTask ProgressAsync(string handle, long positionMs, bool paused, CancellationToken ct)
+    // Since MSFP's revision a report carries no pause: Jellyfin's dashboard
+    // shows the playback as playing.
+    public ValueTask ProgressAsync(Report report, CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(report);
+        var handle = report.Handle;
         if (!_live.TryGetValue(handle, out var live))
         {
             throw new MsfpException(MsfpError.NotFound);
         }
+
+        var positionMs = report.HasPosition ? report.PositionMs : live.PositionMs;
+        const bool paused = false;
 
         live.PositionMs = positionMs;
         live.Paused = paused;

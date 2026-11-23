@@ -248,7 +248,7 @@ public class AdminController : ControllerBase
     /// <summary>This server's libraries: what it may share, before a group exists (creating or joining one).</summary>
     [HttpGet("Libraries")]
     public ContentResult Libraries() =>
-        Json(_catalog.Read().Libraries.Select(l => new { id = l.Id, name = l.Name, kind = l.Kind }).ToList());
+        Json(_catalog.Read().Libraries.Select(l => new { id = l.Id, name = l.Name, kind = string.Empty /* no library kind since MSFP's revision: typed by its titles in phase 4 (page) */ }).ToList());
 
     // What this server shares with a group and the limits it lends it; the
     // libraries are this server's own.
@@ -361,7 +361,7 @@ public class AdminController : ControllerBase
     /// <summary>This server's libraries, those offered to the peer marked.</summary>
     [HttpGet("Peers/{id}/Offers")]
     public Task<ContentResult> Offers(string id, CancellationToken ct) => Run(async e =>
-        (await e.OffersAsync(id, ct).ConfigureAwait(false)).Select(l => new { id = l.Id, name = l.Name, kind = l.Kind, offered = l.Offered }));
+        (await e.OffersAsync(id, ct).ConfigureAwait(false)).Select(l => new { id = l.Id, name = l.Name, kind = string.Empty /* no library kind since MSFP's revision: typed by its titles in phase 4 (page) */, offered = l.Offered }));
 
     /// <summary>Sets which libraries a peer is offered.</summary>
     [HttpPost("Peers/{id}/Offers")]
@@ -384,7 +384,7 @@ public class AdminController : ControllerBase
     public Task<ContentResult> Theirs(string id, CancellationToken ct) => Run(async e => new
     {
         all = _wants.WantsAll(id),
-        libraries = (await e.TheirLibrariesAsync(id, ct).ConfigureAwait(false)).Select(l => new { id = l.Id, name = l.Name, kind = l.Kind, wanted = l.Wanted, gone = l.Gone }),
+        libraries = (await e.TheirLibrariesAsync(id, ct).ConfigureAwait(false)).Select(l => new { id = l.Id, name = l.Name, kind = string.Empty /* no library kind since MSFP's revision: typed by its titles in phase 4 (page) */, wanted = l.Wanted, gone = l.Gone }),
     });
 
     /// <summary>Sets which of a peer's libraries this server reads; a reading follows at once.</summary>
@@ -436,9 +436,9 @@ public class AdminController : ControllerBase
         {
             total = kinds.Values.Sum(),
             kinds,
-            libraries = wants.Select(l => new { id = l.Id, name = l.Name, kind = l.Kind, wanted = l.Wanted, gone = l.Gone }),
+            libraries = wants.Select(l => new { id = l.Id, name = l.Name, kind = string.Empty /* no library kind since MSFP's revision: typed by its titles in phase 4 (page) */, wanted = l.Wanted, gone = l.Gone }),
             titles = titles.Select(t => t is VideoTitle v
-                ? new { key = t.Key, kind = t.Kind, library = t.Libraries?.FirstOrDefault(), audio = v.Audio ?? [], subtitles = v.Subtitles ?? [], height = v.Video?.Height }
+                ? new { key = t.Key, kind = t.Kind, library = t.Libraries?.FirstOrDefault(), audio = v.AudioLanguages().ToList(), subtitles = v.SubtitleLanguages().ToList(), height = v.BestCopy()?.Video?.Height }
                 : new { key = t.Key, kind = t.Kind, library = t.Libraries?.FirstOrDefault(), audio = new List<string>(), subtitles = new List<string>(), height = (int?)null }),
             more = titles.Count == 1000,
             next = titles.Count == 1000 ? titles[^1].Key : null,
@@ -522,7 +522,7 @@ public class AdminController : ControllerBase
         {
             member = m.Member,
             name = m.Name,
-            libraries = m.Libraries.Select(l => new { id = l.Id, name = l.Name, kind = l.Kind, shown = l.Shown }),
+            libraries = m.Libraries.Select(l => new { id = l.Id, name = l.Name, kind = string.Empty /* no library kind since MSFP's revision: typed by its titles in phase 4 (page) */, shown = l.Shown }),
         }).ToList());
 
     /// <summary>Sets the members' libraries this server doesn't show from a group.</summary>
@@ -538,7 +538,7 @@ public class AdminController : ControllerBase
         var libs = await e.GroupOffersAsync(id, ct).ConfigureAwait(false);
         return new
         {
-            libraries = libs.Select(l => new { id = l.Id, name = l.Name, kind = l.Kind, offered = l.Offered }),
+            libraries = libs.Select(l => new { id = l.Id, name = l.Name, kind = string.Empty /* no library kind since MSFP's revision: typed by its titles in phase 4 (page) */, offered = l.Offered }),
             pool = g.Pool,
             accept = g.Accept,
         };

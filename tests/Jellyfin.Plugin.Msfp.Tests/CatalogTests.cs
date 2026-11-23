@@ -26,9 +26,9 @@ public class CatalogTests
 
     private static readonly Library[] Libs =
     [
-        new() { Id = "aaaa", Name = "Films", Kind = "movies" },
-        new() { Id = "bbbb", Name = "Kids", Kind = "movies" },
-        new() { Id = "cccc", Name = "Series", Kind = "tvshows" },
+        new() { Id = "aaaa", Name = "Films" },
+        new() { Id = "bbbb", Name = "Kids" },
+        new() { Id = "cccc", Name = "Series" },
     ];
 
     private static HostCatalog Catalog(out Source source, params CatalogEntry[] entries)
@@ -50,9 +50,16 @@ public class CatalogTests
         Assert.Equal(["movie/tmdb/10331", "movie/tmdb/603", "series/tmdb/1920"], page.Titles.Select(t => t.Key));
         var matrix = Assert.IsType<VideoTitle>(page.Titles[1]);
         Assert.Equal(["bbbb", "aaaa"], matrix.Libraries);
-        Assert.Equal(["fre", "eng"], matrix.Audio); // FRE is fre again, without case
-        Assert.Equal(["eng"], matrix.Subtitles);
-        Assert.Equal(2, matrix.Pictures!.Count);
+    }
+
+    // Since MSFP's revision a title's languages and pictures are its copies'
+    // facts (VideoTitle.Copies): the titles leave without copies until
+    // phase 2 of the migration. What this test checked then:
+    //   matrix.Audio == ["fre", "eng"] (FRE is fre again, without case),
+    //   matrix.Subtitles == ["eng"], matrix.Pictures has 2 entries.
+    [Fact(Skip = "Phase 2 of the migration: copies as facts on the titles (languages and pictures from them)")]
+    public void TitlesCarryTheirCopiesLanguagesAndPictures()
+    {
     }
 
     [Fact]
@@ -88,12 +95,14 @@ public class CatalogTests
     [Fact]
     public async Task WhatTheEngineChangesIsntTheCatalogs()
     {
-        var c = Catalog(out var source, new CatalogEntry("aaaa", "movie/tmdb/1", "movie", "i1") { Audio = ["eng"] });
+        // The title's audio languages went with MSFP's revision (copies'
+        // facts, phase 2): its With list stands in for them here.
+        var c = Catalog(out var source, new CatalogEntry("aaaa", "movie/tmdb/1", "movie", "i1") { With = ["movie/tmdb/2"] });
         var t = (VideoTitle)(await c.TitlesAsync(["aaaa"], "", 10, default)).Titles[0];
-        t.Audio!.Add("ger");
+        t.With!.Add("movie/tmdb/3");
         t.Libraries!.Clear();
         var again = (VideoTitle)(await c.TitlesAsync(["aaaa"], "", 10, default)).Titles[0];
-        Assert.Equal(["eng"], again.Audio);
+        Assert.Equal(["movie/tmdb/2"], again.With);
         Assert.Equal(["aaaa"], again.Libraries);
         Assert.Equal(1, source.Reads);
         c.Changed();

@@ -12,7 +12,7 @@ using MediaBrowser.Model.Entities;
 using Msfp;
 using Msfp.Protocol;
 using MsfpVideo = Msfp.Protocol.Video;
-using Picture = Msfp.Picture;
+using Picture = Jellyfin.Plugin.Msfp.Federation.Picture;
 
 namespace Jellyfin.Plugin.Msfp.Catalog;
 
@@ -44,7 +44,8 @@ public sealed class JellyfinCatalogSource : ICatalogSource
         return _library.GetVirtualFolders()
             // The plugin's own two hold other servers' titles: never offered.
             .Where(f => Guid.TryParse(f.ItemId, out _) && !Viewing.StandIns.IsOurs(f))
-            .Select(f => new Library { Id = Guid.Parse(f.ItemId).ToString("N"), Name = f.Name ?? string.Empty, Kind = Kind(f.CollectionType?.ToString()) })
+            // No kind since MSFP's revision (a viewer types a library by its titles).
+            .Select(f => new Library { Id = Guid.Parse(f.ItemId).ToString("N"), Name = f.Name ?? string.Empty })
             .ToList();
     }
 
@@ -111,15 +112,15 @@ public sealed class JellyfinCatalogSource : ICatalogSource
         switch (item)
         {
             case Movie when own?.Taken is { } id:
-                yield return Copy(item, library, new VideoKey("movie", id), []) with { Ids = OtherIds(own) };
+                yield return Copy(item, library, new VideoKey("movie", "tmdb", id), []) with { Ids = OtherIds(own) };
                 break;
 
             case Series when own?.Taken is { } id:
-                yield return new CatalogEntry(library, new VideoKey("series", id).ToString(), "series", null) { Ids = OtherIds(own) };
+                yield return new CatalogEntry(library, new VideoKey("series", "tmdb", id).ToString(), "series", null) { Ids = OtherIds(own) };
                 break;
 
             case Season s when seriesOf(s.SeriesId)?.Taken is { } id && s.IndexNumber is >= 0 and <= 9999:
-                yield return new CatalogEntry(library, new VideoKey("season", id, s.IndexNumber.Value).ToString(), "season", null);
+                yield return new CatalogEntry(library, new VideoKey("season", "tmdb", id, Season: s.IndexNumber.Value).ToString(), "season", null);
                 break;
 
             case Episode episode when seriesOf(episode.SeriesId) is { Taken: { } id } series
@@ -131,8 +132,8 @@ public sealed class JellyfinCatalogSource : ICatalogSource
                 var last = episode.IndexNumberEnd is { } end && end > first && end <= 99999 && end - first < 16 ? end : first;
                 var keys = Enumerable.Range(first, last - first + 1).Select(n =>
                     series.Episodes.TryGetValue(TitleIdentity.EpisodeKey(season, n), out var e)
-                        ? (Key: new VideoKey("episode", id, EpisodeId: e.EpisodeId), Place: (global::Msfp.Place?)new global::Msfp.Place { Season = e.Season, Episode = e.Episode })
-                        : (Key: new VideoKey("episode", id, season, n), Place: null))
+                        ? (Key: new VideoKey("episode", "tmdb", id, EpisodeId: e.EpisodeId), Place: (global::Msfp.Place?)new global::Msfp.Place { Season = e.Season, Episode = e.Episode })
+                        : (Key: new VideoKey("episode", "tmdb", id, Season: season, Episode: n), Place: null))
                     .DistinctBy(k => k.Key.ToString())
                     .ToList();
                 foreach (var k in keys)

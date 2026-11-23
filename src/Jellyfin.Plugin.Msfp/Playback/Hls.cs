@@ -16,6 +16,8 @@ using MediaBrowser.Model.Entities;
 using Msfp;
 using Msfp.Protocol;
 
+using ByteRange = Msfp.ByteRange;
+
 namespace Jellyfin.Plugin.Msfp.Playback;
 
 /// <summary>How a copy is played as HLS: Jellyfin's own HLS, asked for these.</summary>
@@ -70,7 +72,7 @@ internal sealed partial class Hls
     /// bitrate; else transcoded to H.264. Nothing said about video codecs:
     /// H.264; about audio codecs: AAC (MSFP video section 5.1).
     /// </summary>
-    public static HlsChoice Choose(FileFacts file, MediaStream? audio, StartRequest request)
+    public static HlsChoice Choose(FileFacts file, MediaStream? audio, Asked request)
     {
         var caps = request.Capabilities;
         var video = file.Video?.Codec?.ToLowerInvariant() ?? string.Empty;

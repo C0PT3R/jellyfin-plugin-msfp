@@ -113,14 +113,14 @@ public sealed class StandIns : IHostedService, IDisposable
 
     internal static Playable? CopyOf(Wanted? w, string key)
     {
-        if (w is null || !global::Msfp.Protocol.VideoKey.TryParse(key, out var k))
+        if (w is null || !global::Msfp.Protocol.VideoKey.TryParse(key, out var k) || k.Scheme != "tmdb")
         {
             return null;
         }
 
         return k.Kind == "movie"
-            ? w.Films.TryGetValue(k.Tmdb, out var f) ? f.Copy : null
-            : w.Series.TryGetValue(k.Tmdb, out var s) && s.Episodes.TryGetValue(key, out var e) ? e.Copy : null;
+            ? w.Films.TryGetValue(k.Id, out var f) ? f.Copy : null
+            : w.Series.TryGetValue(k.Id, out var s) && s.Episodes.TryGetValue(key, out var e) ? e.Copy : null;
     }
 
     /// <summary>
@@ -259,6 +259,14 @@ public sealed class StandIns : IHostedService, IDisposable
     /// <summary>One pass: the libraries made, the stand-ins as the catalogs and this server's titles say.</summary>
     internal async Task KeepAsync(CancellationToken ct)
     {
+        // Off on this branch until phase 5 of the migration builds the
+        // stand-ins from the copies' facts (MSFP's revised version 0): those
+        // already made are left as they are.
+        if (!RemotePlays.ViewingOn)
+        {
+            return;
+        }
+
         if (Plugin.Instance is not { } plugin || !await _running.WaitAsync(0, ct).ConfigureAwait(false))
         {
             return;

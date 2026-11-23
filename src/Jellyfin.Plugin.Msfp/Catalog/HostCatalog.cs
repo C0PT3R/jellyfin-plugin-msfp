@@ -4,7 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Msfp;
-using Picture = Msfp.Picture;
+using Picture = Jellyfin.Plugin.Msfp.Federation.Picture;
 
 namespace Jellyfin.Plugin.Msfp.Catalog;
 
@@ -38,6 +38,24 @@ public sealed record CatalogEntry(string Library, string Key, string Kind, strin
 
     /// <summary>The copy's name, for versions.</summary>
     public string CopyName { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// A copy as this plugin keeps it: Jellyfin's item ID (the handle), its
+/// name and library, its audio languages. The engine's own Copy went with
+/// MSFP's revision; until phase 2 of the migration describes copies in
+/// MSFP's facts (Protocol.Copy on the title), they stay here and titles
+/// leave without copies.
+/// </summary>
+public sealed record OwnCopy
+{
+    public string Handle { get; init; } = string.Empty;
+
+    public string Name { get; init; } = string.Empty;
+
+    public string Library { get; init; } = string.Empty;
+
+    public List<string>? Audio { get; init; }
 }
 
 /// <summary>Where this server's titles come from: Jellyfin, or a test's list.</summary>
@@ -112,12 +130,10 @@ public sealed class HostCatalog : ICatalog
                 break;
             }
 
+            // Titles leave without copies until phase 2 (copies as facts).
             titles.Add(t with
             {
                 Libraries = libs,
-                Audio = t.Audio?.ToList(),
-                Subtitles = t.Subtitles?.ToList(),
-                Pictures = t.Pictures?.ToList(),
                 With = t.With?.ToList(),
                 Ids = t.Ids is null ? null : new Dictionary<string, string>(t.Ids),
             });
@@ -126,11 +142,15 @@ public sealed class HostCatalog : ICatalog
         return ValueTask.FromResult(new TitlePage(titles, more));
     }
 
-    /// <inheritdoc />
-    public ValueTask<IReadOnlyList<Copy>> CopiesAsync(string key, IReadOnlyList<string> libraries, CancellationToken ct)
+    /// <summary>
+    /// A title's copies in the given libraries, best first (the engine's
+    /// CopiesAsync before MSFP's revision; the plugin's own until phase 2
+    /// puts them on the titles).
+    /// </summary>
+    public ValueTask<IReadOnlyList<OwnCopy>> CopiesAsync(string key, IReadOnlyList<string> libraries, CancellationToken ct)
     {
         var s = Read();
-        IReadOnlyList<Copy> copies = s.Copies.TryGetValue(key, out var all)
+        IReadOnlyList<OwnCopy> copies = s.Copies.TryGetValue(key, out var all)
             ? all.Where(c => libraries.Contains(c.Library, StringComparer.Ordinal)).Select(c => c with { Audio = c.Audio?.ToList() }).ToList()
             : [];
         return ValueTask.FromResult(copies);
@@ -146,7 +166,7 @@ public sealed class HostCatalog : ICatalog
 
         public required IReadOnlyDictionary<string, VideoTitle> Titles { get; init; }
 
-        public required IReadOnlyDictionary<string, List<Copy>> Copies { get; init; }
+        public required IReadOnlyDictionary<string, List<OwnCopy>> Copies { get; init; }
 
         /// <summary>The index of the first key strictly after this one.</summary>
         public int FirstAfter(string after)
@@ -176,7 +196,7 @@ public sealed class HostCatalog : ICatalog
         public static Snapshot Of(IReadOnlyList<Library> libraries, IEnumerable<CatalogEntry> entries)
         {
             var titles = new Dictionary<string, VideoTitle>(StringComparer.Ordinal);
-            var copies = new Dictionary<string, List<Copy>>(StringComparer.Ordinal);
+            var copies = new Dictionary<string, List<OwnCopy>>(StringComparer.Ordinal);
             var pictures = new Dictionary<string, Picture>(StringComparer.Ordinal);
             foreach (var e in entries)
             {
@@ -195,14 +215,10 @@ public sealed class HostCatalog : ICatalog
                     t.Libraries.Add(e.Library);
                 }
 
-                t.Audio = Union(t.Audio, e.Audio);
-                t.Subtitles = Union(t.Subtitles, e.Subtitles);
+                // A title's languages and pictures come from its copies
+                // since MSFP's revision: phase 2.
                 t.With = Union(t.With, e.With);
                 t.Place ??= e.Place;
-                if (e.Picture is { } p)
-                {
-                    (t.Pictures ??= []).Add(p);
-                }
 
                 foreach (var (scheme, id) in e.Ids)
                 {
@@ -219,7 +235,7 @@ public sealed class HostCatalog : ICatalog
                     var list = copies.TryGetValue(e.Key, out var l) ? l : copies[e.Key] = [];
                     if (!list.Any(c => c.Handle == handle && c.Library == e.Library))
                     {
-                        list.Add(new Copy { Handle = handle, Name = e.CopyName, Audio = e.Audio.ToList(), Library = e.Library });
+                        list.Add(new OwnCopy { Handle = handle, Name = e.CopyName, Audio = e.Audio.ToList(), Library = e.Library });
                     }
                 }
             }

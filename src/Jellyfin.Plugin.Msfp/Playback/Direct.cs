@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using MediaBrowser.Model.Entities;
 using Msfp;
-using Picture = Msfp.Picture;
+using Picture = Jellyfin.Plugin.Msfp.Federation.Picture;
 
 namespace Jellyfin.Plugin.Msfp.Playback;
 
@@ -38,7 +38,7 @@ internal sealed record FileFacts
 /// </summary>
 internal static class Direct
 {
-    public static bool Plays(FileFacts file, StartRequest request)
+    public static bool Plays(FileFacts file, Asked request)
     {
         var caps = request.Capabilities;
         if (file.Container.Length == 0 || file.Video?.Codec is not { Length: > 0 } video

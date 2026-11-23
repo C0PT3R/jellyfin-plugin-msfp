@@ -4,7 +4,7 @@ using System.Globalization;
 using System.Linq;
 using Msfp;
 using Msfp.Protocol;
-using Picture = Msfp.Picture;
+using Picture = Jellyfin.Plugin.Msfp.Federation.Picture;
 using VideoTitle = Msfp.VideoTitle;
 
 namespace Jellyfin.Plugin.Msfp.Viewing;
@@ -31,13 +31,41 @@ internal sealed class Playable
 
     internal void Add(string peer, VideoTitle t)
     {
-        Holders.Add(new Holder(peer, t.Video));
+        // Since MSFP's revision a title's picture and languages are its
+        // copies' (phase 5 builds stand-ins from the copies themselves).
+        Holders.Add(new Holder(peer, PictureOf(t.BestCopy())));
         Holders.Sort((a, b) => Better(a.Picture, b.Picture) ? -1 : Better(b.Picture, a.Picture) ? 1 : string.CompareOrdinal(a.Peer, b.Peer));
-        Audio.UnionWith(t.Audio ?? []);
-        Subtitles.UnionWith(t.Subtitles ?? []);
+        Audio.UnionWith(t.AudioLanguages());
+        Subtitles.UnionWith(t.SubtitleLanguages());
     }
 
     private static bool Better(Picture? a, Picture? b) => a is not null && (b is null || a.Better(b));
+
+    /// <summary>A copy's picture as the holders are ranked: its height, its HDR (hdr10plus, else the range its transfer says).</summary>
+    internal static Picture? PictureOf(global::Msfp.Protocol.Copy? copy)
+    {
+        if (copy?.Video is not { } v)
+        {
+            return null;
+        }
+
+        var hdr = v.Hdr.ToList();
+        if (v.Colour?.Transfer is global::Msfp.Protocol.VideoColour.TransferPq)
+        {
+            hdr.Add("hdr10");
+        }
+        else if (v.Colour?.Transfer is global::Msfp.Protocol.VideoColour.TransferHlg)
+        {
+            hdr.Add("hlg");
+        }
+
+        if (v.Dv is not null)
+        {
+            hdr.Add("dolby-vision");
+        }
+
+        return new Picture { Height = v.Height, Hdr = hdr.Count > 0 ? hdr : null };
+    }
 }
 
 /// <summary>A series' episode as a stand-in: its place in TMDB's numbering, and TMDB's ID of it (0 for an episode TMDB doesn't list).</summary>
@@ -131,18 +159,20 @@ internal sealed class Wanted
         {
             foreach (var t in titles.OfType<VideoTitle>())
             {
-                if (!VideoKey.TryParse(t.Key, out var k))
+                // Only TMDB keys until phase 5 of the migration (tvdb, local
+                // and extras' keys of MSFP's revision).
+                if (!VideoKey.TryParse(t.Key, out var k) || k.Scheme != "tmdb" || k.Kind == "extra")
                 {
                     continue;
                 }
 
                 switch (k.Kind)
                 {
-                    case "movie" when !held.Films.Contains(k.Tmdb):
-                        if (!w.Films.TryGetValue(k.Tmdb, out var f))
+                    case "movie" when !held.Films.Contains(k.Id):
+                        if (!w.Films.TryGetValue(k.Id, out var f))
                         {
-                            f = new WantedFilm { Tmdb = k.Tmdb, Copy = new Playable { Key = k.ToString() } };
-                            w.Films[k.Tmdb] = f;
+                            f = new WantedFilm { Tmdb = k.Id, Copy = new Playable { Key = k.ToString() } };
+                            w.Films[k.Id] = f;
                         }
 
                         f.Copy.Add(peer, t);
@@ -151,13 +181,13 @@ internal sealed class Wanted
 
                     case "series":
                         // Its IDs only: a series is shown for its episodes.
-                        if (w.Series.TryGetValue(k.Tmdb, out var known))
+                        if (w.Series.TryGetValue(k.Id, out var known))
                         {
                             AddIds(known.Ids, t);
                         }
                         else
                         {
-                            w.SeriesIds(k.Tmdb, t);
+                            w.SeriesIds(k.Id, t);
                         }
 
                         break;
@@ -167,12 +197,12 @@ internal sealed class Wanted
                         var (season, episode) = k.ByEpisodeId
                             ? t.Place is { } p ? (p.Season, p.Episode) : (-1, -1)
                             : (k.Season, k.Episode);
-                        if (season < 0 || held.Series.TryGetValue(k.Tmdb, out var hs) && hs.Holds(k.EpisodeId, season, episode))
+                        if (season < 0 || held.Series.TryGetValue(k.Id, out var hs) && hs.Holds(k.EpisodeId, season, episode))
                         {
                             continue;
                         }
 
-                        var s = w.SeriesNamed(k.Tmdb);
+                        var s = w.SeriesNamed(k.Id);
                         var key = k.ToString();
                         if (!s.Episodes.TryGetValue(key, out var e))
                         {
@@ -238,11 +268,11 @@ internal sealed class Wanted
 
     /// <summary>A season's key, for its stand-in's path.</summary>
     public static string SeasonKey(long series, int season) =>
-        new VideoKey("season", series, season).ToString();
+        new VideoKey("season", "tmdb", series, Season: season).ToString();
 
-    public static string SeriesKey(long series) => new VideoKey("series", series).ToString();
+    public static string SeriesKey(long series) => new VideoKey("series", "tmdb", series).ToString();
 
-    public static string FilmKey(long film) => new VideoKey("movie", film).ToString();
+    public static string FilmKey(long film) => new VideoKey("movie", "tmdb", film).ToString();
 
     internal static string Number(long n) => n.ToString(CultureInfo.InvariantCulture);
 }

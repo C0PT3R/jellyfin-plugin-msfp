@@ -24,7 +24,7 @@ public class PlaybackTests
         BitrateKbps = kbps,
     };
 
-    private static StartRequest Ask(Capabilities caps, string audioTrack = "", int maxKbps = 120_000) =>
+    private static Asked Ask(Capabilities caps, string audioTrack = "", int maxKbps = 120_000) =>
         new() { Capabilities = caps, AudioTrack = audioTrack, MaxBitrateKbps = maxKbps };
 
     private static readonly Capabilities Browser = new() { Containers = ["mp4", "webm"], VideoCodecs = ["h264", "vp9"], AudioCodecs = ["aac", "opus"] };

@@ -47,7 +47,12 @@ internal sealed class PeerPreviews
 
     private async Task FetchAsync(MsfpEngine engine, BaseItem item, RemotePlayback playback)
     {
-        if (playback.Trickplay is not { Sheets: > 0 } tp)
+        // Since MSFP's revision the previews' layout is the copy's
+        // (Protocol.Copy.PreviewLayout) and sheets come under the playback's
+        // ticket one by one: phase 7 of the migration takes the layout from
+        // the stand-in's copy. Until then, none.
+        global::Msfp.Protocol.PreviewLayout? layout = null;
+        if (layout is not { Sheets: > 0 } tp)
         {
             return;
         }

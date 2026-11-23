@@ -42,7 +42,7 @@ public sealed class PairedSegments : IMediaSegmentProvider
     public Task CleanupExtractedData(Guid itemId, CancellationToken cancellationToken) => Task.CompletedTask;
 
     /// <summary>A playback's markers as the stand-in's segments, in place of those it had.</summary>
-    internal static async Task SaveAsync(IMediaSegmentManager segments, BaseItem item, IReadOnlyList<global::Msfp.Segment> markers, CancellationToken ct)
+    internal static async Task SaveAsync(IMediaSegmentManager segments, BaseItem item, IReadOnlyList<global::Msfp.Protocol.CopySegment> markers, CancellationToken ct)
     {
         var wanted = markers.Select(m => (Type: TypeOf(m.Kind), m.StartMs, m.EndMs)).Where(m => m.Type is not null && m.EndMs > m.StartMs).ToList();
         if (wanted.Count == 0 && !segments.HasSegments(item.Id))

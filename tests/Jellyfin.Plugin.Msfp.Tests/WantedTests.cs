@@ -3,22 +3,37 @@ using System.Linq;
 using Jellyfin.Plugin.Msfp.Viewing;
 using Msfp;
 using Xunit;
-using Picture = Msfp.Picture;
+using Picture = Jellyfin.Plugin.Msfp.Federation.Picture;
+using Copy = Msfp.Protocol.Copy;
+using CopyAudio = Msfp.Protocol.CopyAudio;
+using CopySubtitle = Msfp.Protocol.CopySubtitle;
+using VideoStream = Msfp.Protocol.VideoStream;
 using VideoTitle = Msfp.VideoTitle;
 
 namespace Jellyfin.Plugin.Msfp.Tests;
 
 public class WantedTests
 {
-    private static VideoTitle T(string key, int? height = null, string[]? audio = null, Place? place = null, Dictionary<string, string>? ids = null) => new()
+    // A peer's title: since MSFP's revision its picture and languages are
+    // its copy's facts.
+    private static VideoTitle T(string key, int? height = null, string[]? audio = null, Place? place = null, Dictionary<string, string>? ids = null, string[]? subtitles = null)
     {
-        Key = key,
-        Kind = key.StartsWith("movie", System.StringComparison.Ordinal) ? "movie" : key.Contains("/e", System.StringComparison.Ordinal) ? "episode" : key.Contains("/s", System.StringComparison.Ordinal) ? "season" : "series",
-        Audio = audio?.ToList(),
-        Video = height is { } h ? new Picture { Height = h } : null,
-        Place = place,
-        Ids = ids,
-    };
+        var kind = key.StartsWith("movie", System.StringComparison.Ordinal) ? "movie" : key.Contains("/e", System.StringComparison.Ordinal) ? "episode" : key.Contains("/s", System.StringComparison.Ordinal) ? "season" : "series";
+        var playable = kind is "movie" or "episode";
+        var copy = new Copy("c1", 60_000, "video/mp4", 1000, "e1", (audio ?? []).Select((l, i) => new CopyAudio("a" + (i + 1), "aac") { Language = l }).ToList())
+        {
+            Video = height is { } h ? new VideoStream("h264", h * 16 / 9, h) : null,
+            SubtitleTracks = (subtitles ?? []).Select((l, i) => new CopySubtitle("s" + (i + 10), "subrip") { Language = l }).ToList(),
+        };
+        return new VideoTitle
+        {
+            Key = key,
+            Kind = kind,
+            Copies = playable && (height is not null || audio is not null || subtitles is not null) ? [copy] : null,
+            Place = place,
+            Ids = ids,
+        };
+    }
 
     [Fact]
     public void OneStandInPerFilmTheBestCopyFirst()
@@ -95,7 +110,7 @@ public class WantedTests
     public void StreamsSayTheLanguagesAndPicture()
     {
         var p = new Playable { Key = "movie/tmdb/603" };
-        p.Add("a", T("movie/tmdb/603", 1080, ["fr", "en"]) with { Subtitles = ["en"] });
+        p.Add("a", T("movie/tmdb/603", 1080, ["fr", "en"], subtitles: ["en"]));
         var streams = Streams.Of(p, l => l == "fr" ? "fre" : l == "en" ? "eng" : null);
         Assert.Equal(1080, streams[0].Height);
         Assert.Equal(["eng", "fre"], streams.Where(s => s.Type == MediaBrowser.Model.Entities.MediaStreamType.Audio).Select(s => s.Language));

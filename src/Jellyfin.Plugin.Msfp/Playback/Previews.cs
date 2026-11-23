@@ -35,7 +35,8 @@ internal sealed class Previews
     }
 
     /// <summary>The previews to send for the item, or null for none.</summary>
-    public async Task<Trickplay?> ForAsync(BaseItem item)
+    // A copy's previewLayout since MSFP's revision (put on the copy in phase 2).
+    public async Task<global::Msfp.Protocol.PreviewLayout?> ForAsync(BaseItem item)
     {
         var chosen = Choose(await _trickplay.GetTrickplayResolutions(item.Id).ConfigureAwait(false));
         if (chosen is null || !File.Exists(await SheetPathAsync(item, chosen, 0).ConfigureAwait(false)))
@@ -43,15 +44,7 @@ internal sealed class Previews
             return null;
         }
 
-        return new Trickplay
-        {
-            TileWidth = chosen.Width,
-            TileHeight = chosen.Height,
-            Columns = chosen.TileWidth,
-            Rows = chosen.TileHeight,
-            IntervalMs = chosen.Interval,
-            TileCount = chosen.ThumbnailCount,
-        };
+        return new global::Msfp.Protocol.PreviewLayout(chosen.Width, chosen.Height, chosen.TileWidth, chosen.TileHeight, chosen.Interval, chosen.ThumbnailCount);
     }
 
     /// <summary>Sheet n of the previews <see cref="ForAsync"/> chose, as a JPEG.</summary>
