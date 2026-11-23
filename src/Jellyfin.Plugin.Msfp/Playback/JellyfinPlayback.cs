@@ -80,14 +80,25 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia, IDisposable
     /// the audio codecs Jellyfin's ffmpeg encodes; the range sdr only
     /// (keep refused everywhere this release).
     /// </summary>
-    public global::Msfp.Encoders Encoders()
+    // The lists are read again each time the engine reads them: Jellyfin's
+    // settings may change, and its ffmpeg's encoders aren't known yet when
+    // the engine opens at Jellyfin's start.
+    public global::Msfp.Encoders Encoders() => new()
     {
-        var now = _deliveries.Encoders();
-        return new global::Msfp.Encoders
-        {
-            Video = now.Video.Where(v => v != Names.BaselineVideoCodec).ToList(),
-            Audio = now.Audio.Where(a => a != Names.BaselineAudioCodec).ToList(),
-        };
+        Video = new LiveList(() => _deliveries.Encoders().Video.Where(v => v != Names.BaselineVideoCodec).ToList()),
+        Audio = new LiveList(() => _deliveries.Encoders().Audio.Where(a => a != Names.BaselineAudioCodec).ToList()),
+    };
+
+    /// <summary>A list read anew from its source each time it is read.</summary>
+    internal sealed class LiveList(Func<List<string>> read) : IReadOnlyList<string>
+    {
+        public int Count => read().Count;
+
+        public string this[int index] => read()[index];
+
+        public IEnumerator<string> GetEnumerator() => read().GetEnumerator();
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     // The server's own users' transcodes: their sessions playing with the

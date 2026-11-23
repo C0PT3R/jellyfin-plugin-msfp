@@ -177,7 +177,10 @@ public class DeliveriesTests
         order.Video!.BurnIndex = 3;
         Assert.Contains("not-burned", Made.Parse(H264At720).Differences(order, Hd()));
         Assert.Empty(Made.Parse(H264At720.Replace(",format=yuv420p", ",subtitles=f='/x.srt':si=0,format=yuv420p", System.StringComparison.Ordinal)).Differences(order, Hd()));
+        Assert.Empty(Made.Parse(H264At720.Replace(",format=yuv420p\"", ",format=yuv420p\" -filter_complex \"[0:3]scale=1280:720[sub];[0:0][sub]overlay=eof_action=pass:repeatlast=0\"", System.StringComparison.Ordinal)).Differences(order, Hd()));
         order.Video.BurnIndex = -1;
+        // SVT-AV1's own option is no overlay filter.
+        Assert.False(Made.Parse("-codec:v:0 libsvtav1 -svtav1-params:0 rc=1:tune=0:film-grain=0:enable-overlays=1:enable-tf=0 -vf \"scale=1280:720,format=yuv420p\"").Burned);
         Assert.Contains("burned", Made.Parse(H264At720.Replace(",format=yuv420p", ",subtitles=f='/x.srt':si=0,format=yuv420p", System.StringComparison.Ordinal)).Differences(order, Hd()));
     }
 

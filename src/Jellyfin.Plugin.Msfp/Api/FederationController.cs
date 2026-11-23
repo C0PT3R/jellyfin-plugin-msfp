@@ -165,12 +165,31 @@ public class FederationController : ControllerBase
             headers.TryGetValue(name, out var v) ? [.. v.OfType<string>()] : [];
     }
 
-    /// <summary>The engine's media answer on ASP.NET Core's response: the status and only the headers MSFP needs.</summary>
-    internal sealed class Sink(HttpResponse response) : IResponseSink
+    /// <summary>
+    /// The engine's media answer on ASP.NET Core's response: the status and
+    /// only the headers MSFP needs, the file's ETag the engine gives
+    /// (IETagSink), Accept-Ranges on a 200 or a 206, Allow: GET on a 405
+    /// (MSFP media section 2.2).
+    /// </summary>
+    internal sealed class Sink(HttpResponse response) : IResponseSink, IETagSink
     {
+        private string _etag = string.Empty;
+
+        public void SetETag(string etag) => _etag = etag;
+
         public void Start(int status, string contentType, long length, string contentRange)
         {
             response.StatusCode = status;
+            if (status == 405)
+            {
+                response.Headers.Allow = "GET";
+            }
+
+            if (_etag.Length > 0 && status is 200 or 206)
+            {
+                response.Headers.ETag = "\"" + _etag + "\"";
+            }
+
             if (contentType.Length > 0)
             {
                 response.ContentType = contentType;

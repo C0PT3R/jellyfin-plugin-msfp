@@ -122,6 +122,12 @@ internal sealed partial class Made
     [GeneratedRegex(@"scale=trunc\(min\(max\(iw\\,ih\*a\)\\,(\d+)\)/\d+\)\*\d+:trunc\(ow/a/2\)\*2")]
     private static partial Regex ScaleWOnly();
 
+    // A subtitle burned in: the subtitles filter, or an overlay filter (of
+    // a picture subtitle, its hardware forms, alphasrc's canvas) as a filter
+    // of the graph, not an encoder's option (SVT-AV1's enable-overlays).
+    [GeneratedRegex(@"(?:^|[\]\[,;""\s])(?:subtitles=|overlay(?:_[a-z0-9]+)?(?:=|[,;""\[]|$)|alphasrc)")]
+    private static partial Regex Burn();
+
     [GeneratedRegex(@"^[0-9a-f]{32}$")]
     private static partial Regex Stem();
 
@@ -153,8 +159,7 @@ internal sealed partial class Made
             PixelFormat = formats.Count > 0 ? formats[^1].Groups[1].Value : null,
             Deinterlaced = args.Contains("yadif", StringComparison.Ordinal) || args.Contains("bwdif", StringComparison.Ordinal),
             VideoTag = tag.Success ? tag.Groups[1].Value : null,
-            Burned = args.Contains("subtitles=", StringComparison.Ordinal) || args.Contains("overlay", StringComparison.Ordinal)
-                || args.Contains("alphasrc", StringComparison.Ordinal),
+            Burned = Burn().IsMatch(args),
             AudioCopied = a == "copy",
             AudioCodec = a == "copy" ? null : AudioToken(a),
             AudioChannels = Number(AChannels().Match(args)),
