@@ -10,10 +10,11 @@ using Msfp;
 namespace Jellyfin.Plugin.Msfp.Viewing;
 
 /// <summary>
-/// A paired server's text subtitle track, whole, as Jellyfin reads an
-/// external subtitle file: its parts (MSFP video section 6.2, 120 seconds
-/// each, starting 10 seconds early) fetched through the engine, which
-/// rebuilds each as section 6.3 says, then joined, the doubles dropped.
+/// A paired server's subtitle track served apart, whole, as Jellyfin reads
+/// an external subtitle file: a text track in one answer, else its parts
+/// (MSFP video section 6.2, 120 seconds each, starting 10 seconds early)
+/// fetched through the engine, which rebuilds each as section 6.3 says,
+/// then joined, the doubles dropped; a picture track's parts joined.
 /// </summary>
 internal static class Subtitles
 {
@@ -22,65 +23,27 @@ internal static class Subtitles
 
     private const int Stretch = 120_000;
 
-    /// <summary>Where a playback's PGS tracks are kept while it plays: Jellyfin reads PGS from disk only.</summary>
-    public static string PictureFolder(string token) =>
-        System.IO.Path.Combine(Plugin.Instance?.DataFolderPath ?? System.IO.Path.GetTempPath(), "playing", token);
-
-    public static string PictureFile(string token, string track) => System.IO.Path.Combine(PictureFolder(token), track + ".sup");
-
-    /// <summary>
-    /// A playback's PGS tracks, fetched whole and written for Jellyfin to
-    /// read, all at once, waited for at most wait: the tracks ready then.
-    /// One not ready keeps being fetched for nothing; it's left out.
-    /// </summary>
-    public static async Task<IReadOnlySet<string>> FetchPicturesAsync(MsfpEngine engine, RemotePlays.Live live, IReadOnlyList<string> tracks,
-        TimeSpan wait, Microsoft.Extensions.Logging.ILogger log)
-    {
-        var ready = new System.Collections.Concurrent.ConcurrentDictionary<string, bool>(StringComparer.Ordinal);
-        var all = Task.WhenAll(tracks.Select(track => Task.Run(async () =>
-        {
-            try
-            {
-                var whole = await WholeAsync(engine, live.Playback.Id, track, true, live.DurationMs, CancellationToken.None).ConfigureAwait(false);
-                if (whole is null)
-                {
-                    return;
-                }
-
-                var file = PictureFile(live.Token, track);
-                Directory.CreateDirectory(System.IO.Path.GetDirectoryName(file)!);
-                await File.WriteAllBytesAsync(file + ".tmp", whole).ConfigureAwait(false);
-                File.Move(file + ".tmp", file, true);
-                ready[track] = true;
-            }
-            catch (Exception e)
-            {
-                Microsoft.Extensions.Logging.LoggerExtensions.LogInformation(log, e, "MSFP: picture subtitles {Track} of {Key} couldn't be fetched", track, live.Playback.Title);
-            }
-        })));
-        await Task.WhenAny(all, Task.Delay(wait)).ConfigureAwait(false);
-        return new HashSet<string>(ready.Keys, StringComparer.Ordinal);
-    }
-
-    /// <summary>A playback's PGS files, gone with it.</summary>
-    public static void ForgetPictures(string token)
-    {
-        try
-        {
-            var dir = PictureFolder(token);
-            if (Directory.Exists(dir))
-            {
-                Directory.Delete(dir, true);
-            }
-        }
-        catch (IOException)
-        {
-        }
-    }
-
     /// <summary>The whole track; null when a part couldn't be fetched.</summary>
     public static async Task<byte[]?> WholeAsync(MsfpEngine engine, string playback, string track, bool pictures, long durationMs, CancellationToken ct)
     {
+        // A text track whole, in one answer (MSFP video section 6.2); its
+        // stretches when the paired server doesn't serve it so.
+        if (!pictures)
+        {
+            try
+            {
+                var sink = new MemorySink();
+                await engine.FetchAsync(playback, new MediaPath { Kind = MediaKind.Subtitles, Track = track, Whole = true }, string.Empty, sink, ct).ConfigureAwait(false);
+                if (sink.Status == 200)
+                {
+                    return sink.Body.ToArray();
+                }
+            }
+            catch (MsfpException)
+            {
+            }
+        }
+
         var parts = (int)Math.Clamp((durationMs + Stretch - 1) / Stretch, 1, 10_000);
         var texts = new byte[]?[parts];
         using var gate = new SemaphoreSlim(4, 4);

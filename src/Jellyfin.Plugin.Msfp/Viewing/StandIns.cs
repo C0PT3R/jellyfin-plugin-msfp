@@ -165,7 +165,7 @@ public sealed class StandIns : IHostedService, IDisposable
     /// <summary>The skip markers of a stand-in's best copy, as Jellyfin's segments (the provider's answer, <see cref="PairedSegments"/>).</summary>
     internal IReadOnlyList<MediaBrowser.Model.MediaSegments.MediaSegmentDto> SegmentsOf(Guid itemId) =>
         _library.GetItemById(itemId) is { Path: { } path } && CopyOf(path)?.Chosen is { } h
-            ? PairedSegments.Wanted(h.Best.Segments).Select(m => new MediaBrowser.Model.MediaSegments.MediaSegmentDto
+            ? PairedSegments.Wanted(StandInStreams.Segments(h.Best)).Select(m => new MediaBrowser.Model.MediaSegments.MediaSegmentDto
             {
                 ItemId = itemId,
                 Type = m.Type,
@@ -927,7 +927,7 @@ public sealed class StandIns : IHostedService, IDisposable
         var hasSegments = false;
         try
         {
-            hasSegments = await PairedSegments.SaveAsync(_segments, item, options, best.Segments, ct).ConfigureAwait(false);
+            hasSegments = await PairedSegments.SaveAsync(_segments, item, options, StandInStreams.Segments(best), ct).ConfigureAwait(false);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
@@ -949,7 +949,7 @@ public sealed class StandIns : IHostedService, IDisposable
             }
         }
 
-        Set<long?>(best.DurationMs > 0 ? best.DurationMs * TimeSpan.TicksPerMillisecond : item.RunTimeTicks, item.RunTimeTicks, v => item.RunTimeTicks = v);
+        Set<long?>(StandInStreams.DurationMs(best) is > 0 and var ms ? ms * TimeSpan.TicksPerMillisecond : item.RunTimeTicks, item.RunTimeTicks, v => item.RunTimeTicks = v);
         Set<long?>(best.Size, item.Size, v => item.Size = v);
         Set(StandInStreams.ItemContainer(best.MediaType), item.Container, v => item.Container = v);
         Set(StandInStreams.Bitrate(best), item.TotalBitrate, v => item.TotalBitrate = v);
@@ -1028,6 +1028,31 @@ public sealed class StandIns : IHostedService, IDisposable
 
         return sources;
     }
+
+    /// <summary>
+    /// A source for one play of a holder's copy (<see cref="RemotePlays"/>):
+    /// as the stand-in's saved one for that copy (its label, streams and
+    /// length), with the ID given, the subtitle tracks beside the file read
+    /// where <paramref name="external"/> says; and the copy's track IDs by
+    /// the Index Jellyfin shows them at.
+    /// </summary>
+    internal (MediaSourceInfo Source, Dictionary<int, string> Tracks) SourceFor(BaseItem item, Holder holder, global::Msfp.Protocol.Copy copy, string id, Func<global::Msfp.Protocol.CopySubtitle, string> external)
+    {
+        var labels = StandInStreams.Labels(holder.Copies);
+        var at = Math.Max(0, holder.Copies.ToList().FindIndex(c => c.Id == copy.Id));
+        var built = StandInStreams.Of(copy, Three, external);
+        foreach (var st in built.Streams)
+        {
+            StandInStreams.Localize(st, _localization.GetLocalizedString, l => _localization.GetLanguageDisplayName(l));
+        }
+
+        var source = PairedSources.SourceOf(item, id, labels[Math.Min(at, labels.Count - 1)], copy, built.Streams, StandInStreams.Segments(copy).Count > 0);
+        return (source, built.Tracks.ToDictionary(kv => kv.Value, kv => kv.Key));
+    }
+
+    /// <summary>The copy's track IDs by the Index the stand-in's saved source shows them at.</summary>
+    internal static Dictionary<int, string> TracksOf(global::Msfp.Protocol.Copy copy) =>
+        StandInStreams.Of(copy, _ => null, _ => string.Empty).Tracks.ToDictionary(kv => kv.Value, kv => kv.Key);
 
     // Where Jellyfin reads a subtitle track beside a copy's file: the
     // plugin's route on its own loopback, which fetches it from the paired

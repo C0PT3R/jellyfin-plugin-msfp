@@ -512,13 +512,64 @@ internal static class StandInStreams
             ? (float)(a / b)
             : null;
 
-    /// <summary>A copy's chapters as Jellyfin keeps a local file's: a chapter without a name named as Jellyfin names one (<paramref name="unnamed"/> of its number from 1), no images.</summary>
-    internal static List<ChapterInfo> Chapters(Copy copy, Func<int, string> unnamed) =>
-        copy.Chapters.Select((c, i) => new ChapterInfo
+    /// <summary>
+    /// Where a copy's title lies in it: the whole copy, or for an episode in
+    /// a copy holding several the span its startMs and endMs give (MSFP
+    /// video sections 4.2 and 5.2; an end left out is the copy's end).
+    /// </summary>
+    internal static (long StartMs, long EndMs) Span(Copy copy)
+    {
+        var end = copy.DurationMs;
+        var start = Math.Clamp(copy.StartMs ?? 0, 0, Math.Max(end, 0));
+        if (copy.EndMs is { } e && e > start && e <= end)
         {
-            StartPositionTicks = c.StartMs * TimeSpan.TicksPerMillisecond,
-            Name = string.IsNullOrWhiteSpace(c.Name) ? unnamed(i + 1) : c.Name,
-        }).ToList();
+            end = e;
+        }
+
+        return (start, end);
+    }
+
+    /// <summary>Whether a copy's title is only part of it (<see cref="Span"/>).</summary>
+    internal static bool Spanned(Copy copy) => Span(copy) is var (s, e) && (s > 0 || e < copy.DurationMs);
+
+    /// <summary>The title's length in a copy, its span's (<see cref="Span"/>).</summary>
+    internal static long DurationMs(Copy copy) => Span(copy) is var (s, e) ? Math.Max(e - s, 0) : 0;
+
+    /// <summary>
+    /// A copy's chapters as Jellyfin keeps a local file's: a chapter without a name named as Jellyfin names one (<paramref name="unnamed"/> of its number from 1), no images.
+    /// For a title that is a span of its copy, the chapters within it, from
+    /// its start (the one it starts in, at 0).
+    /// </summary>
+    internal static List<ChapterInfo> Chapters(Copy copy, Func<int, string> unnamed)
+    {
+        var (start, end) = Span(copy);
+        var named = copy.Chapters.Select((c, i) => (c.StartMs, Name: string.IsNullOrWhiteSpace(c.Name) ? unnamed(i + 1) : c.Name!)).ToList();
+        if (Spanned(copy))
+        {
+            var before = named.LastOrDefault(c => c.StartMs <= start);
+            named = named.Where(c => c.StartMs > start && c.StartMs < end).Select(c => (c.StartMs - start, c.Name)).ToList();
+            if (before.Name is not null)
+            {
+                named.Insert(0, (0, before.Name));
+            }
+        }
+
+        return named.Select(c => new ChapterInfo { StartPositionTicks = c.StartMs * TimeSpan.TicksPerMillisecond, Name = c.Name }).ToList();
+    }
+
+    /// <summary>A copy's skip markers within its title's span, from its start (<see cref="Span"/>).</summary>
+    internal static List<CopySegment> Segments(Copy copy)
+    {
+        if (!Spanned(copy))
+        {
+            return copy.Segments.ToList();
+        }
+
+        var (start, end) = Span(copy);
+        return copy.Segments
+            .Select(m => new CopySegment(m.Kind, Math.Max(m.StartMs, start) - start, Math.Min(m.EndMs, end) - start))
+            .Where(m => m.EndMs > m.StartMs).ToList();
+    }
 
     /// <summary>The overall bitrate of a copy, bits per second: size × 8 / duration; null without a duration.</summary>
     internal static int? Bitrate(Copy copy) =>

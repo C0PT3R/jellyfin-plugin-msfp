@@ -14,24 +14,23 @@ using Msfp.Protocol;
 namespace Jellyfin.Plugin.Msfp.Viewing;
 
 /// <summary>
-/// The stand-ins' media: each has one source of its own, saved with it
-/// (<see cref="StandIns"/>), which must be opened. Jellyfin opens it through
-/// here when someone presses Play (MSFP play, <see cref="RemotePlays"/>),
-/// and closes it when they stop (MSFP stop).
+/// The stand-ins' media: one source per copy saved with each
+/// (<see cref="StandIns"/>), which Jellyfin shows; at PlaybackInfo the
+/// play's own (<see cref="HandOverFilter"/>): a plain file's, given here,
+/// or the HLS way's, opened here as a live stream (MSFP play,
+/// <see cref="RemotePlays"/>) and closed when Jellyfin is done (MSFP stop).
 /// </summary>
 public sealed class PairedSources : IMediaSourceProvider
 {
     private readonly ILibraryManager _library;
     private readonly RemotePlays _plays;
     private readonly Microsoft.AspNetCore.Http.IHttpContextAccessor _http;
-    private readonly IUserManager _users;
 
-    public PairedSources(ILibraryManager library, RemotePlays plays, Microsoft.AspNetCore.Http.IHttpContextAccessor http, IUserManager users)
+    public PairedSources(ILibraryManager library, RemotePlays plays, Microsoft.AspNetCore.Http.IHttpContextAccessor http)
     {
         _library = library;
         _plays = plays;
         _http = http;
-        _users = users;
     }
 
     /// <summary>
@@ -46,11 +45,55 @@ public sealed class PairedSources : IMediaSourceProvider
         item.Path?.StartsWith(Wanted.PathOf(string.Empty), StringComparison.Ordinal) == true;
 
     /// <inheritdoc />
-    // The stand-ins' sources are their own, saved with them: nothing to add.
-    public Task<IEnumerable<MediaSourceInfo>> GetMediaSources(BaseItem item, CancellationToken cancellationToken) =>
-        Task.FromResult(Enumerable.Empty<MediaSourceInfo>());
+    // A play's source (the plain file, HandOverFilter): within the
+    // PlaybackInfo request that made it, and in each later request naming
+    // its handle (Jellyfin's stream, HLS and subtitle routes), for the user
+    // it was made for. Nothing otherwise: the saved sources are the
+    // stand-in's own.
+    public Task<IEnumerable<MediaSourceInfo>> GetMediaSources(BaseItem item, CancellationToken cancellationToken)
+    {
+        if (_http.HttpContext is not { } ctx || !IsStandIn(item))
+        {
+            return Task.FromResult(Enumerable.Empty<MediaSourceInfo>());
+        }
+
+        var play = ctx.Items[HandOverFilter.ItemKey] as PlayToken;
+        if (play is null && Guid.TryParse(ctx.User.FindFirst("Jellyfin-UserId")?.Value, out var user))
+        {
+            play = Handles(ctx).Select(h => _plays.Tokens.OfHandle(h, user, item.Id)).FirstOrDefault(p => p is not null);
+        }
+
+        if (play is not { Way: Way.File, Source: { } source } || play.Item != item.Id)
+        {
+            return Task.FromResult(Enumerable.Empty<MediaSourceInfo>());
+        }
+
+        return Task.FromResult<IEnumerable<MediaSourceInfo>>([RemotePlays.Clone(source)]);
+    }
+
+    // The media source IDs a request names: its query's MediaSourceId, its
+    // route's (the subtitle routes carry it in the path).
+    private static IEnumerable<string> Handles(Microsoft.AspNetCore.Http.HttpContext ctx)
+    {
+        foreach (var q in ctx.Request.Query)
+        {
+            if (string.Equals(q.Key, "MediaSourceId", StringComparison.OrdinalIgnoreCase))
+            {
+                yield return q.Value.ToString();
+            }
+        }
+
+        foreach (var r in ctx.Request.RouteValues)
+        {
+            if (r.Key.Contains("mediaSourceId", StringComparison.OrdinalIgnoreCase) && r.Value is string v)
+            {
+                yield return v;
+            }
+        }
+    }
 
     /// <inheritdoc />
+    // The HLS way: the play the PlaybackInfo filter made for this request.
     public async Task<ILiveStream> OpenMediaSource(string openToken, List<ILiveStream> currentLiveStreams, CancellationToken cancellationToken)
     {
         // The token carries the stand-in's item ID and its source's after the prefix.
@@ -60,23 +103,12 @@ public sealed class PairedSources : IMediaSourceProvider
             throw new ResourceNotFoundException("No such title from a paired server.");
         }
 
-        var audioSwitch = _http.HttpContext?.Items[AudioSwitchFilter.ItemKey] as RemotePlays.AudioSwitch;
-        return await _plays.OpenAsync(item, Wishes(), cancellationToken, audioSwitch).ConfigureAwait(false);
-    }
-
-    // The viewer's audio and subtitle languages, from the Jellyfin user
-    // pressing Play (the request opening the source): what a paired server
-    // converting the stream needs to send the right audio track.
-    private (string Audio, string Subtitles) Wishes()
-    {
-        var claim = _http.HttpContext?.User.FindFirst("Jellyfin-UserId")?.Value;
-        if (!Guid.TryParse(claim, out var id) || _users.GetUserById(id) is not { } user)
+        if (_http.HttpContext?.Items[HandOverFilter.ItemKey] is not PlayToken { Way: Way.Hls } play || play.Item != item.Id)
         {
-            return (string.Empty, string.Empty);
+            throw new InvalidOperationException("Paired servers' titles open through PlaybackInfo.");
         }
 
-        var showSubtitles = user.SubtitleMode is not (Jellyfin.Database.Implementations.Enums.SubtitlePlaybackMode.None);
-        return (user.AudioLanguagePreference ?? string.Empty, showSubtitles ? user.SubtitleLanguagePreference ?? string.Empty : string.Empty);
+        return await _plays.OpenAsync(item, play, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>The open token of a stand-in's source.</summary>
@@ -117,7 +149,7 @@ public sealed class PairedSources : IMediaSourceProvider
         Size = copy.Size,
         Bitrate = StandInStreams.Bitrate(copy),
         ETag = copy.ETag,
-        RunTimeTicks = copy.DurationMs > 0 ? copy.DurationMs * TimeSpan.TicksPerMillisecond : item.RunTimeTicks,
+        RunTimeTicks = StandInStreams.DurationMs(copy) is > 0 and var ms ? ms * TimeSpan.TicksPerMillisecond : item.RunTimeTicks,
         Type = MediaSourceType.Default,
         VideoType = VideoType.VideoFile,
         Video3DFormat = StandInStreams.ThreeD(copy.ThreeD),

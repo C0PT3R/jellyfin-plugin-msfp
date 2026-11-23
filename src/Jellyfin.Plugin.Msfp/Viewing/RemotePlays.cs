@@ -2,71 +2,74 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Security.Cryptography;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Msfp.Federation;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
-using MediaBrowser.Controller.MediaEncoding;
 using MediaBrowser.Controller.Session;
-using MediaBrowser.Model.Entities;
-using MediaBrowser.Model.Globalization;
 using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.MediaInfo;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Msfp;
+using Msfp.Protocol;
+using PlayRequest = Msfp.PlayRequest;
 
 namespace Jellyfin.Plugin.Msfp.Viewing;
 
 /// <summary>
 /// This server's viewers playing paired servers' titles (MSFP playback,
-/// viewer side). Pressing Play opens the stand-in's source: the plugin asks
-/// the paired servers holding the title, best copy first, the next when one
-/// is busy or refuses, and gives Jellyfin a source at its own relay route
-/// (loopback only), which Jellyfin reads and converts for the device as it
-/// does any file. Where the viewer is goes to the paired server from
-/// Jellyfin's playback events; the playback stops when Jellyfin closes the
-/// source, when the viewer stops, or after 3 minutes with neither a report
-/// nor a read (a client that never says it stopped).
+/// viewer side; migration plan 4.2). A play is made at PlaybackInfo
+/// (<see cref="HandOverFilter"/>): by default the copy read as a plain file
+/// by byte ranges at the plugin's file route, behind the play's token,
+/// which Jellyfin plays, remuxes or converts as it does a local file; the
+/// MSFP playback (delivery file) starts at its first read, and again on the
+/// same etag after it ended (a long pause). Else the paired server's HLS,
+/// as Jellyfin's live stream. Where the viewer is goes to the paired server
+/// from Jellyfin's playback events (in the copy: an episode among several
+/// in one copy from its start); the playback stops when Jellyfin's session
+/// stops, or after <see cref="Idle"/> with neither a report nor a read.
 /// </summary>
 public sealed class RemotePlays : IHostedService, IDisposable
 {
-    /// <summary>How long a playback nobody reports on nor reads lives.</summary>
+    /// <summary>How long a play nobody reports on nor reads lives.</summary>
     public static readonly TimeSpan Idle = TimeSpan.FromMinutes(3);
 
-    /// <summary>Whether paired servers' titles are kept as stand-ins and play: not on this branch until phases 5 and 6 of the migration (see <see cref="OpenAsync"/>, StandIns.KeepAsync).</summary>
-    internal static bool ViewingOn { get; set; }
-
-    // Since MSFP's revision a play names its delivery (no capabilities):
-    // the viewer's side chooses it from the copy's facts in phase 6 of the
-    // migration (the hand-over at PlaybackInfo).
+    /// <summary>How long a paired server answering busy at a first read is taken for busy.</summary>
+    public static readonly TimeSpan BusyFor = TimeSpan.FromMinutes(2);
 
     private readonly EngineHost _host;
     private readonly StandIns _standIns;
     private readonly ISessionManager _sessions;
     private readonly IConfigurationManager _config;
-    private readonly ILocalizationManager _localization;
-    private readonly PeerPreviews _previews;
+    private readonly ILibraryManager _library;
     private readonly ILogger<RemotePlays> _log;
-    private readonly ConcurrentDictionary<string, Live> _byToken = new(StringComparer.Ordinal);
+
+    // Remembered: the paired servers that refused delivery file (until their
+    // catalog is read again), and those that answered busy at a first read.
+    private readonly ConcurrentDictionary<string, bool> _refusedFile = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _busyUntil = new(StringComparer.Ordinal);
     private Timer? _sweep;
 
-    public RemotePlays(EngineHost host, StandIns standIns, ISessionManager sessions, IConfigurationManager config, ILocalizationManager localization, MediaBrowser.Controller.Trickplay.ITrickplayManager trickplay, ILogger<RemotePlays> log)
+    public RemotePlays(EngineHost host, StandIns standIns, ISessionManager sessions, IConfigurationManager config, ILibraryManager library, ILogger<RemotePlays> log)
     {
-        _previews = new PeerPreviews(trickplay, log);
-        _localization = localization;
         _host = host;
         _standIns = standIns;
         _sessions = sessions;
         _config = config;
+        _library = library;
         _log = log;
     }
 
-    /// <summary>The playbacks live now.</summary>
-    public int Count => _byToken.Count;
+    /// <summary>The live plays' tokens.</summary>
+    internal PlayTokens Tokens { get; } = new();
+
+    /// <summary>The plays with an MSFP playback live now.</summary>
+    public int Count => Tokens.All.Count(t => t.Playback is not null);
 
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
@@ -76,20 +79,6 @@ public sealed class RemotePlays : IHostedService, IDisposable
         _sessions.PlaybackStopped += Stopped;
         _host.Events += Event;
         _sweep = new Timer(_ => Sweep(), null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
-
-        // Playbacks' PGS files left by a stop of Jellyfin.
-        try
-        {
-            var playing = System.IO.Path.GetDirectoryName(Subtitles.PictureFolder("x"))!;
-            if (System.IO.Directory.Exists(playing))
-            {
-                System.IO.Directory.Delete(playing, true);
-            }
-        }
-        catch (System.IO.IOException)
-        {
-        }
-
         return Task.CompletedTask;
     }
 
@@ -101,124 +90,162 @@ public sealed class RemotePlays : IHostedService, IDisposable
         _sessions.PlaybackStopped -= Stopped;
         _host.Events -= Event;
         _sweep?.Change(Timeout.Infinite, Timeout.Infinite);
-        foreach (var live in _byToken.Values.ToList())
+        foreach (var t in Tokens.All)
         {
-            await EndAsync(live, -1).ConfigureAwait(false);
+            await EndAsync(t, drop: true).ConfigureAwait(false);
         }
     }
 
     public void Dispose() => _sweep?.Dispose();
 
-    /// <summary>
-    /// Starts a playback of a stand-in on one of the paired servers holding
-    /// it, best copy first, and gives the source Jellyfin reads.
-    /// </summary>
-    /// <exception cref="InvalidOperationException">No paired server could play it now; the message says why.</exception>
-    internal async Task<PairedLiveStream> OpenAsync(BaseItem item, (string Audio, string Subtitles) wishes, CancellationToken ct, AudioSwitch? audioSwitch = null)
+    // ---- At PlaybackInfo (HandOverFilter) ----
+
+    /// <summary>A stand-in's title: the paired servers holding it, best copy first; null when none.</summary>
+    internal Task<Playable?> TitleAsync(BaseItem item, CancellationToken ct) => _standIns.CopyOfAsync(item.Path!, ct);
+
+    /// <summary>The copy a client picked by one of the stand-in's saved sources' IDs; null for none.</summary>
+    internal string? PickedCopy(BaseItem item, Playable title, string? sourceId)
     {
-        // Playing paired servers' titles is off on this branch until phase 6
-        // of the migration to MSFP's revised version 0 (the hand-over at
-        // PlaybackInfo, from the copies' facts); the code below is the draft
-        // before's, adapted only to compile.
-        if (!ViewingOn)
-        {
-            throw new InvalidOperationException("Playing paired servers' titles comes back with the migration's phase 6.");
-        }
-
-        _ = wishes;
-        var request = new PlayRequest { Title = string.Empty };
-        var engine = _host.Engine ?? throw new InvalidOperationException("Federation is off on this server.");
-        var copy = await _standIns.CopyOfAsync(item.Path!, ct).ConfigureAwait(false) ?? throw new InvalidOperationException("No paired server holds this title now.");
-        var busy = false;
-        foreach (var holder in copy.Holders)
-        {
-            RemotePlayback playback;
-            var key = holder.Key;
-            try
-            {
-                // A track picked during a playback: its ID on the server that
-                // played it; on another, the same language.
-                var asked = audioSwitch is not null && holder.Peer == audioSwitch.Peer ? request with { AudioTrack = audioSwitch.Track } : request;
-                playback = await engine.PlayAsync(holder.Peer, asked with { Title = key }, ct).ConfigureAwait(false);
-            }
-            catch (MsfpException e)
-            {
-                busy |= e.Code is MsfpError.StreamLimitReached or MsfpError.ServerBusy or MsfpError.BackingOff;
-                _log.LogInformation("MSFP: {Peer} didn't play {Key}: {Code}; the next one holding it, if any", holder.Peer, key, e.Code);
-                continue;
-            }
-
-            var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
-            var live = new Live(this, token, playback, item);
-            _byToken[token] = live;
-            _log.LogInformation("MSFP: playing {Key} from {Peer} ({Method}, {Protocol})", key, holder.Peer, playback.Method, playback.Protocol);
-            var source = SourceOf(item, playback, token);
-            try
-            {
-                NameAudio(source, playback);
-                ListAllAudio(source, playback, live);
-                live.DurationMs = (source.RunTimeTicks ?? 0) / TimeSpan.TicksPerMillisecond;
-
-                // PGS tracks are fetched before Jellyfin has the source: it
-                // may burn one in from its first segment. One not ready in
-                // 15 seconds is left out of this playback.
-                var pictures = new List<string>(); // the copy's PGS tracks: phase 6
-                var ready = await Subtitles.FetchPicturesAsync(engine, live, pictures, TimeSpan.FromSeconds(15), _log).ConfigureAwait(false);
-                AddSubtitles(source, playback, token, ready);
-            }
-            catch (Exception e) when (e is not OperationCanceledException)
-            {
-                _log.LogWarning(e, "MSFP: {Key} from {Peer} couldn't be read; the next one holding it, if any", key, holder.Peer);
-                await EndAsync(live, 0).ConfigureAwait(false);
-                continue;
-            }
-
-            _previews.Fetch(engine, item, playback);
-            return new PairedLiveStream(live, source);
-        }
-
-        if (busy)
-        {
-            throw new PairedBusyException("The paired servers holding this title are busy now. Try again later.");
-        }
-
-        throw new InvalidOperationException("No paired server could play this title now.");
-    }
-
-    /// <summary>A playback by its relay token, null when none: each read keeps it from going idle.</summary>
-    internal Live? ByToken(string token)
-    {
-        if (!_byToken.TryGetValue(token, out var live))
+        if (string.IsNullOrEmpty(sourceId) || title.Chosen is not { } h)
         {
             return null;
         }
 
-        live.Touched = DateTimeOffset.UtcNow;
-        return live;
-    }
-
-    // A tag of the paired server's ("fr") as Jellyfin writes a stream's
-    // language ("fre"), the localization's for a language not listed.
-    private string Three(string tag) =>
-        Identification.Languages.Three(tag) is { Length: > 0 } three ? three
-        : _localization.FindLanguageInfo(tag.Split('-')[0])?.ThreeLetterISOLanguageName ?? tag;
-
-    // A Jellyfin language code ("fre") as a tag MSFP sends ("fr"); "" for none.
-    private string Tag(string code)
-    {
-        if (string.IsNullOrWhiteSpace(code))
+        for (var i = 0; i < h.Copies.Count; i++)
         {
-            return string.Empty;
+            if (string.Equals(PairedSources.SourceIdOf(item, h.Peer, h.Copies[i].Id, i == 0), sourceId, StringComparison.OrdinalIgnoreCase))
+            {
+                return h.Copies[i].Id;
+            }
         }
 
-        var info = _localization.FindLanguageInfo(code.Trim());
-        var tag = info?.TwoLetterISOLanguageName is { Length: 2 } two ? two : code.Trim();
-        return tag.Length <= 12 && tag.All(c => char.IsAsciiLetterOrDigit(c) || c == '-') ? tag : string.Empty;
+        return null;
     }
 
-    // The source Jellyfin reads: the relay route on its own loopback, probed
-    // by Jellyfin when opened (the real streams, codecs included).
-    private MediaSourceInfo SourceOf(BaseItem item, RemotePlayback p, string token)
+    /// <summary>The track IDs by the Index the client saw them at: the picked copy's of the stand-in's holder, else its best's.</summary>
+    internal IReadOnlyDictionary<int, string> TracksOf(BaseItem item, Playable title, string? picked)
+    {
+        _ = item;
+        if (title.Chosen is not { } h)
+        {
+            return new Dictionary<int, string>();
+        }
+
+        return StandIns.TracksOf(h.Copies.FirstOrDefault(c => c.Id == picked) ?? h.Best);
+    }
+
+    /// <summary>What is known of each paired server for a choice: a stream free, a refusal of delivery file, the pairing's cap.</summary>
+    internal async Task<IReadOnlyDictionary<string, HandOver.PeerState>> PeerStatesAsync(CancellationToken ct)
+    {
+        var states = new Dictionary<string, HandOver.PeerState>(StringComparer.Ordinal);
+        if (_host.Engine is not { } engine)
+        {
+            return states;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        foreach (var p in await engine.PeersAsync(ct).ConfigureAwait(false))
+        {
+            states[p.Id] = State(p.Id, p.TheirLimits, Tokens.Holding(p.Id), _busyUntil.TryGetValue(p.Id, out var until) && until > now, _refusedFile.ContainsKey(p.Id));
+        }
+
+        return states;
+    }
+
+    /// <summary>A paired server's state for a choice, from its limits for us (null: not known), our plays holding a stream on it and what was remembered.</summary>
+    internal static HandOver.PeerState State(string peer, Limits? theirs, int holding, bool busyLately, bool refusedFile)
+    {
+        _ = peer;
+        var free = !busyLately && (theirs is null || holding < theirs.Streams);
+        return new HandOver.PeerState(free, refusedFile, theirs?.BitrateKbps ?? 0);
+    }
+
+    /// <summary>A play of a choice, for a user: its token and the source Jellyfin is given.</summary>
+    internal PlayToken Mint(Guid user, BaseItem item, HandOver.Choice choice)
+    {
+        var tracks = StandIns.TracksOf(choice.Copy);
+        var play = Tokens.Mint(user, item.Id, choice.Holder.Peer, choice.Holder.Key, choice.Copy, choice.Way, choice.Asked, tracks);
+        if (choice.Way == Way.File)
+        {
+            var (source, _) = _standIns.SourceFor(item, choice.Holder, choice.Copy, play.Handle, s => Loopback() + SubtitlePath(play, s));
+            source.Path = Loopback() + FilePath(play);
+            source.RequiresOpening = false;
+            source.RequiresClosing = false;
+            source.OpenToken = null;
+            source.IsRemote = false;
+            source.SupportsProbing = false;
+
+            // Played as a file the client reads, unless the title is only
+            // part of the copy: then Jellyfin reads it, from the episode's
+            // start to its end (FilePath).
+            source.SupportsDirectPlay = !StandInStreams.Spanned(choice.Copy);
+            source.SupportsDirectStream = true;
+            source.SupportsTranscoding = true;
+            foreach (var s in source.MediaStreams.Where(s => s.IsExternal))
+            {
+                // Served apart as WebVTT, or PGS.
+                if (s.Codec != "PGSSUB")
+                {
+                    s.Codec = "webvtt";
+                }
+            }
+
+            play.Source = source;
+        }
+
+        return play;
+    }
+
+    /// <summary>The ID of the stand-in's saved source a choice opens (the HLS way): the copy's when the stand-in's holder was chosen, else its first.</summary>
+    internal string SavedSourceId(BaseItem item, Playable title, HandOver.Choice choice)
+    {
+        if (title.Chosen is { } h && h == choice.Holder)
+        {
+            var at = h.Copies.ToList().FindIndex(c => c.Id == choice.Copy.Id);
+            if (at >= 0)
+            {
+                return PairedSources.SourceIdOf(item, h.Peer, choice.Copy.Id, at == 0);
+            }
+        }
+
+        return item.Id.ToString("N");
+    }
+
+    /// <summary>A play's file at the plugin's route; for a title that is only part of its copy, a script Jellyfin's ffmpeg reads the span through.</summary>
+    internal static string FilePath(PlayToken play) =>
+        "/Msfp/File/" + play.Secret + (StandInStreams.Spanned(play.Copy) ? "/" + SpanName : string.Empty);
+
+    /// <summary>The name of a span's script at the file route.</summary>
+    internal const string SpanName = "span.ffconcat";
+
+    /// <summary>
+    /// An ffmpeg concat script of one file, the copy beside it at the route,
+    /// from the title's start to its end: Jellyfin's ffmpeg reads it as the
+    /// title alone, its times from 0 (MSFP video section 5.2).
+    /// </summary>
+    internal static string SpanScript(Copy copy)
+    {
+        var (start, end) = StandInStreams.Span(copy);
+        var script = "ffconcat version 1.0\nfile 'f'\n";
+        if (start > 0)
+        {
+            script += string.Create(System.Globalization.CultureInfo.InvariantCulture, $"inpoint {start / 1000.0:0.000}\n");
+        }
+
+        if (end < copy.DurationMs)
+        {
+            script += string.Create(System.Globalization.CultureInfo.InvariantCulture, $"outpoint {end / 1000.0:0.000}\n");
+        }
+
+        return script;
+    }
+
+    /// <summary>Where Jellyfin reads a play's subtitle track served apart.</summary>
+    internal static string SubtitlePath(PlayToken play, CopySubtitle s) =>
+        "/Msfp/Subtitle/" + play.Secret + "/" + s.Id + (s.Format == "pgs" ? ".sup" : ".vtt");
+
+    /// <summary>This server's loopback base address, for Jellyfin's own reads.</summary>
+    internal string Loopback()
     {
         var net = _config.GetConfiguration<MediaBrowser.Common.Net.NetworkConfiguration>("network");
         var baseUrl = (net.BaseUrl ?? string.Empty).Trim().TrimEnd('/');
@@ -227,13 +254,233 @@ public sealed class RemotePlays : IHostedService, IDisposable
             baseUrl = "/" + baseUrl;
         }
 
-        var file = p.Protocol == "file";
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"http://127.0.0.1:{net.InternalHttpPort}{baseUrl}");
+    }
+
+    /// <summary>A play's source for a request (a copy: Jellyfin changes what it's given).</summary>
+    internal static MediaSourceInfo Clone(MediaSourceInfo s)
+    {
+        var o = Jellyfin.Extensions.Json.JsonDefaults.Options;
+        return JsonSerializer.Deserialize<MediaSourceInfo>(JsonSerializer.SerializeToUtf8Bytes(s, o), o)!;
+    }
+
+    // ---- The plain file (FileController) ----
+
+    /// <summary>
+    /// A play's MSFP playback for a read: the one live, else a new one
+    /// (delivery file; after one that ended, on the same etag). Null, and
+    /// the read fails, when the paired server refuses or is busy: that is
+    /// remembered, so the next PlaybackInfo takes another way or server.
+    /// </summary>
+    internal async Task<RemotePlayback?> PlaybackAsync(PlayToken play, CancellationToken ct)
+    {
+        play.Touched = DateTimeOffset.UtcNow;
+        play.FirstRead ??= play.Touched;
+        if (play.Playback is { } live)
+        {
+            return live;
+        }
+
+        if (_host.Engine is not { } engine)
+        {
+            return null;
+        }
+
+        await play.Starting.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (play.Playback is { } started)
+            {
+                return started;
+            }
+
+            if (play.Last is { } last)
+            {
+                // After a long pause: the same copy, on the same etag, or
+                // the copy changed (the engine reads the title again).
+                try
+                {
+                    play.Playback = await engine.RestartAsync(last, ct).ConfigureAwait(false);
+                    _log.LogInformation("MSFP: playing {Key} from {Peer} as a file again", play.Key, play.Peer);
+                    return play.Playback;
+                }
+                catch (MsfpException e) when (e.Code == MsfpError.CopyChanged)
+                {
+                    _log.LogInformation("MSFP: {Key} changed on {Peer}: read again", play.Key, play.Peer);
+                    await EndAsync(play, drop: true).ConfigureAwait(false);
+                    return null;
+                }
+            }
+
+            var request = new PlayRequest
+            {
+                Title = play.Key,
+                Delivery = global::Msfp.Protocol.Playback.DeliveryFile,
+                VersionId = play.Copy.Id,
+                StartMs = InCopy(play, play.PositionMs),
+            };
+            play.Playback = await engine.PlayAsync(play.Peer, request, ct).ConfigureAwait(false);
+            if (play.Playback.Etag != play.Copy.ETag && play.Copy.ETag.Length > 0)
+            {
+                // The copy changed on the paired server: its catalog is read
+                // again (the engine), and this play ends.
+                _log.LogInformation("MSFP: {Key} changed on {Peer}: read again", play.Key, play.Peer);
+                await EndAsync(play, drop: true).ConfigureAwait(false);
+                return null;
+            }
+
+            _log.LogInformation("MSFP: playing {Key} from {Peer} as a file", play.Key, play.Peer);
+            return play.Playback;
+        }
+        catch (MsfpException e)
+        {
+            Remember(play.Peer, e.Code);
+            _log.LogInformation("MSFP: {Peer} didn't play {Key} as a file: {Code}", play.Peer, play.Key, e.Code);
+            return null;
+        }
+        finally
+        {
+            play.Starting.Release();
+        }
+    }
+
+    /// <summary>A playback found ended at a read (a long pause): forgotten here, so the next read starts it again.</summary>
+    internal void Ended(PlayToken play, RemotePlayback ended)
+    {
+        lock (play)
+        {
+            if (play.Playback?.Id == ended.Id)
+            {
+                play.Last = ended;
+                play.Playback = null;
+            }
+        }
+    }
+
+    /// <summary>A play's MSFP playback for its subtitle tracks served apart: a file's started if need be (a first read), the HLS way's as it is.</summary>
+    internal Task<RemotePlayback?> PlaybackForSubtitlesAsync(PlayToken play, CancellationToken ct) =>
+        play.Way == Way.File ? PlaybackAsync(play, ct) : Task.FromResult(play.Playback);
+
+    // A refusal remembered: delivery file refused, until the server's
+    // catalog is read again; busy, for a while.
+    private void Remember(string peer, MsfpError code)
+    {
+        switch (code)
+        {
+            case MsfpError.DeliveryRefused:
+                _refusedFile[peer] = true;
+                break;
+            case MsfpError.StreamLimitReached or MsfpError.ServerBusy or MsfpError.BackingOff:
+                _busyUntil[peer] = DateTimeOffset.UtcNow + BusyFor;
+                break;
+        }
+    }
+
+    /// <summary>For tests: a refusal remembered.</summary>
+    internal void RememberForTest(string peer, MsfpError code) => Remember(peer, code);
+
+    // ---- The HLS way (PairedSources) ----
+
+    /// <summary>
+    /// Opens a play of the HLS way: the paired server asked what the choice
+    /// says (a refused remux asked as a conversion, then as the baseline),
+    /// and the source Jellyfin reads: the relay route on its own loopback,
+    /// with the streams the paired server sends.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The paired server didn't play it; the message says why.</exception>
+    internal async Task<PairedLiveStream> OpenAsync(BaseItem item, PlayToken play, CancellationToken ct)
+    {
+        var engine = _host.Engine ?? throw new InvalidOperationException("Federation is off on this server.");
+        var asked = play.Asked ?? throw new InvalidOperationException("Not a play of the HLS way.");
+        RemotePlayback? playback = null;
+        while (playback is null)
+        {
+            try
+            {
+                playback = await engine.PlayAsync(play.Peer, asked, ct).ConfigureAwait(false);
+            }
+            catch (MsfpException e) when (e.Code == MsfpError.DeliveryRefused && HandOver.Lower(asked) is { } lower)
+            {
+                _log.LogInformation("MSFP: {Peer} refused {Delivery} of {Key}: asked again lower", play.Peer, asked.Delivery.Length > 0 ? asked.Delivery : "the baseline", play.Key);
+                asked = lower;
+            }
+            catch (MsfpException e)
+            {
+                Remember(play.Peer, e.Code);
+                Tokens.Drop(play);
+                _log.LogInformation("MSFP: {Peer} didn't play {Key}: {Code}", play.Peer, play.Key, e.Code);
+                if (e.Code is MsfpError.StreamLimitReached or MsfpError.ServerBusy or MsfpError.BackingOff)
+                {
+                    throw new PairedBusyException("The paired server holding this title is busy now. Try again later.");
+                }
+
+                throw new InvalidOperationException("The paired server couldn't play this title now.");
+            }
+        }
+
+        play.Playback = playback;
+        play.FirstRead = play.Touched = DateTimeOffset.UtcNow;
+        _log.LogInformation("MSFP: playing {Key} from {Peer} ({Method}, {Protocol})", play.Key, play.Peer, playback.Method, playback.Protocol);
+        var source = HlsSource(item, play, playback, Loopback());
+        return new PairedLiveStream(this, play, source);
+    }
+
+    /// <summary>
+    /// The source of a play of the HLS way: the relay route, the copy's
+    /// picture as sent (its own, or converted to H.264 within the cap) and
+    /// the one audio track played, then the subtitle tracks served apart.
+    /// </summary>
+    internal static MediaSourceInfo HlsSource(BaseItem item, PlayToken play, RemotePlayback p, string loopback)
+    {
+        var copy = play.Copy;
+        var converted = p.Method == global::Msfp.Protocol.Playback.MethodTranscode;
+        var t = play.Asked?.Transcode;
+        var streams = new List<MediaStream>();
+        foreach (var s in copy.SubtitleTracks.Where(s => p.Subtitles.Any(x => x.Id == s.Id)))
+        {
+            var st = StandInStreams.Subtitle(s, _ => null);
+            st.Index = streams.Count;
+            st.IsExternal = true;
+            st.Codec = s.Format == "pgs" ? "PGSSUB" : "webvtt";
+            st.Path = loopback + SubtitlePath(play, s);
+            streams.Add(st);
+        }
+
+        var at = streams.Count;
+        if (copy.Video is { } v)
+        {
+            var video = StandInStreams.Video(v, "ts", false);
+            if (converted && (t is null || t.VideoCodec != global::Msfp.Protocol.Names.Copy))
+            {
+                video = new MediaStream { Type = MediaStreamType.Video, Codec = "h264", Profile = "High", Level = 41, BitDepth = 8, Width = v.Width, Height = v.Height, PixelFormat = "yuv420p", ColorTransfer = "bt709", ColorPrimaries = "bt709", ColorSpace = "bt709" };
+                if (p.MaxBitrateKbps > 0)
+                {
+                    video.BitRate = p.MaxBitrateKbps * 1000;
+                }
+            }
+
+            video.Index = at++;
+            streams.Add(video);
+        }
+
+        if ((copy.AudioTracks.FirstOrDefault(a => a.Id == p.AudioTrack) ?? copy.AudioTracks.FirstOrDefault()) is { } audio)
+        {
+            var copied = !converted || (t is not null && t.AudioCodec == global::Msfp.Protocol.Names.Copy);
+            var st = copied
+                ? StandInStreams.Audio(audio, _ => null, false)
+                : new MediaStream { Type = MediaStreamType.Audio, Codec = "aac", Profile = "LC", Channels = 2, ChannelLayout = "stereo", SampleRate = 48000 };
+            st.Language = audio.Language is { Length: > 0 } l ? Identification.Languages.Three(l) : null;
+            st.IsDefault = true;
+            st.Index = at;
+            streams.Add(st);
+        }
+
         return new MediaSourceInfo
         {
             Id = item.Id.ToString("N"),
             Name = "From a paired server",
             Protocol = MediaProtocol.Http,
-            Path = $"http://127.0.0.1:{net.InternalHttpPort}{baseUrl}/Msfp/Relay/{token}/" + (file ? "file" : "master.m3u8"),
+            Path = loopback + "/Msfp/Relay/" + play.Secret + "/master.m3u8",
             IsRemote = true,
             RequiresOpening = false,
             RequiresClosing = true,
@@ -241,163 +488,123 @@ public sealed class RemotePlays : IHostedService, IDisposable
             SupportsDirectPlay = false,
             SupportsDirectStream = true,
             SupportsTranscoding = true,
-            Container = file ? ContainerOf(p.MimeType) : "hls",
+            Container = "hls",
             IsInfiniteStream = false,
-            RunTimeTicks = p.DurationMs > 0 ? TimeSpan.FromMilliseconds(p.DurationMs).Ticks : item.RunTimeTicks,
+            RunTimeTicks = StandInStreams.DurationMs(copy) is > 0 and var ms ? ms * TimeSpan.TicksPerMillisecond : item.RunTimeTicks,
             Type = MediaSourceType.Default,
-            MediaStreams = [],
+            MediaStreams = streams,
         };
     }
 
-    // A converted stream carries one audio track and no language: the one
-    // the play answer says it chose.
-    private void NameAudio(MediaSourceInfo source, RemotePlayback p)
-    {
-        // The play answer names no track since MSFP's revision: the copy
-        // does (phase 6 of the migration names the stream from it; the
-        // hand-over then removes this, plan 4.2).
-    }
+    /// <summary>A play of the HLS way by Jellyfin's ID of its live stream (the provider's prefix, then ours), null when none.</summary>
+    internal PlayToken? ByLiveStreamId(string liveStreamId) =>
+        Tokens.All.FirstOrDefault(t => t.Way == Way.Hls && SameStream(liveStreamId, t.StreamId));
 
-    // A converted stream carries the chosen audio track only: the copy's
-    // others are listed too, so that players offer them. Each track keeps
-    // an Index from its place among the copy's (the same for every
-    // playback of that copy), and the one playing comes first in the list,
-    // after the video: Jellyfin maps a stream to ffmpeg by its place in the
-    // list, not its Index. Picking another one plays the copy again with
-    // it (AudioSwitchFilter).
-    private void ListAllAudio(MediaSourceInfo source, RemotePlayback p, Live live)
-    {
-        // The copy's tracks come from the catalog since MSFP's revision:
-        // phase 5 lists them on the stand-in before any play; this goes in
-        // phase 6 (plan 4.2).
-    }
+    // ---- Where the viewer is ----
 
-    /// <summary>A playback by Jellyfin's ID of its live stream (the provider's prefix, then ours), null when none.</summary>
-    internal Live? ByLiveStreamId(string liveStreamId) =>
-        _byToken.Values.FirstOrDefault(l => SameStream(liveStreamId, l.StreamId));
-
-    // The paired server's subtitles, text (WebVTT) and pictures (PGS), as
-    // external tracks Jellyfin reads whole at the relay (Subtitles.cs), in
-    // place of the subtitle tracks found inside a file played as it is
-    // (the same tracks, checked by the engine).
-    private void AddSubtitles(MediaSourceInfo source, RemotePlayback p, string token, IReadOnlySet<string> picturesReady)
-    {
-        // Since MSFP's revision the subtitles are the copy's tracks (in the
-        // file) and the answer's served ones (RemotePlayback.Subtitles):
-        // phase 6 of the migration adds them (plan 4.2). None until then.
-    }
-
-    // A track's words in the server's language, as Jellyfin's own reading
-    // of a file gives them (ProbeResultNormalizer): its language's name,
-    // "Default", "Forced", "External"...
-    private MediaStream Localize(MediaStream s)
-    {
-        if (!string.IsNullOrEmpty(s.Language))
-        {
-            s.LocalizedLanguage = _localization.GetLanguageDisplayName(s.Language);
-        }
-
-        s.LocalizedDefault = _localization.GetLocalizedString("Default");
-        s.LocalizedExternal = _localization.GetLocalizedString("External");
-        if (s.Type == MediaStreamType.Audio)
-        {
-            s.LocalizedOriginal = _localization.GetLocalizedString("Original");
-        }
-        else
-        {
-            s.LocalizedUndefined = _localization.GetLocalizedString("Undefined");
-            s.LocalizedForced = _localization.GetLocalizedString("Forced");
-            s.LocalizedHearingImpaired = _localization.GetLocalizedString("HearingImpaired");
-        }
-
-        return s;
-    }
-
-    private static string? ContainerOf(string mime) => mime switch
-    {
-        "video/mp4" => "mp4",
-        "video/x-matroska" or "video/matroska" => "mkv",
-        "video/webm" => "webm",
-        "video/quicktime" => "mov",
-        "video/mp2t" => "ts",
-        _ => null,
-    };
-
-    // Where the viewer is, from Jellyfin's reports on a stand-in.
     private void Started(object? sender, PlaybackProgressEventArgs e) => Report(e, starting: true);
 
     private void Progress(object? sender, PlaybackProgressEventArgs e) => Report(e, starting: false);
 
     private void Report(PlaybackProgressEventArgs e, bool starting)
     {
-        if (Of(e, starting) is { } live && _host.Engine is { } engine)
+        if (Of(e, starting) is { } play)
         {
-            live.Touched = DateTimeOffset.UtcNow;
-            live.PositionMs = (e.PlaybackPositionTicks ?? 0) / TimeSpan.TicksPerMillisecond;
-            engine.Progress(live.Playback.Id, live.PositionMs, e.IsPaused);
+            play.Touched = DateTimeOffset.UtcNow;
+            play.PositionMs = (e.PlaybackPositionTicks ?? 0) / TimeSpan.TicksPerMillisecond;
+            if (play.Playback is { } p && _host.Engine is { } engine)
+            {
+                engine.Progress(p.Id, InCopy(play, play.PositionMs), e.IsPaused);
+            }
         }
     }
 
-    // A playback the paired server's side ended (its operator, expiry, the
-    // pairing ended or suspended, its library no longer offered): forgotten
-    // here at once, or a session still on the title would keep it.
+    /// <summary>A position in a play's title as a position in its copy (MSFP video section 5.2).</summary>
+    internal static long InCopy(PlayToken play, long positionMs) => Math.Max(positionMs, 0) + play.StartMs;
+
+    // A play the paired server's side ended (its operator, expiry, the
+    // pairing ended or suspended): forgotten here; a file read after it
+    // starts another. A peer's catalog read again: its refusal of delivery
+    // file forgotten.
     private void Event(MsfpEvent e)
     {
-        if (e is RemotePlaybackEnded ended && _byToken.Values.FirstOrDefault(l => l.Playback.Id == ended.Playback) is { } live)
+        switch (e)
         {
-            _log.LogInformation("MSFP: a playback of {Key} ended on the paired server's side ({Reason})", live.Playback.Title, ended.Reason);
-            _ = EndAsync(live, live.PositionMs);
+            case RemotePlaybackEnded ended when Tokens.All.FirstOrDefault(t => t.Playback?.Id == ended.Playback) is { } play:
+                _log.LogInformation("MSFP: a playback of {Key} ended on the paired server's side ({Reason})", play.Key, ended.Reason);
+                if (play.Playback is { } gone)
+                {
+                    Ended(play, gone);
+                }
+
+                if (play.Way == Way.Hls || ended.Reason is EndReason.PairingEnded)
+                {
+                    Tokens.Drop(play);
+                }
+
+                break;
+            case CatalogReadEnded { Error: null } read:
+                _refusedFile.TryRemove(read.Peer, out _);
+                break;
         }
     }
 
     private void Stopped(object? sender, PlaybackStopEventArgs e)
     {
-        if (Of(e) is { } live)
+        if (Of(e) is { } play)
         {
-            live.PositionMs = (e.PlaybackPositionTicks ?? live.PositionMs * TimeSpan.TicksPerMillisecond) / TimeSpan.TicksPerMillisecond;
-            _ = EndAsync(live, live.PositionMs);
+            play.PositionMs = (e.PlaybackPositionTicks ?? play.PositionMs * TimeSpan.TicksPerMillisecond) / TimeSpan.TicksPerMillisecond;
+
+            // The play stays a while: a client may go on with it (another
+            // track, a seek in a conversion), which starts a new playback.
+            _ = EndAsync(play, drop: play.Way == Way.Hls);
         }
     }
 
-    // The playback a report is about: by the live stream the session plays,
-    // else the one playback of that stand-in.
-    private Live? Of(PlaybackProgressEventArgs e, bool starting = false)
+    // The play a report is about: by the media source the session plays
+    // (a file's handle), by its live stream, else as LiveOf finds it.
+    private PlayToken? Of(PlaybackProgressEventArgs e, bool starting = false)
     {
         if (e.Item is not { } item || !PairedSources.IsStandIn(item))
         {
             return null;
         }
 
+        if (Tokens.OfHandle(e.MediaSourceId ?? e.Session?.PlayState?.MediaSourceId) is { } byHandle && byHandle.Item == item.Id)
+        {
+            if (e.Session?.Id is { } sid)
+            {
+                byHandle.SessionId ??= sid;
+            }
+
+            return byHandle;
+        }
+
         return LiveOf(item.Id, e.Session?.PlayState?.LiveStreamId, e.Session?.Id, starting);
     }
 
-    // A stand-in's playback for a session: by the live stream it names,
-    // else the one it was bound to, else the title's only one, else, as a
-    // session starts playing, the newest one no session has: some clients
-    // (Kodi's add-on) don't name the live stream, and two of them may play
-    // the same title. The session is bound to the playback found.
-    private Live? LiveOf(Guid item, string? liveStreamId, string? sessionId, bool starting = false)
+    private PlayToken? LiveOf(Guid item, string? liveStreamId, string? sessionId, bool starting = false)
     {
-        var lives = _byToken.Values.Where(l => l.Item.Id == item).ToList();
-        var at = Match(lives.Select(l => (l.StreamId, l.SessionId, l.Opened)).ToList(), liveStreamId, sessionId, starting);
+        var plays = Tokens.All.Where(t => t.Item == item && t.FirstRead is not null).ToList();
+        var at = Match(plays.Select(t => (t.StreamId, t.SessionId, t.Made)).ToList(), liveStreamId, sessionId, starting);
         if (at < 0)
         {
             return null;
         }
 
-        var live = lives[at];
+        var play = plays[at];
         if (sessionId is not null)
         {
-            live.SessionId ??= sessionId;
+            play.SessionId ??= sessionId;
         }
 
-        return live;
+        return play;
     }
 
     /// <summary>
-    /// <see cref="LiveOf"/>'s choice among a title's playbacks (their live
-    /// stream, session and opening): the index of the one a session's
-    /// report is about, -1 for none.
+    /// <see cref="LiveOf"/>'s choice among a title's plays (their live
+    /// stream, session and making): the index of the one a session's report
+    /// is about, -1 for none.
     /// </summary>
     internal static int Match(IReadOnlyList<(string StreamId, string? SessionId, DateTimeOffset Opened)> lives, string? liveStreamId, string? sessionId, bool starting)
     {
@@ -443,58 +650,76 @@ public sealed class RemotePlays : IHostedService, IDisposable
         jellyfinId is { Length: > 0 } id && ours.Length > 0
         && (id == ours || id.EndsWith("_" + ours, StringComparison.Ordinal));
 
-    // Every minute. A playback a Jellyfin session is still on is kept and
+    // Every minute. A play a Jellyfin session is still on is kept and
     // reported to the paired server, paused or not: some clients report
-    // seldom while paused (Kodi's add-on: every 250 seconds), past the
-    // paired server's 2 minutes without news (MSFP playback 6.3) and this
-    // server's Idle. Jellyfin ends a session's playback itself when the
-    // client is gone. Others, neither reported on nor read for Idle: stopped.
+    // seldom while paused, past the paired server's 2 minutes without news
+    // (MSFP playback 6.3). Others, neither reported on nor read for Idle:
+    // stopped and dropped; plays never read, dropped after their lapse.
     private void Sweep()
     {
         var now = DateTimeOffset.UtcNow;
-        var kept = new HashSet<Live>();
+        Tokens.Sweep();
+        var kept = new HashSet<PlayToken>();
         foreach (var session in _sessions.Sessions)
         {
-            if (session.NowPlayingItem is not { } item || LiveOf(item.Id, session.PlayState?.LiveStreamId, session.Id) is not { } live
-                || _host.Engine is not { } engine || !kept.Add(live))
+            if (session.NowPlayingItem is not { } item
+                || (Tokens.OfHandle(session.PlayState?.MediaSourceId) is { } h && h.Item == item.Id ? h : LiveOf(item.Id, session.PlayState?.LiveStreamId, session.Id)) is not { } play
+                || !kept.Add(play))
             {
                 continue;
             }
 
-            live.Touched = now;
+            play.Touched = now;
             if (session.PlayState?.PositionTicks is { } ticks)
             {
-                live.PositionMs = ticks / TimeSpan.TicksPerMillisecond;
+                play.PositionMs = ticks / TimeSpan.TicksPerMillisecond;
             }
 
-            engine.Progress(live.Playback.Id, live.PositionMs, session.PlayState?.IsPaused ?? false);
+            if (play.Playback is { } p && _host.Engine is { } engine)
+            {
+                engine.Progress(p.Id, InCopy(play, play.PositionMs), session.PlayState?.IsPaused ?? false);
+            }
         }
 
-        foreach (var live in _byToken.Values.Where(l => !kept.Contains(l)).ToList())
+        foreach (var play in Tokens.All.Where(t => !kept.Contains(t) && t.FirstRead is not null))
         {
-            if (now - live.Touched > Idle)
+            if (now - play.Touched > Idle)
             {
-                _log.LogInformation("MSFP: a playback of {Key} neither reported on nor read for {Idle}: stopped", live.Playback.Title, Idle);
-                _ = EndAsync(live, live.PositionMs);
+                _log.LogInformation("MSFP: a play of {Key} neither reported on nor read for {Idle}: stopped", play.Key, Idle);
+                _ = EndAsync(play, drop: true);
             }
         }
     }
 
-    /// <summary>Stops a playback on its paired server, once.</summary>
-    internal async Task EndAsync(Live live, long positionMs)
+    /// <summary>Stops a play's MSFP playback on its paired server, once; dropped, its token opens nothing more.</summary>
+    internal async Task EndAsync(PlayToken play, bool drop)
     {
-        if (!_byToken.TryRemove(live.Token, out _))
+        if (drop)
+        {
+            Tokens.Drop(play);
+        }
+
+        RemotePlayback? playback;
+        lock (play)
+        {
+            playback = play.Playback;
+            play.Playback = null;
+            if (playback is not null)
+            {
+                play.Last = playback;
+            }
+        }
+
+        if (playback is null)
         {
             return;
         }
-
-        Subtitles.ForgetPictures(live.Token);
 
         try
         {
             if (_host.Engine is { } engine)
             {
-                await engine.StopAsync(live.Playback.Id, positionMs).ConfigureAwait(false);
+                await engine.StopAsync(playback.Id, InCopy(play, play.PositionMs)).ConfigureAwait(false);
             }
         }
         catch (MsfpException)
@@ -507,58 +732,30 @@ public sealed class RemotePlays : IHostedService, IDisposable
         }
     }
 
-    /// <summary>A playback on a paired server, as Jellyfin reads it.</summary>
-    internal sealed class Live(RemotePlays owner, string token, RemotePlayback playback, BaseItem item)
-    {
-        public RemotePlays Owner { get; } = owner;
+    /// <summary>A play's live stream (the HLS way) by its stand-in, for Jellyfin closing it.</summary>
+    internal Task CloseAsync(PlayToken play) => EndAsync(play, drop: true);
 
-        public string Token { get; } = token;
+    /// <summary>Whether a stand-in has a play live (for the library's own use: none).</summary>
+    internal bool Playing(Guid item) => Tokens.All.Any(t => t.Item == item && t.Playback is not null);
 
-        public RemotePlayback Playback { get; } = playback;
-
-        public BaseItem Item { get; } = item;
-
-        public string StreamId { get; set; } = string.Empty;
-
-        /// <summary>The Jellyfin session playing it, once known (<see cref="LiveOf"/>).</summary>
-        public string? SessionId { get; set; }
-
-        /// <summary>When it was opened: the newest goes to a session starting without naming its live stream.</summary>
-        public DateTimeOffset Opened { get; } = DateTimeOffset.UtcNow;
-
-        public long PositionMs { get; set; }
-
-        /// <summary>The copy's length, for its subtitle parts.</summary>
-        public long DurationMs { get; set; }
-
-        public DateTimeOffset Touched { get; set; } = DateTimeOffset.UtcNow;
-
-        /// <summary>The subtitle tracks read whole, by track.</summary>
-        public ConcurrentDictionary<string, Lazy<Task<byte[]?>>> Subtitles { get; } = new(StringComparer.Ordinal);
-
-        /// <summary>A converted stream's audio tracks by the Index Jellyfin shows; empty otherwise.</summary>
-        public Dictionary<int, global::Msfp.Protocol.CopyAudio> AudioByIndex { get; } = new();
-    }
-
-    /// <summary>
-    /// An audio track picked: during a playback, on that server its ID,
-    /// elsewhere its language; before Play, its language only (no peer).
-    /// </summary>
-    internal sealed record AudioSwitch(string Peer, string Track, string Language);
+    /// <summary>The item a play is of; null when gone.</summary>
+    internal BaseItem? ItemOf(PlayToken play) => _library.GetItemById(play.Item);
 }
 
-/// <summary>A playback on a paired server as Jellyfin's live stream: closing it stops the playback.</summary>
+/// <summary>A play of the HLS way as Jellyfin's live stream: closing it stops the playback.</summary>
 public sealed class PairedLiveStream : ILiveStream
 {
-    private readonly RemotePlays.Live _live;
+    private readonly RemotePlays _owner;
+    private readonly PlayToken _play;
 
-    internal PairedLiveStream(RemotePlays.Live live, MediaSourceInfo source)
+    internal PairedLiveStream(RemotePlays owner, PlayToken play, MediaSourceInfo source)
     {
-        _live = live;
+        _owner = owner;
+        _play = play;
         MediaSource = source;
         UniqueId = "msfp-" + Guid.NewGuid().ToString("N");
         source.LiveStreamId = UniqueId;
-        live.StreamId = UniqueId;
+        play.StreamId = UniqueId;
     }
 
     /// <inheritdoc />
@@ -583,7 +780,7 @@ public sealed class PairedLiveStream : ILiveStream
     public Task Open(CancellationToken openCancellationToken) => Task.CompletedTask;
 
     /// <inheritdoc />
-    public Task Close() => _live.Owner.EndAsync(_live, _live.PositionMs);
+    public Task Close() => _owner.CloseAsync(_play);
 
     /// <inheritdoc />
     public System.IO.Stream GetStream() => throw new NotSupportedException();

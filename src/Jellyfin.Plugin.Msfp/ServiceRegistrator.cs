@@ -53,7 +53,7 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<MediaBrowser.Controller.MediaSegments.IMediaSegmentProvider, PairedSegments>();
         serviceCollection.AddSingleton<RemotePlays>();
         serviceCollection.AddSingleton<Microsoft.Extensions.Options.IConfigureOptions<Microsoft.AspNetCore.Mvc.MvcOptions>, BusyFilterSetup>();
-        serviceCollection.AddSingleton<Microsoft.Extensions.Options.IConfigureOptions<Microsoft.AspNetCore.Mvc.MvcOptions>, AudioSwitchFilterSetup>();
+        serviceCollection.AddSingleton<Microsoft.Extensions.Options.IConfigureOptions<Microsoft.AspNetCore.Mvc.MvcOptions>, HandOverFilterSetup>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<RemotePlays>());
     }
 }
