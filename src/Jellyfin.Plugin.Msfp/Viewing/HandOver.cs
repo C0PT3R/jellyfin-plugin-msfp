@@ -209,7 +209,7 @@ public sealed class HandOverFilter : IAsyncActionFilter
         }
 
         var claim = context.HttpContext.User.FindFirst("Jellyfin-UserId")?.Value;
-        if (!Guid.TryParse(claim, out var userId) || _users.GetUserById(userId) is not { } user || !item.IsVisibleStandalone(user))
+        if (!Guid.TryParse(claim, out var userId) || _users.GetUserById(userId) is not { } user || !Allowed(item, user))
         {
             _log.LogInformation("MSFP: a paired server's title asked without access to it");
             context.Result = Refused(PlaybackErrorCode.NotAllowed);
@@ -294,6 +294,12 @@ public sealed class HandOverFilter : IAsyncActionFilter
         SetMember(dto, "MediaSourceId", saved);
         await next().ConfigureAwait(false);
     }
+
+    // The user may see the stand-in: its parental rating and tags, and its
+    // library (a stand-in is a channel item, which Jellyfin's own check
+    // lets through by the channel's access alone).
+    private bool Allowed(MediaBrowser.Controller.Entities.BaseItem item, Jellyfin.Database.Implementations.Entities.User user) =>
+        item.IsVisibleStandalone(user) && _library.GetCollectionFolders(item) is { Count: > 0 } folders && folders.Any(f => f.IsVisible(user));
 
     // The plain file: Jellyfin's answer keeps only the play's source, its
     // path the request's own address (Jellyfin's own reads take the

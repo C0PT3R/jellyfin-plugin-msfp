@@ -538,7 +538,7 @@ internal static class StandInStreams
     /// <summary>
     /// A copy's chapters as Jellyfin keeps a local file's: a chapter without a name named as Jellyfin names one (<paramref name="unnamed"/> of its number from 1), no images.
     /// For a title that is a span of its copy, the chapters within it, from
-    /// its start (the one it starts in, at 0).
+    /// its start (the one it starts in, at 0; none in its last second).
     /// </summary>
     internal static List<ChapterInfo> Chapters(Copy copy, Func<int, string> unnamed)
     {
@@ -547,7 +547,8 @@ internal static class StandInStreams
         if (Spanned(copy))
         {
             var before = named.LastOrDefault(c => c.StartMs <= start);
-            named = named.Where(c => c.StartMs > start && c.StartMs < end).Select(c => (c.StartMs - start, c.Name)).ToList();
+            // A chapter starting in the span's last second is the next episode's.
+            named = named.Where(c => c.StartMs > start && c.StartMs < end - 1000).Select(c => (c.StartMs - start, c.Name)).ToList();
             if (before.Name is not null)
             {
                 named.Insert(0, (0, before.Name));

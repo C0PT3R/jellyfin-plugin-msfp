@@ -314,6 +314,10 @@ public class HandOverTests
         var markers = StandInStreams.Segments(c);
         Assert.Equal([("intro", 0L, 5_000L), ("outro", 20_000L, 25_000L)], markers.Select(m => (m.Kind, m.StartMs, m.EndMs)));
 
+        // A chapter at the span's end (within its last second) is the next episode's.
+        var atEnd = c with { Chapters = [new CopyChapter(0, "One"), new CopyChapter(44_500, "Next")] };
+        Assert.Equal(["One"], StandInStreams.Chapters(atEnd, n => "Chapter " + n).Select(x => x.Name));
+
         // The whole copy: as it is.
         Assert.Equal(4, StandInStreams.Chapters(c with { StartMs = null, EndMs = null }, n => "Chapter " + n).Count);
     }

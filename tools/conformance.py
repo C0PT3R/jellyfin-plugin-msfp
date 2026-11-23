@@ -201,7 +201,8 @@ class Operator:
 
     def op_watch(self):
         """A viewer of one of the suite's films, through Jellyfin as a
-        client: its stand-in opened, playing started, paused at once, then
+        client: its stand-in opened (the plain file read once, as a direct
+        play starts), playing started, paused at once, then
         silent (as a client reporting seldom while paused), stopped after
         the suite's --watch-pause seconds."""
         want = {"movie/tmdb/550", "movie/tmdb/603", "movie/tmdb/949"}
@@ -228,7 +229,18 @@ class Operator:
             print("  [operator] %s didn't open: %s %s" % (item["Name"], st, str(pi)[:200]))
             return
         ms, ps = pi["MediaSources"][0], pi["PlaySessionId"]
-        base = {"ItemId": item["Id"], "MediaSourceId": ms["Id"], "PlaySessionId": ps, "PlayMethod": "Transcode"}
+        method = "Transcode"
+        if "/Msfp/File/" in (ms.get("Path") or ""):
+            # The plain file (the hand-over): a client's first read starts
+            # the playback on the peer, as a direct play's would.
+            method = "DirectPlay"
+            r = urllib.request.Request(ms["Path"], headers={"Range": "bytes=0-65535"})
+            try:
+                with urllib.request.urlopen(r, timeout=60) as x:
+                    print("  [operator] first read of the file: %d, %d bytes" % (x.status, len(x.read())))
+            except urllib.error.HTTPError as e:
+                print("  [operator] first read of the file: %d" % e.code)
+        base = {"ItemId": item["Id"], "MediaSourceId": ms["Id"], "PlaySessionId": ps, "PlayMethod": method}
         call("POST", "/Sessions/Playing", dict(base, PositionTicks=0))
         call("POST", "/Sessions/Playing/Progress", dict(base, PositionTicks=0, IsPaused=True))
         print("  [operator] playing %s, paused for %d s" % (item["Name"], self.watch_pause), flush=True)

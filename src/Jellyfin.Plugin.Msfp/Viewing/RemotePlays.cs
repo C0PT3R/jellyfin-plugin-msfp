@@ -414,7 +414,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
                     throw new PairedBusyException("The paired server holding this title is busy now. Try again later.");
                 }
 
-                throw new InvalidOperationException("The paired server couldn't play this title now.");
+                throw new PairedRefusedException("The paired server couldn't play this title now.");
             }
         }
 
@@ -685,7 +685,11 @@ public sealed class RemotePlays : IHostedService, IDisposable
         {
             if (now - play.Touched > Idle)
             {
-                _log.LogInformation("MSFP: a play of {Key} neither reported on nor read for {Idle}: stopped", play.Key, Idle);
+                if (play.Playback is not null)
+                {
+                    _log.LogInformation("MSFP: a play of {Key} neither reported on nor read for {Idle}: stopped", play.Key, Idle);
+                }
+
                 _ = EndAsync(play, drop: true);
             }
         }
