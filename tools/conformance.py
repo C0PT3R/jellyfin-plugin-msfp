@@ -21,7 +21,7 @@ The suite comes from $MSFP_CONFORMANCE, else ../msfp-spec/conformance.
 It makes two pairing codes, pairs twice (the second as a server that
 can't be called), makes a group whose code the suite uses (it joins
 through group-join, accepted here, then leaves; the group is dissolved
-at the end), offers every films library, confirms the titles held
+at the end), offers every films library with its local titles, confirms the titles held
 "to check" there with their match, and changes the server's key twice
 (rotation, then "stolen"): use a test server, never one paired with
 servers that matter."""
@@ -141,8 +141,10 @@ class Operator:
         pid = self.accept(False)
         if pid:
             libraries = call("GET", "/Msfp/Peers/%s/Offers" % pid)[1]
-            films = [x["id"] for x in libraries if x["kind"] == "movies"] or [x["id"] for x in libraries]
+            films = [x["id"] for x in libraries if x.get("films")] or [x["id"] for x in libraries]
             print("  [operator] offered: %s" % call("POST", "/Msfp/Peers/%s/Offers" % pid, {"Libraries": films})[0])
+            # Local titles too (off by default), so that the image checks run.
+            print("  [operator] local titles shared: %s" % call("POST", "/Msfp/Peers/%s/Local" % pid, {"On": True})[0])
             confirm_held()
 
     def op_accept2(self):

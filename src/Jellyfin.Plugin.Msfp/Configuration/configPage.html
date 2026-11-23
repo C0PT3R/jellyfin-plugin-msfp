@@ -555,7 +555,11 @@
                         var failed = p.state === 'paired' && p.lastRead && p.lastRead.error;
                         if (failed) state.push(msfpTag('Titles not read', 'Warn'));
                         var detail = [msfpEl('div', null, (p.asks || p.asked || p.keepChoice ? '' : msfpShareText(p)) || st[2])];
-                        if (failed) detail.push(msfpEl('div', 'msfpSub', 'Its titles could not be read on ' + msfpWhen(p.lastRead.at) + ' (' + p.lastRead.error + '). A server still on the older draft of MSFP (this plugin 0.10 and before) can\'t be read until it updates; the pairing is kept.'));
+                        if (failed) {
+                            var away = p.lastRead.error === 'Unreachable' || p.lastRead.error === 'Timeout';
+                            detail.push(msfpEl('div', 'msfpSub', 'Its titles could not be read on ' + msfpWhen(p.lastRead.at) + (away ? ': it could not be reached.' :
+                                ' (' + p.lastRead.error + '). A server still on the older draft of MSFP (this plugin 0.10 and before) can\'t be read until it updates; the pairing is kept.')));
+                        }
                         if (p.wantsGone) detail.push(msfpEl('div', 'msfpSub', msfpPlural(p.wantsGone, 'library', 'libraries') + ' you show is no longer offered'));
                         if (msfpGroupsText(p)) detail.push(msfpEl('div', 'msfpSub', msfpGroupsText(p)));
                         var buttons = [];
