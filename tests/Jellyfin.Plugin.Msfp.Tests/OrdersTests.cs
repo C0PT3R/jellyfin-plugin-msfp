@@ -18,6 +18,9 @@ public class OrdersTests
 
     private static readonly EncodersNow Cpu = new(["h264", "hevc"], ["aac", "ac3", "eac3", "mp3", "opus", "flac"], false, true);
 
+    // The same with the operator's switch for burned subtitles on.
+    private static readonly EncodersNow CpuBurn = Cpu with { Burn = true };
+
     private static readonly Dictionary<string, int> Tracks = new() { ["a1"] = 2, ["a2"] = 3, ["s3"] = 0 };
 
     // Jellyfin's streams: an external subtitle first, then the file's.
@@ -181,12 +184,31 @@ public class OrdersTests
         Assert.Equal("audio-codec-not-made", Refused(() => Orders.Plan(TranscodeOf(c, "a1", new TranscodeTargets { VideoCodec = "h264", AudioCodec = "alac" }), c, Tracks, Version, s, Cpu)));
         Assert.Equal("range-keep", Refused(() => Orders.Plan(TranscodeOf(c, "a1", new TranscodeTargets { VideoCodec = "h264", Range = Names.RangeKeep }), c, Tracks, Version, s, Cpu)));
         Assert.Equal("track-not-mapped", Refused(() => Orders.Plan(TranscodeOf(c, "a9", new TranscodeTargets { VideoCodec = "h264" }), c, Tracks, Version, s, Cpu)));
-        Assert.Equal("burn-with-copy", Refused(() => Orders.Plan(TranscodeOf(c, "a1", new TranscodeTargets { VideoCodec = Names.Copy, BurnSubtitle = "s3" }), c, Tracks, Version, s, Cpu)));
+        Assert.Equal("burn-with-copy", Refused(() => Orders.Plan(TranscodeOf(c, "a1", new TranscodeTargets { VideoCodec = Names.Copy, BurnSubtitle = "s3" }), c, Tracks, Version, s, CpuBurn)));
         // A burned subtitle by Jellyfin's index of it.
-        Assert.Equal(0, Orders.Plan(TranscodeOf(c, "a1", new TranscodeTargets { VideoCodec = "h264", BurnSubtitle = "s3" }), c, Tracks, Version, s, Cpu).Video!.BurnIndex);
+        Assert.Equal(0, Orders.Plan(TranscodeOf(c, "a1", new TranscodeTargets { VideoCodec = "h264", BurnSubtitle = "s3" }), c, Tracks, Version, s, CpuBurn).Video!.BurnIndex);
         // TrueHD copied: neither segment format carries it.
         var th = c with { AudioTracks = [new CopyAudio("a1", "truehd") { Channels = 8 }] };
         Assert.Equal("segments-cannot-carry", Refused(() => Orders.Plan(TranscodeOf(th, "a1", new TranscodeTargets { VideoCodec = "h264", AudioCodec = Names.Copy }), th, Tracks, Version, s, Cpu)));
+    }
+
+    [Fact]
+    public void BurnedSubtitlesOnlyWhenTheOperatorTurnedThemOn()
+    {
+        var c = Uhd();
+        var s = Streams(3840, 2160, true);
+        var burn = new TranscodeTargets { VideoCodec = "h264", BurnSubtitle = "s3" };
+        // Off, the default: refused before anything starts (409 delivery-refused), whatever else is asked.
+        Assert.False(new EncodersNow([], [], false, false).Burn);
+        Assert.Equal("burn-off", Refused(() => Orders.Plan(TranscodeOf(c, "a1", burn), c, Tracks, Version, s, Cpu)));
+        Assert.Equal("burn-off", Refused(() => Orders.Plan(TranscodeOf(c, "a1", burn with { VideoCodec = Names.Copy }), c, Tracks, Version, s, Cpu)));
+        Assert.Equal("burn-off", Refused(() => Orders.Plan(TranscodeOf(c, "a1", burn with { BurnSubtitle = "s9" }), c, Tracks, Version, s, Cpu)));
+        var e = Assert.Throws<DeliveryRefusedException>(() => Orders.Plan(TranscodeOf(c, "a1", burn), c, Tracks, Version, s, Cpu));
+        Assert.Equal(MsfpError.DeliveryRefused, e.ToMsfp().Code);
+        // The same play without a burned subtitle is made.
+        Assert.Equal(-1, Orders.Plan(TranscodeOf(c, "a1", burn with { BurnSubtitle = "" }), c, Tracks, Version, s, Cpu).Video!.BurnIndex);
+        // On: made, the subtitle by Jellyfin's index.
+        Assert.Equal(0, Orders.Plan(TranscodeOf(c, "a1", burn), c, Tracks, Version, s, CpuBurn).Video!.BurnIndex);
     }
 
     [Fact]

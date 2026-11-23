@@ -35,6 +35,9 @@ public sealed class CodeRequest
 
     /// <summary>Using a group's invite: the limits it lends the group.</summary>
     public LimitsRequest? Pool { get; set; }
+
+    /// <summary>Using a group's invite: this server's local titles go to the group too (off by default).</summary>
+    public bool Local { get; set; }
 }
 
 /// <summary>A group's name and settings, from the operator's page.</summary>
@@ -49,6 +52,9 @@ public sealed class GroupRequest
 
     /// <summary>Creating: the limits it lends the group.</summary>
     public LimitsRequest? Pool { get; set; }
+
+    /// <summary>Creating: this server's local titles go to the group too (off by default).</summary>
+    public bool Local { get; set; }
 
     /// <summary>Creating: this server automatically accepts new members.</summary>
     public bool Accept { get; set; }
@@ -84,6 +90,15 @@ public sealed class GroupSharingRequest
 
     /// <summary>This server automatically accepts new members; null: unchanged.</summary>
     public bool? Accept { get; set; }
+
+    /// <summary>This server's local titles go to the group too; null: unchanged.</summary>
+    public bool? Local { get; set; }
+}
+
+/// <summary>A switch, from the operator's page.</summary>
+public sealed class SwitchRequest
+{
+    public bool On { get; set; }
 }
 
 /// <summary>The libraries a group doesn't show here, from the operator's page.</summary>
@@ -130,7 +145,7 @@ public sealed class LimitsRequest
     /// <summary>Scans started in any 24 hours (0, the default: no scan access).</summary>
     public int ScansPerDay { get; set; }
 
-    /// <summary>The bytes one scan may read (0: the floor, 4 MiB).</summary>
+    /// <summary>The bytes one scan may read (0: the floor, 4 MiB; else 4 MiB to 1 GiB).</summary>
     public int ScanBytes { get; set; }
 
     /// <summary>The engine's limits of these.</summary>
@@ -294,7 +309,7 @@ public class AdminController : ControllerBase
         if (preview.Group is { Length: > 0 } group)
         {
             // A group's invite: what this server shares with the group, from the start.
-            await ShareWithGroupAsync(e, group, request.Libraries, request.Pool, ct).ConfigureAwait(false);
+            await ShareWithGroupAsync(e, group, request.Libraries, request.Pool, request.Local, ct).ConfigureAwait(false);
         }
 
         return peer;
@@ -302,12 +317,24 @@ public class AdminController : ControllerBase
 
     /// <summary>This server's libraries: what it may share, before a group exists (creating or joining one).</summary>
     [HttpGet("Libraries")]
-    public ContentResult Libraries() =>
-        Json(_catalog.Read().Libraries.Select(l => new { id = l.Id, name = l.Name, kind = string.Empty /* no library kind since MSFP's revision: typed by its titles in phase 4 (page) */ }).ToList());
+    public ContentResult Libraries()
+    {
+        var counts = _catalog.Counts();
+        return Json(_catalog.Read().Libraries.Select(l => LibraryJson(l.Id, l.Name, counts)).ToList());
+    }
+
+    // A library as the page shows it: since MSFP's revision a library has no
+    // kind, so it is described by its titles (films, series, those under a
+    // local key).
+    private static Dictionary<string, object> LibraryJson(string id, string name, IReadOnlyDictionary<string, LibraryCounts> counts)
+    {
+        var c = counts.GetValueOrDefault(id) ?? new LibraryCounts(0, 0, 0);
+        return new Dictionary<string, object> { ["id"] = id, ["name"] = name, ["films"] = c.Films, ["series"] = c.Series, ["local"] = c.Local };
+    }
 
     // What this server shares with a group and the limits it lends it; the
     // libraries are this server's own.
-    private async Task ShareWithGroupAsync(MsfpEngine e, string group, List<string> libraries, LimitsRequest? pool, CancellationToken ct)
+    private async Task ShareWithGroupAsync(MsfpEngine e, string group, List<string> libraries, LimitsRequest? pool, bool local, CancellationToken ct)
     {
         var ours = _catalog.Read().Libraries.Select(l => l.Id).ToHashSet(StringComparer.Ordinal);
         if (pool is { } p)
@@ -316,6 +343,11 @@ public class AdminController : ControllerBase
         }
 
         await e.SetGroupOffersAsync(group, libraries.Where(ours.Contains).ToList(), ct).ConfigureAwait(false);
+        if (local)
+        {
+            await e.SetGroupLocalAsync(group, true, ct).ConfigureAwait(false);
+        }
+
         _identifier.Poke();
     }
 
@@ -416,7 +448,16 @@ public class AdminController : ControllerBase
     /// <summary>This server's libraries, those offered to the peer marked.</summary>
     [HttpGet("Peers/{id}/Offers")]
     public Task<ContentResult> Offers(string id, CancellationToken ct) => Run(async e =>
-        (await e.OffersAsync(id, ct).ConfigureAwait(false)).Select(l => new { id = l.Id, name = l.Name, kind = string.Empty /* no library kind since MSFP's revision: typed by its titles in phase 4 (page) */, offered = l.Offered }));
+    {
+        var counts = _catalog.Counts();
+        return (await e.OffersAsync(id, ct).ConfigureAwait(false)).Select(l => Offered(LibraryJson(l.Id, l.Name, counts), l.Offered)).ToList();
+    });
+
+    private static Dictionary<string, object> Offered(Dictionary<string, object> library, bool offered)
+    {
+        library["offered"] = offered;
+        return library;
+    }
 
     /// <summary>Sets which libraries a peer is offered.</summary>
     [HttpPost("Peers/{id}/Offers")]
@@ -434,12 +475,24 @@ public class AdminController : ControllerBase
         return View(await e.PeerAsync(id, ct).ConfigureAwait(false));
     });
 
+    /// <summary>
+    /// Whether the peer also gets this server's local titles (those nothing
+    /// identifies: their name, year and image go with them) in the libraries
+    /// it is offered. Off by default.
+    /// </summary>
+    [HttpPost("Peers/{id}/Local")]
+    public Task<ContentResult> SetLocal(string id, [FromBody] SwitchRequest request, CancellationToken ct) => Run(async e =>
+    {
+        await e.SetLocalAsync(id, request.On, ct).ConfigureAwait(false);
+        return View(await e.PeerAsync(id, ct).ConfigureAwait(false));
+    });
+
     /// <summary>The libraries the peer offers this server, asked now, those read marked.</summary>
     [HttpGet("Peers/{id}/Theirs")]
     public Task<ContentResult> Theirs(string id, CancellationToken ct) => Run(async e => new
     {
         all = _wants.WantsAll(id),
-        libraries = (await e.TheirLibrariesAsync(id, ct).ConfigureAwait(false)).Select(l => new { id = l.Id, name = l.Name, kind = string.Empty /* no library kind since MSFP's revision: typed by its titles in phase 4 (page) */, wanted = l.Wanted, gone = l.Gone }),
+        libraries = (await e.TheirLibrariesAsync(id, ct).ConfigureAwait(false)).Select(l => new { id = l.Id, name = l.Name, wanted = l.Wanted, gone = l.Gone }),
     });
 
     /// <summary>Sets which of a peer's libraries this server reads; a reading follows at once.</summary>
@@ -491,7 +544,7 @@ public class AdminController : ControllerBase
         {
             total = kinds.Values.Sum(),
             kinds,
-            libraries = wants.Select(l => new { id = l.Id, name = l.Name, kind = string.Empty /* no library kind since MSFP's revision: typed by its titles in phase 4 (page) */, wanted = l.Wanted, gone = l.Gone }),
+            libraries = wants.Select(l => new { id = l.Id, name = l.Name, wanted = l.Wanted, gone = l.Gone }),
             titles = titles.Select(t => t is VideoTitle v
                 ? new { key = t.Key, kind = t.Kind, library = t.Libraries?.FirstOrDefault(), audio = v.AudioLanguages().ToList(), subtitles = v.SubtitleLanguages().ToList(), height = v.BestCopy()?.Video?.Height }
                 : new { key = t.Key, kind = t.Kind, library = t.Libraries?.FirstOrDefault(), audio = new List<string>(), subtitles = new List<string>(), height = (int?)null }),
@@ -552,7 +605,7 @@ public class AdminController : ControllerBase
     public Task<ContentResult> CreateGroup([FromBody] GroupRequest request, CancellationToken ct) => Run(async e =>
     {
         var g = await e.CreateGroupAsync(request.Name, new GroupSettings(0, request.CapPerDay), ct).ConfigureAwait(false);
-        await ShareWithGroupAsync(e, g.Id, request.Libraries, request.Pool, ct).ConfigureAwait(false);
+        await ShareWithGroupAsync(e, g.Id, request.Libraries, request.Pool, request.Local, ct).ConfigureAwait(false);
         if (request.Accept)
         {
             await e.SetGroupAnswerAsync(g.Id, true, ct).ConfigureAwait(false);
@@ -577,7 +630,7 @@ public class AdminController : ControllerBase
         {
             member = m.Member,
             name = m.Name,
-            libraries = m.Libraries.Select(l => new { id = l.Id, name = l.Name, kind = string.Empty /* no library kind since MSFP's revision: typed by its titles in phase 4 (page) */, shown = l.Shown }),
+            libraries = m.Libraries.Select(l => new { id = l.Id, name = l.Name, shown = l.Shown }),
         }).ToList());
 
     /// <summary>Sets the members' libraries this server doesn't show from a group.</summary>
@@ -591,11 +644,13 @@ public class AdminController : ControllerBase
     {
         var g = await e.GroupAsync(id, ct).ConfigureAwait(false);
         var libs = await e.GroupOffersAsync(id, ct).ConfigureAwait(false);
+        var counts = _catalog.Counts();
         return new
         {
-            libraries = libs.Select(l => new { id = l.Id, name = l.Name, kind = string.Empty /* no library kind since MSFP's revision: typed by its titles in phase 4 (page) */, offered = l.Offered }),
+            libraries = libs.Select(l => Offered(LibraryJson(l.Id, l.Name, counts), l.Offered)).ToList(),
             pool = g.Pool,
             accept = g.Accept,
+            local = g.Local,
         };
     });
 
@@ -615,6 +670,11 @@ public class AdminController : ControllerBase
         if (request.Accept is { } accept)
         {
             await e.SetGroupAnswerAsync(id, accept, ct).ConfigureAwait(false);
+        }
+
+        if (request.Local is { } local)
+        {
+            await e.SetGroupLocalAsync(id, local, ct).ConfigureAwait(false);
         }
 
         // A library newly offered: its titles are identified before they're listed.
@@ -697,6 +757,7 @@ public class AdminController : ControllerBase
             heir = g.Heir,
             accept = g.Accept,
             offers = g.Offers.Count,
+            local = g.Local,
             pool = g.Pool,
             dissolved = g.Dissolved,
             joining = g.Joining,
@@ -758,8 +819,11 @@ public class AdminController : ControllerBase
     private Task<ContentResult> Run<T>(Func<MsfpEngine, Task<T>> action, bool off = false) =>
         Run(async e => (object)(await action(e).ConfigureAwait(false))!, off);
 
-    private static object View(PeerView p) => new
+    private object View(PeerView p) => new
     {
+        core = p.Core,
+        local = p.Local,
+        lastRead = _host.Reads.Of(p.Id) is { } r ? new { at = r.At, titles = r.Titles, error = r.Error } : null,
         id = p.Id,
         name = p.Name,
         address = p.Address,

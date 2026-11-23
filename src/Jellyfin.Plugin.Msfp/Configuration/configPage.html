@@ -97,6 +97,9 @@
                     #MsfpConfigPage #MsfpGroupDialog { height: min(42em, calc(100vh - 4em)); }
                     #MsfpConfigPage .msfpEmpty { opacity: 0.7; padding: 0.8em 0; }
                     #MsfpConfigPage .msfpLimits { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 1em; }
+                    #MsfpConfigPage .msfpLimitsHead { font-weight: 600; opacity: 0.85; margin: 0.8em 0 0.2em; }
+                    #MsfpConfigPage .msfpLimitsHead + .fieldDescription { margin: 0 0 0.6em; }
+                    #MsfpConfigPage .msfpLocal { margin: 0.8em 0 0; }
                     @media (max-width: 50em) {
                         #MsfpConfigPage .msfpItem, #MsfpConfigPage .msfpItem.msfpFour { grid-template-columns: 1fr; }
                         #MsfpConfigPage .msfpCellActions { justify-content: flex-start; }
@@ -172,6 +175,17 @@
                         <button is="emby-button" type="button" id="MsfpRotate" class="raised emby-button"><span>Change this server's key</span></button>
                     </div>
                     <div class="fieldDescription">Moves to the next key, made in advance; paired servers know it and follow by themselves.</div>
+                    <div class="msfpHeading"><h3>Your files, described for paired servers</h3></div>
+                    <dl class="msfpFacts" id="MsfpCopies">
+                        <dt>Versions described</dt><dd id="MsfpCopiesVersions">—</dd>
+                        <dt>Waiting to be read</dt><dd id="MsfpCopiesPending">—</dd>
+                        <dt>Read since Jellyfin started</dt><dd id="MsfpCopiesProbed">—</dd>
+                        <dt>Last import</dt><dd id="MsfpCopiesImport">—</dd>
+                    </dl>
+                    <div class="fieldDescription">The plugin reads the headers of each file once (formats, tracks, colour), and again when the file changes. A version not read yet is described from what Jellyfin knows of it until then.</div>
+                    <div class="msfpActions">
+                        <button is="emby-button" type="button" id="MsfpImport" class="raised emby-button"><span>Import a header read…</span></button>
+                    </div>
                     <div class="msfpDanger">
                         <button is="emby-button" type="button" id="MsfpStolen" class="raised button-delete emby-button"><span>This server's key was stolen</span></button>
                         <div class="fieldDescription">Revokes the key: paired servers stop trusting it, and follow to the next key.</div>
@@ -194,6 +208,13 @@
                             <label class="inputLabel inputLabelUnfocused" for="MsfpTranscodes">Transcodes at once</label>
                             <input id="MsfpTranscodes" name="MsfpTranscodes" type="number" is="emby-input" min="0" max="100" step="1" />
                             <div class="fieldDescription">Your users' and paired servers' together. At the limit, paired servers are told this server is busy; your own users are never refused. 0: no transcodes for paired servers.</div>
+                        </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input id="MsfpBurnSubtitles" name="MsfpBurnSubtitles" type="checkbox" is="emby-checkbox" />
+                                <span>Burn subtitles into the picture for paired servers</span>
+                            </label>
+                            <div class="fieldDescription checkboxFieldDescription">When a paired server asks for a subtitle drawn into the picture, this server converts the video to draw it. Off: such a request is refused, and the paired server is told so. Off by default.</div>
                         </div>
                         <div class="inputContainer">
                             <label class="inputLabel inputLabelUnfocused" for="MsfpTmdbKey">Your TMDB key (optional)</label>
@@ -300,17 +321,20 @@
                     <div class="msfpDialogBody">
                         <div id="MsfpManageGroupNote" class="fieldDescription"></div>
                         <div class="msfpDirect msfpSectionTitle">You share with it</div>
-                        <div class="msfpDirect fieldDescription">Your libraries it may show. It sees their titles that have a TMDB ID, and nothing else of this server.</div>
+                        <div class="msfpDirect fieldDescription">Your libraries it may show. It sees their films and series known to TMDB or TheTVDB, with their files' technical facts (formats, tracks, chapters), never file names or paths.</div>
                         <div id="MsfpManageOffers" class="msfpDirect msfpChoices"></div>
+                        <div class="msfpDirect msfpLocal checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input id="MsfpManageLocal" type="checkbox" is="emby-checkbox" />
+                                <span>Also share titles TMDB and TheTVDB don't know</span>
+                            </label>
+                            <div class="fieldDescription checkboxFieldDescription">In the libraries ticked above. Such a title goes with its name, year and image as this server has them. Off by default.</div>
+                        </div>
                         <div class="msfpSectionTitle">You show on your server</div>
                         <div class="fieldDescription">Its libraries whose titles appear on yours.</div>
                         <div id="MsfpManageWants" class="msfpChoices"></div>
                         <div class="msfpDirect msfpSectionTitle">What its viewers may use here</div>
-                        <div class="msfpDirect msfpLimits">
-                            <div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="MsfpLimitsStreams">Streams at once</label><input id="MsfpLimitsStreams" type="number" is="emby-input" min="0" max="50" step="1" /><div class="fieldDescription">0 to 50.</div></div>
-                            <div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="MsfpLimitsTranscodes">Conversions at once</label><input id="MsfpLimitsTranscodes" type="number" is="emby-input" min="0" max="50" step="1" /><div class="fieldDescription">No more than the streams.</div></div>
-                            <div class="inputContainer"><label class="inputLabel inputLabelUnfocused" for="MsfpLimitsBitrate">Bitrate cap (kbit/s)</label><input id="MsfpLimitsBitrate" type="number" is="emby-input" min="0" max="1000000" step="1" /><div class="fieldDescription">Per stream. 0: no cap.</div></div>
-                        </div>
+                        <div id="MsfpManageLimits" class="msfpDirect"></div>
                         <div class="msfpSectionTitle">Its key</div>
                         <div id="MsfpManageKey" class="fieldDescription msfpMono"></div>
                         <div id="MsfpManageProblem" class="msfpProblem"></div>
@@ -488,6 +512,7 @@
                 if (p.keepChoice) return ['Its group was closed', 'Warn', 'You knew it through a group that no longer exists. Keep it paired with you, or let it go.'];
                 if (p.asks) return ['Asks to pair with you', 'Warn', 'You know it through ' + msfpGroupList(p) + '. Pairing directly lets you share with it on its own, and keeps you paired if the group goes.'];
                 if (p.asked) return ['Waiting for its owner', 'Info', 'You asked to pair directly; its owner answers on their side.'];
+                if (p.state === 'paired' && p.core < 0) return ['No version in common', 'Err', 'It speaks no version of MSFP this server speaks: nothing is shared until one of the two servers updates. The pairing is kept.'];
                 return ['Paired', 'Ok', ''];
             }
             function msfpGroupList(p) {
@@ -507,6 +532,7 @@
                 var parts = [];
                 parts.push(p.offers ? 'You share ' + msfpPlural(p.offers, 'library', 'libraries') : 'You share nothing');
                 parts.push(p.wants ? 'you show ' + msfpPlural(p.wants, 'of its libraries', 'of its libraries') : 'you show none of its libraries');
+                if (p.offers && p.local) parts[0] += ', titles unknown to TMDB and TheTVDB included';
                 return parts.join(' · ');
             }
             function msfpGroupsText(p) {
@@ -526,7 +552,10 @@
                         var st = msfpServerState(p);
                         var state = [msfpTag(st[0], st[1])];
                         if (p.inbound === 'No') state.push(msfpTag("Can't be called", 'Info'));
+                        var failed = p.state === 'paired' && p.lastRead && p.lastRead.error;
+                        if (failed) state.push(msfpTag('Titles not read', 'Warn'));
                         var detail = [msfpEl('div', null, (p.asks || p.asked || p.keepChoice ? '' : msfpShareText(p)) || st[2])];
+                        if (failed) detail.push(msfpEl('div', 'msfpSub', 'Its titles could not be read on ' + msfpWhen(p.lastRead.at) + ' (' + p.lastRead.error + '). A server still on the older draft of MSFP (this plugin 0.10 and before) can\'t be read until it updates; the pairing is kept.'));
                         if (p.wantsGone) detail.push(msfpEl('div', 'msfpSub', msfpPlural(p.wantsGone, 'library', 'libraries') + ' you show is no longer offered'));
                         if (msfpGroupsText(p)) detail.push(msfpEl('div', 'msfpSub', msfpGroupsText(p)));
                         var buttons = [];
@@ -640,6 +669,7 @@
 
             // One server's window: what you share, what you show, its limits.
             var msfpManaged = null;
+            var msfpManagedLimits = null;
             var msfpTheirsRead = false;
             var msfpPeers = [];
             function msfpManageId(id) {
@@ -663,9 +693,11 @@
                 document.querySelector('#MsfpManageSummary').textContent = p.address + ' · paired ' + new Date(p.paired).toLocaleDateString(undefined, { dateStyle: 'medium' }) + (msfpGroupsText(p) ? ' · ' + msfpGroupsText(p) : '');
                 document.querySelector('#MsfpManageKey').textContent = 'Fingerprint ' + p.fingerprint;
                 document.querySelector('#MsfpManageProblem').textContent = '';
-                document.querySelector('#MsfpLimitsStreams').value = p.limits.streams;
-                document.querySelector('#MsfpLimitsTranscodes').value = p.limits.transcodes;
-                document.querySelector('#MsfpLimitsBitrate').value = p.limits.bitrateKbps || 0;
+                msfpManagedLimits = msfpLimitFields(p.limits || {}, false);
+                var limitsHolder = document.querySelector('#MsfpManageLimits');
+                limitsHolder.textContent = '';
+                msfpManagedLimits.nodes.forEach(function (n) { limitsHolder.appendChild(n); });
+                document.querySelector('#MsfpManageLocal').checked = !!p.local;
                 var offers = document.querySelector('#MsfpManageOffers');
                 var wants = document.querySelector('#MsfpManageWants');
                 offers.textContent = 'Reading…';
@@ -673,7 +705,7 @@
                 ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers/' + key + '/Offers')).then(function (libs) {
                     offers.textContent = '';
                     if (!libs.length) offers.appendChild(msfpText('This server has no film or series library.'));
-                    libs.forEach(function (l) { offers.appendChild(msfpChoice('checkbox', '', l.id, l.offered, msfpLibrary(l))); });
+                    libs.forEach(function (l) { offers.appendChild(msfpLibraryChoice(l, l.offered)); });
                 });
                 ApiClient.getJSON(ApiClient.getUrl('Msfp/Peers/' + key + '/Theirs')).then(function (r) {
                     wants.textContent = '';
@@ -732,13 +764,15 @@
                 var p = msfpManaged;
                 var key = encodeURIComponent(p.id);
                 var problem = document.querySelector('#MsfpManageProblem');
-                var l = msfpLimitsTyped();
+                var l = msfpManagedLimits.read();
                 if (!l) {
-                    problem.textContent = 'Streams go from 0 to 50, conversions from 0 to the streams, the bitrate cap from 0 to 1,000,000.';
+                    problem.textContent = msfpLimitsProblem;
                     return;
                 }
                 var picked = function (sel) { return Array.prototype.map.call(document.querySelectorAll(sel + ' input:checked'), function (b) { return b.value; }).filter(function (v) { return v !== 'all'; }); };
                 var steps = p.individual ? [msfpPost('Msfp/Peers/' + key + '/Offers', { libraries: picked('#MsfpManageOffers') }), msfpPost('Msfp/Peers/' + key + '/Limits', l)] : [];
+                var local = document.querySelector('#MsfpManageLocal').checked;
+                if (p.individual && local !== !!p.local) steps.push(msfpPost('Msfp/Peers/' + key + '/Local', { on: local }));
                 if (msfpTheirsRead) {
                     steps.push(msfpPost('Msfp/Peers/' + key + '/Wants', { all: document.querySelector('#MsfpWantsAll').checked, libraries: picked('#MsfpManageWants') }));
                 }
@@ -765,13 +799,13 @@
                         }
                         return ApiClient.getJSON(ApiClient.getUrl('Msfp/Libraries')).then(function (libraries) {
                             setTimeout(function () {
-                                var share = msfpShareFields(libraries, [], { streams: 2, transcodes: 1, bitrateKbps: 0 });
+                                var share = msfpShareFields(libraries, [], { streams: 2, transcodes: 1, bitrateKbps: 0 }, false);
                                 var fp = msfpLine('From ' + p.address + ' · fingerprint ' + p.fingerprint + ', to compare with its owner', 'fieldDescription');
                                 msfpForm('Join the group "' + p.groupName + '"', 'Once its owner accepts, your server joins the group and asks every member to pair. What you share now applies from the start; you can change it in the group.',
                                     [fp].concat(share.nodes), 'Join', function () {
                                         var sh = share.read();
                                         if (!sh) return Promise.reject(msfpLimitsProblem);
-                                        return msfpPost('Msfp/Redeem', { code: code, libraries: sh.libraries, pool: sh.pool }).then(function (r) {
+                                        return msfpPost('Msfp/Redeem', { code: code, libraries: sh.libraries, pool: sh.pool, local: sh.local }).then(function (r) {
                                             msfpMessage('Waiting for ' + r.name + '\'s owner to accept; your server then joins "' + p.groupName + '".');
                                             msfpLoad();
                                         });
@@ -837,10 +871,44 @@
                         msfpTab(s.on ? 'servers' : 'settings');
                     }
                 });
+                msfpLoadCopies();
                 msfpLoadGroups().then(function () {
                     return Promise.all([msfpLoadServers(), msfpLoadCodes()]);
                 }).then(function () { msfpRenderGroups(); if (msfpGroupOpen) msfpRenderGroup(); });
             }
+
+            // What the plugin knows of this server's files: counts only.
+            function msfpImportText(i) {
+                if (!i) return 'None since Jellyfin started';
+                var parts = [msfpNum(i.imported) + ' of ' + msfpNum(i.records) + ' imported'];
+                if (i.already) parts.push(msfpNum(i.already) + ' already read');
+                if (i.changed) parts.push(msfpNum(i.changed) + ' changed since');
+                if (i.unlisted) parts.push(msfpNum(i.unlisted) + ' not in a library');
+                var bad = (i.gone || 0) + (i.refused || 0) + (i.unknown || 0) + (i.bad || 0);
+                if (bad) parts.push(msfpNum(bad) + ' left out');
+                return parts.join(', ');
+            }
+            function msfpLoadCopies() {
+                return ApiClient.getJSON(ApiClient.getUrl('Msfp/Copies')).then(function (c) {
+                    document.querySelector('#MsfpCopiesVersions').textContent = msfpNum(c.versions) + (c.notRead ? ' (' + msfpNum(c.notRead) + ' not read yet)' : '');
+                    document.querySelector('#MsfpCopiesPending').textContent = c.pending ? msfpPlural(c.pending, 'file') : 'None';
+                    document.querySelector('#MsfpCopiesProbed').textContent = msfpPlural(c.probed || 0, 'file');
+                    document.querySelector('#MsfpCopiesImport').textContent = msfpImportText(c.import);
+                }, function () { document.querySelector('#MsfpCopiesVersions').textContent = "Couldn't be read"; });
+            }
+            document.querySelector('#MsfpImport').addEventListener('click', function () {
+                var root = msfpField("Your libraries' folder, as Jellyfin sees it", '<input type="text" is="emby-input" placeholder="/media" />',
+                    'The folder the header read\'s paths start from, such as /media.');
+                msfpForm('Import a header read', "If this server's files were already read for Overfin (its header read, probe.jsonl.gz), the plugin can take those readings instead of reading the files again. Put the file in the plugin's data folder, in import/probe.jsonl.gz, then import it. A file whose size or date changed since is read again; the file you put there is left as it is.",
+                    [root], 'Import', function () {
+                        var r = root.querySelector('input').value.trim();
+                        if (r.charAt(0) !== '/') return Promise.reject('Give the folder as a full path, starting with /.');
+                        return msfpPost('Msfp/Copies/Import?root=' + encodeURIComponent(r)).then(function (i) {
+                            msfpMessage('Header read imported: ' + msfpImportText(i) + '.');
+                            msfpLoadCopies();
+                        });
+                    });
+            });
 
             var msfpCatalogFor = null;
             // The keys each shown batch starts after: the last is the one shown.
@@ -980,17 +1048,68 @@
                 document.querySelector('#MsfpCheckDialog').close();
             });
 
-            // The limits typed, as whole numbers within MSFP's ranges; null when not.
-            function msfpLimitsTyped() {
-                var n = function (sel) {
-                    var v = document.querySelector(sel).value.trim();
-                    return /^[0-9]{1,7}$/.test(v) ? parseInt(v, 10) : -1;
+            // The limits' fields, from l (a pairing's limits or a group's
+            // pool): streams, downloads and scans (downloads and scans 0, so
+            // none, by default). read() gives them as whole numbers within
+            // MSFP's ranges, or null.
+            function msfpLimitFields(l, group) {
+                var field = function (label, max, value, description) {
+                    var w = msfpField(label, '<input type="number" is="emby-input" min="0" max="' + max + '" step="1" />', description);
+                    w.querySelector('input').value = value;
+                    return w;
                 };
-                var l = { streams: n('#MsfpLimitsStreams'), transcodes: n('#MsfpLimitsTranscodes'), bitrateKbps: n('#MsfpLimitsBitrate') };
-                if (l.streams < 0 || l.streams > 50 || l.transcodes < 0 || l.transcodes > l.streams || l.bitrateKbps < 0 || l.bitrateKbps > 1000000) {
-                    return null;
-                }
-                return l;
+                var grid = function (fields) {
+                    var g = msfpEl('div', 'msfpLimits');
+                    fields.forEach(function (f) { g.appendChild(f); });
+                    return g;
+                };
+                var streams = field('Streams at once', 50, l.streams || 0, group ? "For all the group's members together. Servers you share with individually keep their own limits, used first." : '0 to 50.');
+                var transcodes = field('Conversions at once', 50, l.transcodes || 0, group ? "No more than the streams. This server's own limit applies as well." : 'No more than the streams.');
+                var bitrate = field('Bitrate cap (kbit/s)', 1000000, l.bitrateKbps || 0, 'Per stream. 0: no cap.');
+                var downloads = field('Downloads at once', 1000, l.downloads || 0, '0: no downloads.');
+                var perDay = field('Downloads a day', 10000, l.downloadsPerDay || 0, 'Started in any 24 hours. 0: no cap besides the one at once.');
+                var speed = field('Download speed (kbit/s)', 1000000, l.downloadKbps || 0, 'Per download. 0: no cap.');
+                var scans = field('Scans a day', 1000000, l.scansPerDay || 0, 'Started in any 24 hours. 0: no scans.');
+                var scanSize = field('Each scan reads at most (MiB)', 1024, l.scanBytes ? Math.round(l.scanBytes / 1048576) : '', "4 to 1,024. Empty: 4. MSFP's notes for implementers suggest 32.");
+                scanSize.querySelector('input').placeholder = '4';
+                var nodes = [
+                    msfpLine('Streams', 'msfpLimitsHead'), grid([streams, transcodes, bitrate]),
+                    msfpLine('Downloads', 'msfpLimitsHead'),
+                    msfpLine("A download is a copy of a title the other server keeps, to be watched later, offline too. Each one may be read for 24 hours; it doesn't count as a stream.", 'fieldDescription'),
+                    grid([downloads, perDay, speed]),
+                    msfpLine('Scans', 'msfpLimitsHead'),
+                    msfpLine("Some media servers list a file only after reading part of it. A scan is such a read of one of your files by the other server's media server, outside any viewing; it doesn't count as a stream.", 'fieldDescription'),
+                    grid([scans, scanSize])];
+                return {
+                    nodes: nodes,
+                    read: function () {
+                        var n = function (w, empty) {
+                            var v = w.querySelector('input').value.trim();
+                            if (v === '' && empty !== undefined) return empty;
+                            return /^[0-9]{1,7}$/.test(v) ? parseInt(v, 10) : -1;
+                        };
+                        var mib = n(scanSize, 0);
+                        var r = { streams: n(streams), transcodes: n(transcodes), bitrateKbps: n(bitrate), downloads: n(downloads), downloadsPerDay: n(perDay),
+                            downloadKbps: n(speed), scansPerDay: n(scans), scanBytes: mib > 0 ? mib * 1048576 : 0 };
+                        if (r.streams < 0 || r.streams > 50 || r.transcodes < 0 || r.transcodes > r.streams || r.bitrateKbps < 0 || r.bitrateKbps > 1000000 ||
+                            r.downloads < 0 || r.downloads > 1000 || r.downloadsPerDay < 0 || r.downloadsPerDay > 10000 || r.downloadKbps < 0 || r.downloadKbps > 1000000 ||
+                            r.scansPerDay < 0 || r.scansPerDay > 1000000 || mib < 0 || (mib > 0 && (mib < 4 || mib > 1024))) {
+                            return null;
+                        }
+                        return r;
+                    }
+                };
+            }
+
+            // A library to tick, with what it holds.
+            function msfpLibraryChoice(l, checked) {
+                var c = msfpChoice('checkbox', '', l.id, checked, msfpLibrary(l));
+                var held = [];
+                if (l.films) held.push(msfpPlural(l.films, 'film'));
+                if (l.series) held.push(msfpPlural(l.series, 'series', 'series'));
+                if (l.local) held.push(l.local + ' unknown to TMDB and TheTVDB');
+                c.querySelector('span').appendChild(msfpEl('span', 'msfpSub', ' · ' + (held.length ? held.join(', ') : 'no film or series yet')));
+                return c;
             }
 
             document.querySelector('#MsfpRotate').addEventListener('click', function () {
@@ -1177,8 +1296,10 @@
                     facts.setAttribute('role', 'group');
                     facts.setAttribute('aria-label', 'Your settings for this group');
                     var pool = g.pool || {};
-                    [g.offers ? msfpTag('Shares ' + msfpPlural(g.offers, 'library', 'libraries')) : msfpTag('Shares nothing', 'Warn'),
+                    [g.offers ? msfpTag('Shares ' + msfpPlural(g.offers, 'library', 'libraries') + (g.local ? ', unknown titles too' : '')) : msfpTag('Shares nothing', 'Warn'),
                         msfpTag(msfpPlural(pool.streams || 0, 'stream')),
+                        msfpTag(pool.downloads ? msfpPlural(pool.downloads, 'download') + ' at once' : 'No downloads'),
+                        msfpTag(pool.scansPerDay ? msfpPlural(pool.scansPerDay, 'scan') + ' a day' : 'No scans'),
                         msfpTag(g.accept ? 'Accepts new members automatically' : 'Confirms new members')].forEach(function (tag) {
                         var b = msfpEl('button', 'msfpFact');
                         b.type = 'button';
@@ -1327,33 +1448,32 @@
 
             // What this server shares with a group and its limits, as fields
             // (creating a group, joining one, changing it).
-            function msfpShareFields(libraries, picked, pool) {
+            function msfpShareFields(libraries, picked, pool, local) {
                 var libs = document.createElement('div');
                 libs.className = 'msfpChoices';
-                libraries.forEach(function (l) { libs.appendChild(msfpChoice('checkbox', '', l.id, picked.indexOf(l.id) >= 0, msfpLibrary(l))); });
+                libraries.forEach(function (l) { libs.appendChild(msfpLibraryChoice(l, picked.indexOf(l.id) >= 0)); });
                 if (!libraries.length) libs.appendChild(msfpText('This server has no film or series library.'));
-                var streams = msfpField('Streams at once', '<input type="number" is="emby-input" min="0" max="50" step="1" />', "For all the group's members together. Servers you share with individually keep their own limits, used first.");
-                var transcodes = msfpField('Conversions at once', '<input type="number" is="emby-input" min="0" max="50" step="1" />', "No more than the streams. This server's own limit applies as well.");
-                var bitrate = msfpField('Bitrate cap (kbit/s)', '<input type="number" is="emby-input" min="0" max="1000000" step="1" />', '0: no cap.');
-                streams.querySelector('input').value = pool.streams;
-                transcodes.querySelector('input').value = pool.transcodes;
-                bitrate.querySelector('input').value = pool.bitrateKbps || 0;
+                var unknown = msfpChoice('checkbox', '', 'local', !!local, "Also share titles TMDB and TheTVDB don't know");
+                unknown.classList.add('msfpLocal');
+                var unknownHint = msfpLine('In the libraries ticked above, with every member. Such a title goes with its name, year and image as this server has them. Off by default.', 'fieldDescription');
+                var limits = msfpLimitFields(pool || {}, true);
                 return {
-                    nodes: [msfpLine('You share with it', 'msfpDialogLabel'), libs, streams, transcodes, bitrate],
+                    nodes: [msfpLine('You share with it', 'msfpDialogLabel'),
+                        msfpLine("Its members see the films and series of these libraries known to TMDB or TheTVDB, with their files' technical facts, never file names or paths.", 'fieldDescription'),
+                        libs, unknown, unknownHint, msfpLine('What its members may use here', 'msfpDialogLabel')].concat(limits.nodes),
                     read: function () {
-                        var n = function (w) { var v = parseInt(w.querySelector('input').value, 10); return isNaN(v) ? -1 : v; };
-                        var p = { streams: n(streams), transcodes: n(transcodes), bitrateKbps: n(bitrate) };
-                        if (p.streams < 0 || p.streams > 50 || p.transcodes < 0 || p.transcodes > p.streams || p.bitrateKbps < 0 || p.bitrateKbps > 1000000) return null;
-                        return { libraries: Array.prototype.map.call(libs.querySelectorAll('input:checked'), function (b) { return b.value; }), pool: p };
+                        var p = limits.read();
+                        if (!p) return null;
+                        return { libraries: Array.prototype.map.call(libs.querySelectorAll('input:checked'), function (b) { return b.value; }), pool: p, local: unknown.querySelector('input').checked };
                     }
                 };
             }
-            var msfpLimitsProblem = 'Streams go from 0 to 50, conversions from 0 to the streams, the bitrate cap from 0 to 1,000,000.';
+            var msfpLimitsProblem = 'Streams go from 0 to 50, conversions from 0 to the streams, the bitrate and download speed caps from 0 to 1,000,000, downloads at once from 0 to 1,000, downloads a day from 0 to 10,000, scans a day from 0 to 1,000,000, and a scan from 4 to 1,024 MiB (empty: 4).';
 
             document.querySelector('#MsfpCreateGroup').addEventListener('click', function () {
                 ApiClient.getJSON(ApiClient.getUrl('Msfp/Libraries')).then(function (libraries) {
                     var name = msfpField('Name', '<input type="text" is="emby-input" maxlength="80" />', 'What members see.');
-                    var share = msfpShareFields(libraries, [], { streams: 2, transcodes: 1, bitrateKbps: 0 });
+                    var share = msfpShareFields(libraries, [], { streams: 2, transcodes: 1, bitrateKbps: 0 }, false);
                     var accept = msfpChoice('checkbox', '', 'accept', false, 'Automatically accept new members');
                     var cap = msfpField('Invites a day, for each inviter', '<input type="number" is="emby-input" min="1" max="100" step="1" />', "So an invite that leaks can't flood the group. 1 to 100.");
                     cap.querySelector('input').value = 5;
@@ -1364,7 +1484,7 @@
                             var sh = share.read();
                             if (!sh) return Promise.reject(msfpLimitsProblem);
                             return msfpPost('Msfp/Groups', { name: name.querySelector('input').value.trim(), capPerDay: parseInt(cap.querySelector('input').value, 10) || 5,
-                                libraries: sh.libraries, pool: sh.pool, accept: accept.querySelector('input').checked }).then(function (g) {
+                                libraries: sh.libraries, pool: sh.pool, local: sh.local, accept: accept.querySelector('input').checked }).then(function (g) {
                                 msfpLoad();
                                 msfpMessage('Group "' + g.name + '" created. Invite servers to it.');
                             });
@@ -1385,7 +1505,7 @@
                     name.querySelector('input').value = g.name;
                     if (owner) nodes.push(name);
 
-                    var share = msfpShareFields(sh.libraries, sh.libraries.filter(function (l) { return l.offered; }).map(function (l) { return l.id; }), sh.pool);
+                    var share = msfpShareFields(sh.libraries, sh.libraries.filter(function (l) { return l.offered; }).map(function (l) { return l.id; }), sh.pool, sh.local);
                     nodes = nodes.concat(share.nodes);
 
                     nodes.push(msfpLine('You show from it', 'msfpDialogLabel'),
@@ -1421,7 +1541,7 @@
                         if (!shared) return Promise.reject(msfpLimitsProblem);
                         var hidden = [];
                         shows.querySelectorAll('input[type=checkbox]').forEach(function (b) { if (!b.checked && b.dataset.member) hidden.push({ member: b.dataset.member, library: b.value }); });
-                        var steps = [msfpPost('Msfp/Groups/' + gid + '/Sharing', { libraries: shared.libraries, pool: shared.pool }),
+                        var steps = [msfpPost('Msfp/Groups/' + gid + '/Sharing', { libraries: shared.libraries, pool: shared.pool, local: shared.local }),
                             msfpPost('Msfp/Groups/' + gid + '/Shows', { hidden: hidden })];
                         if (owner && (name.querySelector('input').value.trim() !== g.name || parseInt(cap.querySelector('input').value, 10) !== g.capPerDay)) {
                             steps.push(msfpPost('Msfp/Groups/' + gid + '/Settings', { name: name.querySelector('input').value.trim(), capPerDay: parseInt(cap.querySelector('input').value, 10) || 5 }));
@@ -1551,6 +1671,7 @@
                         document.querySelector('#MsfpAllowLoopback').checked = !!config.AllowLoopback;
                         document.querySelector('#MsfpDiscovery').checked = !!config.Discovery;
                         document.querySelector('#MsfpTranscodes').value = config.TranscodesAtOnce == null ? 2 : config.TranscodesAtOnce;
+                        document.querySelector('#MsfpBurnSubtitles').checked = !!config.BurnSubtitles;
                         document.querySelector('#MsfpTmdbKey').value = config.TmdbKey || '';
                         Dashboard.hideLoadingMsg();
                     });
@@ -1567,6 +1688,7 @@
                         config.Discovery = document.querySelector('#MsfpDiscovery').checked;
                         var most = parseInt(document.querySelector('#MsfpTranscodes').value, 10);
                         config.TranscodesAtOnce = isNaN(most) ? 2 : Math.max(0, Math.min(100, most));
+                        config.BurnSubtitles = document.querySelector('#MsfpBurnSubtitles').checked;
                         config.TmdbKey = document.querySelector('#MsfpTmdbKey').value.trim();
                         ApiClient.updatePluginConfiguration(MsfpConfig.pluginUniqueId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);

@@ -63,6 +63,13 @@ internal static class Orders
             }
         }
 
+        if (t.BurnSubtitle.Length > 0 && !enc.Burn)
+        {
+            // Burned subtitles only where the operator turned them on
+            // (Settings; off by default).
+            throw new DeliveryRefusedException("burn-off");
+        }
+
         var audio = r.AudioTrack;
         var videoConverted = picture && videoOut.Length > 0 && videoOut != Names.Copy;
         var audioConverted = audio.Length > 0 && served.Audio != Names.Copy;

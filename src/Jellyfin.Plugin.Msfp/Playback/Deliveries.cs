@@ -94,8 +94,12 @@ internal sealed class DeliveryAudio
     public int MaxSampleRate { get; set; }
 }
 
-/// <summary>What this Jellyfin encodes now: registry tokens, and whether on a GPU, whether it tone maps.</summary>
-internal sealed record EncodersNow(List<string> Video, List<string> Audio, bool Hardware, bool ToneMapping);
+/// <summary>
+/// What this Jellyfin encodes now: registry tokens, and whether on a GPU,
+/// whether it tone maps, whether its operator lets it burn subtitles in for
+/// peers (off by default).
+/// </summary>
+internal sealed record EncodersNow(List<string> Video, List<string> Audio, bool Hardware, bool ToneMapping, bool Burn = false);
 
 /// <summary>A delivery refused: a closed code; Busy for a delivery Jellyfin can't take now (503 server-busy), else 409 delivery-refused.</summary>
 internal sealed class DeliveryRefusedException(string code, bool busy = false) : Exception(code)
@@ -245,7 +249,7 @@ internal sealed class Deliveries : BackgroundService
         // the CPU it always does with tonemapx (IsSwTonemapAvailable reads
         // no setting), for a picture its own reading holds as HDR.
         var toneMapping = hardware ? options.EnableTonemapping : _encoder.SupportsFilter("tonemapx");
-        return new EncodersNow(video, audio, hardware, toneMapping);
+        return new EncodersNow(video, audio, hardware, toneMapping, Plugin.Instance?.Configuration.BurnSubtitles == true);
     }
 
     /// <summary>
@@ -808,6 +812,12 @@ internal sealed class Deliveries : BackgroundService
     private void Precheck(DeliveryOrder o, Source s)
     {
         var now = Encoders();
+        if (o.Video is { BurnIndex: >= 0 } && !now.Burn)
+        {
+            // The operator's switch, read again at start.
+            throw new DeliveryRefusedException("burn-off");
+        }
+
         if (o.Video is { Copy: false } v)
         {
             if (!now.Video.Contains(v.Codec!))

@@ -95,6 +95,34 @@ public sealed class HostCatalog : ICatalog, IImages
         }
     }
 
+    /// <summary>
+    /// What each library holds, for the operator's page: its films and
+    /// series, and those of them under a local key (shared only where the
+    /// operator turns local titles on). Libraries without any are left out.
+    /// </summary>
+    public IReadOnlyDictionary<string, LibraryCounts> Counts() => Count(Read().Titles.Values);
+
+    internal static IReadOnlyDictionary<string, LibraryCounts> Count(IEnumerable<VideoTitle> titles)
+    {
+        var counts = new Dictionary<string, LibraryCounts>(StringComparer.Ordinal);
+        foreach (var t in titles)
+        {
+            if (t.Kind is not ("movie" or "series"))
+            {
+                continue;
+            }
+
+            var local = global::Msfp.Protocol.VideoKey.TryParse(t.Key, out var k) && k.Scheme == global::Msfp.Protocol.Video.SchemeLocal;
+            foreach (var l in t.Libraries ?? [])
+            {
+                var c = counts.GetValueOrDefault(l) ?? new LibraryCounts(0, 0, 0);
+                counts[l] = new LibraryCounts(c.Films + (t.Kind == "movie" ? 1 : 0), c.Series + (t.Kind == "series" ? 1 : 0), c.Local + (local ? 1 : 0));
+            }
+        }
+
+        return counts;
+    }
+
     /// <inheritdoc />
     public ValueTask<IReadOnlyList<Library>> LibrariesAsync(CancellationToken ct) =>
         ValueTask.FromResult<IReadOnlyList<Library>>(Read().Libraries.Select(l => l with { }).ToList());
@@ -288,3 +316,6 @@ public sealed class HostCatalog : ICatalog, IImages
         }
     }
 }
+
+/// <summary>A library's films and series, and how many of them are local titles.</summary>
+public sealed record LibraryCounts(int Films, int Series, int Local);

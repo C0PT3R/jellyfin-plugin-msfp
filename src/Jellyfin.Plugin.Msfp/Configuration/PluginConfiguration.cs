@@ -46,6 +46,13 @@ public class PluginConfiguration : BasePluginConfiguration
     public int TranscodesAtOnce { get; set; } = 2;
 
     /// <summary>
+    /// Whether this server burns a subtitle into the picture when a paired
+    /// server's play asks it (a transcode's burnSubtitle). Off by default:
+    /// such a play is refused (409 delivery-refused).
+    /// </summary>
+    public bool BurnSubtitles { get; set; }
+
+    /// <summary>
     /// A TMDB key of the owner's (an API key or a read access token), used
     /// instead of the plugin's own to identify titles. Empty: the plugin's.
     /// </summary>
