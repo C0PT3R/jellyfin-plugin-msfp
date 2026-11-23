@@ -98,34 +98,60 @@ internal sealed class LibraryFiles
     internal static bool Under(string path, string dir) =>
         dir == "/" ? path.Length > 1 : path.StartsWith(dir + Path.DirectorySeparatorChar, StringComparison.Ordinal);
 
-    /// <summary>A path with every link resolved (realpath(3) on Unix); null when it can't be.</summary>
+    /// <summary>A path with every link resolved, component by component (managed: no native allocation); null when it can't be.</summary>
     internal static string? RealPath(string path)
     {
-        if (OperatingSystem.IsWindows())
-        {
-            try
-            {
-                return Path.GetFullPath(path);
-            }
-            catch (Exception e) when (e is ArgumentException or IOException or NotSupportedException)
-            {
-                return null;
-            }
-        }
-
-        var p = RealPathNative(path, IntPtr.Zero);
-        if (p == IntPtr.Zero)
-        {
-            return null;
-        }
-
         try
         {
-            return Marshal.PtrToStringUTF8(p);
+            var full = Path.GetFullPath(path);
+            var root = Path.GetPathRoot(full) ?? "/";
+            var current = root;
+            var parts = new Queue<string>(full[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries));
+            var hops = 0;
+            while (parts.Count > 0)
+            {
+                var part = parts.Dequeue();
+                if (part == ".")
+                {
+                    continue;
+                }
+
+                if (part == "..")
+                {
+                    current = Path.GetDirectoryName(current) ?? root;
+                    continue;
+                }
+
+                var next = Path.Combine(current, part);
+                var info = new FileInfo(next);
+                if (info.LinkTarget is { } target)
+                {
+                    if (++hops > 40)
+                    {
+                        return null;
+                    }
+
+                    var resolved = Path.GetFullPath(target, current);
+                    var rest = parts.ToList();
+                    var resolvedRoot = Path.GetPathRoot(resolved) ?? "/";
+                    parts = new Queue<string>(resolved[resolvedRoot.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries).Concat(rest));
+                    current = resolvedRoot;
+                    continue;
+                }
+
+                if (!info.Exists && !Directory.Exists(next))
+                {
+                    return null;
+                }
+
+                current = next;
+            }
+
+            return current;
         }
-        finally
+        catch (Exception e) when (e is ArgumentException or IOException or NotSupportedException or UnauthorizedAccessException)
         {
-            Free(p);
+            return null;
         }
     }
 
@@ -180,12 +206,6 @@ internal sealed class LibraryFiles
 
     [DllImport("libc", EntryPoint = "fstat", SetLastError = true)]
     private static extern int FStatNative(int fd, byte[] buf);
-
-    [DllImport("libc", EntryPoint = "realpath", SetLastError = true)]
-    private static extern IntPtr RealPathNative([MarshalAs(UnmanagedType.LPUTF8Str)] string path, IntPtr resolved);
-
-    [DllImport("libc", EntryPoint = "free")]
-    private static extern void Free(IntPtr p);
 
     /// <summary>A library's file, open read-only. Real, Root and Rel are never logged, kept or sent.</summary>
     internal sealed class Opened(SafeFileHandle handle, string real, string root, string rel, long size, DateTime modified) : IDisposable

@@ -48,6 +48,9 @@ public sealed class CopyKeeper : IHostedService, IDisposable
     /// <summary>How often a pass runs when nothing wakes it.</summary>
     public static readonly TimeSpan Every = TimeSpan.FromMinutes(30);
 
+    /// <summary>How long Jellyfin's events must have stopped before a pass they woke.</summary>
+    public static readonly TimeSpan Settle = TimeSpan.FromSeconds(15);
+
     /// <summary>While files are read: the catalog is told at least this often.</summary>
     public static readonly TimeSpan PublishEvery = TimeSpan.FromMinutes(1);
 
@@ -223,7 +226,16 @@ public sealed class CopyKeeper : IHostedService, IDisposable
 
             try
             {
-                await _wake.WaitAsync(Every, ct).ConfigureAwait(false);
+                // Woken: Jellyfin's events come in bursts (a scan updates
+                // each item several times): the pass waits until they
+                // settle, two minutes at most.
+                if (await _wake.WaitAsync(Every, ct).ConfigureAwait(false))
+                {
+                    var since = Stopwatch.StartNew();
+                    while (since.Elapsed < TimeSpan.FromMinutes(2) && await _wake.WaitAsync(Settle, ct).ConfigureAwait(false))
+                    {
+                    }
+                }
             }
             catch (OperationCanceledException)
             {
@@ -279,12 +291,14 @@ public sealed class CopyKeeper : IHostedService, IDisposable
             // The files not read yet, one at a time, at the lowest priority.
             var last = Stopwatch.StartNew();
             var dirty = false;
+            var read = 0;
             for (var i = 0; i < queue.Count; i++)
             {
                 ct.ThrowIfCancellationRequested();
                 var job = queue[i];
                 if (await ReadAsync(job, ct).ConfigureAwait(false) is { } d)
                 {
+                    read++;
                     var now = Volatile.Read(ref _state);
                     var vs = new Dictionary<Guid, Described>(now.Versions) { [job.Version.Id] = d };
                     var next = now with { Versions = vs, Pending = queue.Count - i - 1 };
@@ -302,6 +316,12 @@ public sealed class CopyKeeper : IHostedService, IDisposable
 
             var end = Volatile.Read(ref _state) with { Pending = 0 };
             Volatile.Write(ref _state, end);
+            // Counts only, never a path; only when something was read.
+            if (queue.Count > 0)
+            {
+                _log.LogInformation("MSFP: copies described: {Versions} versions of {Titles} titles, {Read} files read now, {NotRead} not read",
+                    end.Versions.Count, end.Titles.Count, read, end.Versions.Values.Count(v => v.Minimal));
+            }
             if (dirty || queue.Count > 0)
             {
                 Publish(end, null);
@@ -354,7 +374,8 @@ public sealed class CopyKeeper : IHostedService, IDisposable
 
         foreach (var (v, d) in b.Versions)
         {
-            if (!a.Versions.TryGetValue(v, out var o) || o.Fingerprint != d.Fingerprint || o.Json != d.Json)
+            if (!a.Versions.TryGetValue(v, out var o) || o.Fingerprint != d.Fingerprint || o.Json != d.Json || o.Inputs != d.Inputs || o.Frames != d.Frames
+                || o.Tracks.Count != d.Tracks.Count || o.Tracks.Any(t => !d.Tracks.TryGetValue(t.Key, out var i) || i != t.Value))
             {
                 return false;
             }
