@@ -151,6 +151,7 @@ This avoids sharing the wrong film or series when folder names are ambiguous or 
 ## Learn more
 
 - [MSFP specification](https://github.com/msfp-io/msfp-spec): the protocol itself.
+- [SECURITY.md](SECURITY.md): the plugin's security rules, what paired servers learn, and how to report a vulnerability.
 - [TECHNICAL.md](TECHNICAL.md): building, certificates, reverse proxies and playback architecture.
 - [SPEC-GAPS.md](SPEC-GAPS.md): known protocol gaps and areas for improvement.
 - [DESIGN-NOTES.md](DESIGN-NOTES.md): design decisions and future directions.
