@@ -188,7 +188,7 @@ public class AdminController : ControllerBase
     public ContentResult Copies()
     {
         var c = _copies.Counts;
-        return Content(JsonSerializer.Serialize(new { versions = c.Versions, notRead = c.NotRead, pending = c.Pending, passes = c.Passes, import = c.Import }, Options), "application/json");
+        return Content(JsonSerializer.Serialize(new { versions = c.Versions, notRead = c.NotRead, pending = c.Pending, passes = c.Passes, probed = c.Probed, import = c.Import }, Options), "application/json");
     }
 
     /// <summary>

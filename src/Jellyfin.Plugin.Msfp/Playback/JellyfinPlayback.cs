@@ -50,7 +50,6 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia
         IServerConfigurationManager server, IAuthenticationManager auth, ISessionManager sessions, ITrickplayManager trickplay,
         MediaBrowser.Controller.MediaEncoding.IMediaEncoder encoder, MediaBrowser.Controller.MediaSegments.IMediaSegmentManager segments, ILogger<JellyfinPlayback> log)
     {
-        _segments = segments;
         _encoder = encoder;
         _peerSessions = new PeerSessions(sessions, log);
 
@@ -77,7 +76,6 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia
 
     private readonly MediaBrowser.Controller.MediaEncoding.IMediaEncoder _encoder;
     private readonly PeerSessions _peerSessions;
-    private readonly MediaBrowser.Controller.MediaSegments.IMediaSegmentManager _segments;
 
     /// <summary>The peers' playbacks here now, for the operator's page.</summary>
     public int Playing => _live.Count;
@@ -138,31 +136,8 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia
         live.Method = started.Method;
         live.Session = await _peerSessions.StartAsync(handle, request.Peer.Name, item.Id, started.Method, request.StartMs).ConfigureAwait(false);
         _log.LogInformation("MSFP: {Peer} plays {Title} here, {Method}", request.Peer.Name, request.Title, started.Method);
-        // Segments and the stream facts are the catalog's copy since MSFP's
-        // revision (phase 2).
+        // Segments and the stream facts are the catalog's copy (CopyKeeper).
         return started with { PositionMs = request.StartMs };
-    }
-
-    // The copy's skip markers, as Jellyfin keeps them (its own providers', or
-    // a plugin's), in MSFP's kinds (video section 5.3); none when it has none.
-    internal async Task<IReadOnlyList<CopySegment>?> SegmentsOfAsync(BaseItem item, CancellationToken ct)
-    {
-        try
-        {
-            var found = await _segments.GetSegmentsAsync(item, null, _library.GetLibraryOptions(item)).ConfigureAwait(false);
-            var markers = found
-                .Select(s => (Kind: Viewing.PairedSegments.KindOf(s.Type), s.StartTicks, s.EndTicks))
-                .Where(s => s.Kind is not null && s.StartTicks >= 0)
-                .Select(s => new CopySegment(s.Kind!, s.StartTicks / TimeSpan.TicksPerMillisecond, Math.Max(s.EndTicks, 0) / TimeSpan.TicksPerMillisecond))
-                .ToList();
-            return markers.Count > 0 ? markers : null;
-        }
-        catch (Exception e) when (e is not OperationCanceledException)
-        {
-            // Markers are optional (MSFP video section 5.3): played without.
-            _log.LogWarning(e, "MSFP: the skip markers of {Title} couldn't be read", item.Name);
-            return null;
-        }
     }
 
     /// <inheritdoc />

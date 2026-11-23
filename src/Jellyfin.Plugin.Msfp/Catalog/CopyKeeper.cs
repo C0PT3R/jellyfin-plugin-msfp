@@ -90,11 +90,14 @@ public sealed class CopyKeeper : IHostedService, IDisposable
         get
         {
             var s = Volatile.Read(ref _state);
-            return new KeeperCounts(s.Versions.Count, s.Versions.Values.Count(v => v.Minimal), s.Pending, s.Passes, _import);
+            return new KeeperCounts(s.Versions.Count, s.Versions.Values.Count(v => v.Minimal), s.Pending, s.Passes, Volatile.Read(ref _probed), _import);
         }
     }
 
     private ImportCounts? _import;
+
+    // Files ffprobe read since the plugin started (not those taken from a kept read).
+    private int _probed;
 
     /// <summary>An item's copies, in order (its default version first); empty for none known.</summary>
     public IReadOnlyList<Copy> CopiesOf(Guid item)
@@ -603,9 +606,19 @@ public sealed class CopyKeeper : IHostedService, IDisposable
                 probe = _probes!.Get(job.Fingerprint) ?? throw new DescribeException(DescribeError.Io, "the kept probe is gone");
                 await prober.ReadFramesAsync(job.Real, probe, ct).ConfigureAwait(false);
             }
+            else if (_probes!.Get(job.Fingerprint) is { } kept)
+            {
+                // Kept meanwhile (a header read imported beside the pass): not probed again.
+                probe = kept;
+                if (probe.NeedsFrames())
+                {
+                    await prober.ReadFramesAsync(job.Real, probe, ct).ConfigureAwait(false);
+                }
+            }
             else
             {
                 probe = await prober.ProbeAsync(job.Real, ct).ConfigureAwait(false);
+                Interlocked.Increment(ref _probed);
             }
         }
         catch (DescribeException e)
@@ -924,7 +937,7 @@ public sealed class CopyKeeper : IHostedService, IDisposable
 }
 
 /// <summary>What the copy keeper holds, for the operator: counts only.</summary>
-public sealed record KeeperCounts(int Versions, int NotRead, int Pending, int Passes, ImportCounts? Import);
+public sealed record KeeperCounts(int Versions, int NotRead, int Pending, int Passes, int Probed, ImportCounts? Import);
 
 /// <summary>What an import did with the records it read. Never a path: counts only.</summary>
 public sealed class ImportCounts
