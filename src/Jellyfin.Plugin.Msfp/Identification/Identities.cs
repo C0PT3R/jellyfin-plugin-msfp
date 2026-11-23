@@ -90,6 +90,23 @@ internal sealed class TitleIdentity
     private static long? Number(string id) => long.TryParse(id, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n) && n > 0 ? n : null;
 }
 
+/// <summary>What changed in the identities.</summary>
+internal sealed class IdentitiesChangedEventArgs : EventArgs
+{
+    public static readonly IdentitiesChangedEventArgs Matched = new(false);
+
+    public IdentitiesChangedEventArgs(bool chosen)
+    {
+        Chosen = chosen;
+    }
+
+    /// <summary>
+    /// The owner's choice on the plugin's page: shared at once, not after
+    /// the libraries settle as a pass's matches are.
+    /// </summary>
+    public bool Chosen { get; }
+}
+
 /// <summary>
 /// The plugin's identities of the libraries' films and series, by
 /// Jellyfin's item ID, in identities.json in its data folder (readable by
@@ -110,7 +127,7 @@ internal sealed class Identities
     }
 
     /// <summary>Changed: what the catalog reads may differ.</summary>
-    public event EventHandler? Changed;
+    public event EventHandler<IdentitiesChangedEventArgs>? Changed;
 
     public static Identities InDataFolder() =>
         new(Plugin.Instance is { } p ? Path.Combine(p.DataFolderPath, "identities.json") : null);
@@ -132,7 +149,10 @@ internal sealed class Identities
         }
     }
 
-    public void Put(Guid item, TitleIdentity identity)
+    /// <param name="item">The film or series.</param>
+    /// <param name="identity">Its identity.</param>
+    /// <param name="chosen">The owner's choice (shared at once), not a pass's match.</param>
+    public void Put(Guid item, TitleIdentity identity, bool chosen = false)
     {
         lock (_lock)
         {
@@ -140,7 +160,7 @@ internal sealed class Identities
             Save();
         }
 
-        Changed?.Invoke(this, EventArgs.Empty);
+        Changed?.Invoke(this, chosen ? new IdentitiesChangedEventArgs(true) : IdentitiesChangedEventArgs.Matched);
     }
 
     /// <summary>Forgets the items no longer in the libraries.</summary>
@@ -160,7 +180,7 @@ internal sealed class Identities
 
         if (removed)
         {
-            Changed?.Invoke(this, EventArgs.Empty);
+            Changed?.Invoke(this, IdentitiesChangedEventArgs.Matched);
         }
     }
 

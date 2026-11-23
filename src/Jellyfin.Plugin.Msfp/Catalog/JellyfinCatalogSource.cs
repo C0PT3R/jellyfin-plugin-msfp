@@ -138,10 +138,11 @@ public sealed class JellyfinCatalogSource : ICatalogSource
 
     /// <summary>
     /// A film's or a series' key: the plugin's identity's TMDB title (the
-    /// owner's choice, or a sure match); else, for a series Jellyfin places
-    /// on TheTVDB and not on TMDB, its TheTVDB ID; else, when the plugin
-    /// looked and TMDB had nothing for it, a local key; else none (a match
-    /// waiting for the owner, or not looked at yet).
+    /// owner's choice, or a sure match); else, when the plugin looked and
+    /// TMDB had nothing for it, a series Jellyfin places on TheTVDB and not
+    /// on TMDB under its TheTVDB ID, any other title under a local key; else
+    /// none (a match waiting for the owner, or not looked at yet), so that a
+    /// title's key never changes once shared.
     /// </summary>
     internal static Keyed? KeyOf(BaseItem item, TitleIdentity? own, Func<string, string?> opaque)
     {
@@ -149,6 +150,11 @@ public sealed class JellyfinCatalogSource : ICatalogSource
         if (own?.Taken is { } id)
         {
             return new Keyed(new VideoKey(kind, "tmdb", id), new Dictionary<string, string>());
+        }
+
+        if (own is not { Tmdb.Length: 0, Chosen.Length: 0 })
+        {
+            return null;
         }
 
         if (item is Series && TvdbOnly(item.ProviderIds) is { } tvdb)
@@ -163,7 +169,7 @@ public sealed class JellyfinCatalogSource : ICatalogSource
             return new Keyed(key, ids);
         }
 
-        if (own is { Tmdb.Length: 0, Chosen.Length: 0 } && opaque(item.Id.ToString("N")) is { } local)
+        if (opaque(item.Id.ToString("N")) is { } local)
         {
             var name = LocalName(item.Name);
             if (name.Length == 0)

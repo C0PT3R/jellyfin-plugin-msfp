@@ -137,7 +137,7 @@ public sealed class Identifier : BackgroundService
         t.ChosenName = page is not null ? page.Name + (page.Year > 0 ? " (" + page.Year.ToString(CultureInfo.InvariantCulture) + ")" : string.Empty) : string.Empty;
         var series = _library.GetItemById(item) as Series;
         await CompleteAsync(src, t, series is not null, series is not null ? EpisodeFiles(series) : [], true, ct).ConfigureAwait(false);
-        Identities.Put(item, t);
+        Identities.Put(item, t, chosen: true);
         _log.LogInformation("MSFP: the owner chose TMDB {Kind} {Tmdb} for {Name}", t.Kind, t.Chosen.Length > 0 ? t.Chosen : "(the match)", t.Name);
         return true;
     }

@@ -15,7 +15,8 @@ namespace Jellyfin.Plugin.Msfp.Catalog;
 /// Jellyfin's library events settle, and every 10 minutes whatever happens
 /// (a change Jellyfin raised no event for). The engine reads the catalog
 /// again then, and keeps what changed in its log; and whenever the copy
-/// keeper's pass changed some title's copies. A library gone from
+/// keeper's pass changed some title's copies; and at once when the owner
+/// chooses a title's TMDB title on the plugin's page. A library gone from
 /// Jellyfin is told apart: peers' playbacks from it end.
 /// </summary>
 public sealed class CatalogWatcher : IHostedService, IDisposable
@@ -34,6 +35,7 @@ public sealed class CatalogWatcher : IHostedService, IDisposable
     private Timer? _settle;
     private Timer? _every;
     private int _running;
+    private int _again;
 
     public CatalogWatcher(ILibraryManager library, HostCatalog catalog, EngineHost host, Identification.Identifier identifier, CopyKeeper copies, ILogger<CatalogWatcher> log)
     {
@@ -51,7 +53,8 @@ public sealed class CatalogWatcher : IHostedService, IDisposable
         _library.ItemAdded += Changed;
         _library.ItemUpdated += Changed;
         _library.ItemRemoved += Changed;
-        // An identity changed (a match, the owner's choice): the titles may have.
+        // An identity changed (a match, the owner's choice): the titles may
+        // have; the owner's choice is shared at once.
         _identifier.Identities.Changed += IdentitiesChanged;
         // The copies changed (a pass, a file read): read again now.
         _copies.Changed += CopiesChanged;
@@ -94,7 +97,32 @@ public sealed class CatalogWatcher : IHostedService, IDisposable
 
     private void CopiesChanged(object? sender, EventArgs e) => Task.Run(Run);
 
-    private void IdentitiesChanged(object? sender, EventArgs e) => Soon();
+    private void IdentitiesChanged(object? sender, Identification.IdentitiesChangedEventArgs e)
+    {
+        if (!ShareNow(e, _catalog, _host.Engine))
+        {
+            Soon();
+        }
+    }
+
+    /// <summary>
+    /// The owner's choice for a title shared at once: the catalog read again
+    /// and the engine told before the choice is answered, so a peer's next
+    /// reading (and the engine's change log) has it. A pass's matches wait
+    /// for the libraries to settle.
+    /// </summary>
+    /// <returns>Whether it was shared now.</returns>
+    internal static bool ShareNow(Identification.IdentitiesChangedEventArgs e, HostCatalog catalog, global::Msfp.MsfpEngine? engine)
+    {
+        if (!e.Chosen)
+        {
+            return false;
+        }
+
+        catalog.Changed();
+        engine?.CatalogChanged();
+        return true;
+    }
 
     private void Soon()
     {
@@ -108,11 +136,35 @@ public sealed class CatalogWatcher : IHostedService, IDisposable
 
     private void Run()
     {
+        // Asked during a run: that run reads again once it's done (what it
+        // read may predate the change).
+        Interlocked.Exchange(ref _again, 1);
         if (Interlocked.Exchange(ref _running, 1) == 1)
         {
             return;
         }
 
+        try
+        {
+            while (Interlocked.Exchange(ref _again, 0) == 1)
+            {
+                RunOnce();
+            }
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _running, 0);
+        }
+
+        // Asked between the last check and the release: run for it.
+        if (Volatile.Read(ref _again) == 1)
+        {
+            Run();
+        }
+    }
+
+    private void RunOnce()
+    {
         try
         {
             _catalog.Changed();
@@ -134,10 +186,6 @@ public sealed class CatalogWatcher : IHostedService, IDisposable
         catch (Exception e)
         {
             _log.LogError(e, "MSFP: reading the catalog failed");
-        }
-        finally
-        {
-            Interlocked.Exchange(ref _running, 0);
         }
     }
 }

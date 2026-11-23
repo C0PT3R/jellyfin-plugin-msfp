@@ -49,6 +49,7 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia, IDisposable
     private readonly PeerSessions _peerSessions;
     private readonly ILogger<JellyfinPlayback> _log;
     private readonly ConcurrentDictionary<string, Live> _live = new(StringComparer.Ordinal);
+    private readonly SingleRuns<byte[]?> _pgsRuns = new();
 
     internal JellyfinPlayback(ILibraryManager library, ISubtitleEncoder subtitles, CopyKeeper copies, Deliveries deliveries,
         ISessionManager sessions, ITrickplayManager trickplay, IMediaEncoder encoder, ILogger<JellyfinPlayback> log)
@@ -550,7 +551,9 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia, IDisposable
 
     // A PGS track of the copy, its display sets read once per playback:
     // an external .sup as it is, an embedded one copied out by Jellyfin's
-    // ffmpeg.
+    // ffmpeg within PgsExtraction's bounds, one run per track at a time
+    // (asks meanwhile, from any playback, wait for that run). A track that
+    // couldn't be read isn't tried again in the playback.
     private async Task<List<Pgs.DisplaySet>> PgsAsync(Live live, string track, CancellationToken ct)
     {
         if (live.Pictures.TryGetValue(track, out var done))
@@ -559,47 +562,57 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia, IDisposable
         }
 
         var (index, t) = SubtitleOf(live, track);
-        if (t.Format != "hdmv_pgs_subtitle" || _library.GetItemById(live.Item) is not Video item
+        if (live.Unreadable.ContainsKey(track) || t.Format != "hdmv_pgs_subtitle" || _library.GetItemById(live.Item) is not Video item
             || item.GetMediaStreams().FirstOrDefault(s => s.Index == index && s.Type == MediaStreamType.Subtitle && s.IsPgsSubtitleStream) is not { } stream)
         {
             throw new MsfpException(MsfpError.NotFound);
         }
 
-        byte[] data;
-        if (stream.IsExternal && stream.Path is { Length: > 0 } sup)
+        var data = await _pgsRuns.Run(item.Id.ToString("N") + "/" + index.ToString(System.Globalization.CultureInfo.InvariantCulture), () => ReadPgsAsync(item, stream, index))
+            .WaitAsync(ct).ConfigureAwait(false);
+        if ((data is null ? null : Pgs.Sets(data)) is not { } sets)
         {
-            using var opened = _copies.OpenFile(sup)?.File ?? throw new MsfpException(MsfpError.NotFound);
-            data = new byte[(int)Math.Min(opened.Size, 64 << 20)];
-            var n = await RandomAccess.ReadAsync(opened.Handle, data, 0, ct).ConfigureAwait(false);
-            data = data.AsSpan(0, n).ToArray();
-        }
-        else
-        {
-            using var opened = _copies.OpenFile(item.Path)?.File ?? throw new MsfpException(MsfpError.NotFound);
-            var psi = new System.Diagnostics.ProcessStartInfo(_encoder.EncoderPath)
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = false,
-                UseShellExecute = false,
-            };
-            // Jellyfin numbers external subtitle files first: the file's own
-            // stream number counts the streams inside it only.
-            var inFile = item.GetMediaStreams().Count(s => !s.IsExternal && s.Index < index);
-            foreach (var a in new[] { "-v", "error", "-copyts", "-i", opened.Real, "-map", "0:" + inFile.ToString(System.Globalization.CultureInfo.InvariantCulture), "-c:s", "copy", "-f", "sup", "pipe:1" })
-            {
-                psi.ArgumentList.Add(a);
-            }
-
-            using var process = System.Diagnostics.Process.Start(psi) ?? throw new MsfpException(MsfpError.NotFound);
-            using var ms = new MemoryStream();
-            await process.StandardOutput.BaseStream.CopyToAsync(ms, ct).ConfigureAwait(false);
-            await process.WaitForExitAsync(ct).ConfigureAwait(false);
-            data = ms.ToArray();
+            live.Unreadable[track] = true;
+            throw new MsfpException(MsfpError.NotFound);
         }
 
-        var sets = Pgs.Sets(data) ?? throw new MsfpException(MsfpError.NotFound);
         live.Pictures[track] = sets;
         return sets;
+    }
+
+    // A PGS track's bytes; null when it can't be read within the bounds.
+    private async Task<byte[]?> ReadPgsAsync(Video item, MediaBrowser.Model.Entities.MediaStream stream, int index)
+    {
+        if (stream.IsExternal && stream.Path is { Length: > 0 } sup)
+        {
+            using var opened = _copies.OpenFile(sup)?.File;
+            if (opened is null || opened.Size > PgsExtraction.MaxOutput)
+            {
+                return null;
+            }
+
+            var data = new byte[(int)opened.Size];
+            var n = await RandomAccess.ReadAsync(opened.Handle, data, 0, CancellationToken.None).ConfigureAwait(false);
+            return data.AsSpan(0, n).ToArray();
+        }
+
+        using var file = _copies.OpenFile(item.Path)?.File;
+        if (file is null)
+        {
+            return null;
+        }
+
+        // Jellyfin numbers external subtitle files first: the file's own
+        // stream number counts the streams inside it only.
+        var inFile = item.GetMediaStreams().Count(s => !s.IsExternal && s.Index < index);
+        var (bytes, failed) = await PgsExtraction.RunAsync(_encoder.EncoderPath, PgsExtraction.Arguments(PgsExtraction.ChildPath(file.Handle, file.Real), inFile),
+            PgsExtraction.Timeout, PgsExtraction.MaxOutput, PgsExtraction.Nice).ConfigureAwait(false);
+        if (bytes is null)
+        {
+            _log.LogDebug("MSFP: a PGS track of {Item} couldn't be copied out ({Failed})", item.Id, failed);
+        }
+
+        return bytes;
     }
 
     // A text subtitle track of the copy as WebVTT, made once per playback
@@ -710,6 +723,9 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia, IDisposable
 
         /// <summary>The PGS tracks read, by track.</summary>
         public ConcurrentDictionary<string, List<Pgs.DisplaySet>> Pictures { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>The PGS tracks that couldn't be read, not tried again.</summary>
+        public ConcurrentDictionary<string, bool> Unreadable { get; } = new(StringComparer.Ordinal);
 
         public ConcurrentDictionary<string, byte[]> Subtitles { get; } = new(StringComparer.Ordinal);
     }
