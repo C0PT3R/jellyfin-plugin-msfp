@@ -192,6 +192,12 @@ public class CatalogTests
         Assert.Equal("series/tvdb/81189", tvdb.Key.ToString());
         Assert.Equal("tt0903747", tvdb.Ids["imdb"]);
         Assert.True(global::Msfp.Protocol.VideoKey.TryParse(tvdb.Key.ToString(), out _));
+        // Its TMDB match waiting for the owner, or not looked at yet: not shared, not even under tvdb.
+        Assert.Null(JellyfinCatalogSource.KeyOf(series, new TitleIdentity { Tmdb = "1396" }, Opaque));
+        Assert.Null(JellyfinCatalogSource.KeyOf(series, null, Opaque));
+        // Confirmed: under its TMDB key, and never under tvdb.
+        Assert.Equal("series/tmdb/1396", JellyfinCatalogSource.KeyOf(series, new TitleIdentity { Tmdb = "1396", Chosen = "1396" }, Opaque)!.Key.ToString());
+        Assert.Equal("series/tmdb/1396", JellyfinCatalogSource.KeyOf(series, new TitleIdentity { Tmdb = "1396", Sure = true }, Opaque)!.Key.ToString());
         // On TMDB too (by Jellyfin), but not taken by the plugin: local only when TMDB had nothing.
         series.ProviderIds["Tmdb"] = "1396";
         Assert.Equal("series/local/q3Zp0Lw8q3Zp0Lw8q3Zp0L", JellyfinCatalogSource.KeyOf(series, new TitleIdentity(), Opaque)!.Key.ToString());
