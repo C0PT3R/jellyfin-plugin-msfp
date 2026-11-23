@@ -178,6 +178,14 @@ class Operator:
                     return
             time.sleep(0.5)
 
+    def op_local_off(self):
+        pid = self.suite(False, ("paired",))
+        print("  [operator] local titles no longer shared: %s" % call("POST", "/Msfp/Peers/%s/Local" % pid, {"On": False})[0])
+
+    def op_local_on(self):
+        pid = self.suite(False, ("paired",))
+        print("  [operator] local titles shared again: %s" % call("POST", "/Msfp/Peers/%s/Local" % pid, {"On": True})[0])
+
     def op_want(self):
         pid = self.suite(False, ("paired",))
         print("  [operator] reads all: %s" % call("POST", "/Msfp/Peers/%s/Wants" % pid, {"All": True, "Libraries": []})[0])

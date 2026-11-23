@@ -1157,6 +1157,8 @@
                 var body = document.querySelector('#MsfpFormBody');
                 body.textContent = '';
                 nodes.forEach(function (n) { body.appendChild(n); });
+                // A form with limits (a group's sharing) is as wide as a server's window.
+                document.querySelector('#MsfpFormDialog').classList.toggle('msfpDialogWide', !!body.querySelector('.msfpLimits'));
                 document.querySelector('#MsfpFormProblem').textContent = '';
                 var button = document.querySelector('#MsfpFormSave');
                 button.style.display = save ? '' : 'none';
