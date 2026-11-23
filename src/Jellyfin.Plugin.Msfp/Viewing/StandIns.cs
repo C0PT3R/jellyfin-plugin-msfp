@@ -70,6 +70,7 @@ public sealed class StandIns : IHostedService, IDisposable
     private readonly IUserManager _users;
     private readonly MediaBrowser.Controller.Chapters.IChapterManager _chapters;
     private readonly MediaBrowser.Controller.MediaSegments.IMediaSegmentManager _segments;
+    private readonly PeerPreviews _previews;
     private readonly ILogger<StandIns> _log;
     private readonly object _lock = new();
     private readonly SemaphoreSlim _running = new(1, 1);
@@ -90,8 +91,10 @@ public sealed class StandIns : IHostedService, IDisposable
         IUserManager users,
         MediaBrowser.Controller.Chapters.IChapterManager chapters,
         MediaBrowser.Controller.MediaSegments.IMediaSegmentManager segments,
+        PeerPreviews previews,
         ILogger<StandIns> log)
     {
+        _previews = previews;
         _chapters = chapters;
         _segments = segments;
         _library = library;
@@ -153,7 +156,7 @@ public sealed class StandIns : IHostedService, IDisposable
             }
         }
 
-        var wanted = Wanted.Of(await LivePeersAsync(engine, ct).ConfigureAwait(false), Held(), Links());
+        var wanted = Wanted.Of(await LivePeersAsync(engine, ct).ConfigureAwait(false), Held(), Links(), Themes);
         lock (_lock)
         {
             _wanted ??= wanted;
@@ -173,6 +176,9 @@ public sealed class StandIns : IHostedService, IDisposable
                 EndTicks = m.EndTicks,
             }).ToList()
             : [];
+
+    /// <summary>Whether the operator lets paired servers' theme songs and videos in (off by default).</summary>
+    internal static bool Themes => Plugin.Instance?.Configuration.PeersThemes == true;
 
     /// <summary>Whether every server a copy names is still paired.</summary>
     internal static bool Fresh(Playable copy, IReadOnlySet<string> paired) => copy.Holders.All(h => paired.Contains(h.Peer));
@@ -196,6 +202,11 @@ public sealed class StandIns : IHostedService, IDisposable
         _library.ItemRemoved += Changed;
         _host.Events += Event;
         _identifier.Identities.Changed += IdentitiesChanged;
+        if (Plugin.Instance is { } plugin)
+        {
+            plugin.ConfigurationChanged += SettingsSaved;
+        }
+
         _every = new Timer(_ => Run(), null, TimeSpan.FromMinutes(2), Every);
         return Task.CompletedTask;
     }
@@ -207,6 +218,11 @@ public sealed class StandIns : IHostedService, IDisposable
         _library.ItemRemoved -= Changed;
         _host.Events -= Event;
         _identifier.Identities.Changed -= IdentitiesChanged;
+        if (Plugin.Instance is { } plugin)
+        {
+            plugin.ConfigurationChanged -= SettingsSaved;
+        }
+
         _every?.Change(Timeout.Infinite, Timeout.Infinite);
         _settle?.Change(Timeout.Infinite, Timeout.Infinite);
         return Task.CompletedTask;
@@ -248,6 +264,9 @@ public sealed class StandIns : IHostedService, IDisposable
     }
 
     private void IdentitiesChanged(object? sender, EventArgs e) => Soon();
+
+    // The settings saved: themes may have been let in or out.
+    private void SettingsSaved(object? sender, MediaBrowser.Model.Plugins.BasePluginConfiguration e) => Soon();
 
     private void Event(MsfpEvent e)
     {
@@ -305,7 +324,7 @@ public sealed class StandIns : IHostedService, IDisposable
                 await _channels.GetChannelsInternalAsync(new MediaBrowser.Model.Channels.ChannelQuery()).ConfigureAwait(false);
             }
 
-            var wanted = Wanted.Of(peers, Held(), Links());
+            var wanted = Wanted.Of(peers, Held(), Links(), Themes);
             _wanted = wanted;
             var films = Library(plugin, Shelf.Films);
             var series = Library(plugin, Shelf.Series);
@@ -345,6 +364,8 @@ public sealed class StandIns : IHostedService, IDisposable
             {
                 (counts.SeriesCount, counts.EpisodeCount) = await KeepSeriesAsync(sf, wanted, pass, ct).ConfigureAwait(false);
             }
+
+            counts.ExtraCount = await KeepExtrasAsync(wanted, ct).ConfigureAwait(false);
 
             // Only once their titles are dated: a first reading's count as old.
             seen.Read(peers.Where(p => p.Titles.Any()).Select(p => p.Peer));
@@ -750,6 +771,95 @@ public sealed class StandIns : IHostedService, IDisposable
         return (wanted.Series.Values.Count(s => s.Episodes.Count > 0), episodes);
     }
 
+    // The extras: Jellyfin's extras of the stand-ins they belong to (their
+    // OwnerId, their type), in the paired servers' channel like a film,
+    // described from their copies like one; named by their type and number,
+    // never looked up elsewhere. Those no longer wanted (their owner gone,
+    // themes turned off) removed.
+    private async Task<int> KeepExtrasAsync(Wanted wanted, CancellationToken ct)
+    {
+        var existing = new Dictionary<string, BaseItem>(StringComparer.Ordinal);
+        foreach (var item in _library.GetItemList(new InternalItemsQuery
+        {
+            IncludeItemTypes = [BaseItemKind.Video, BaseItemKind.Audio, BaseItemKind.Trailer],
+            HasOwnerId = true,
+        }))
+        {
+            if (PairedSources.IsStandIn(item))
+            {
+                existing.TryAdd(item.Path!, item);
+            }
+        }
+
+        var kept = 0;
+        var language = _server.Configuration.UICulture;
+        foreach (var x in wanted.Extras.Values)
+        {
+            if (OwnerOf(x) is not { } owner)
+            {
+                continue;
+            }
+
+            var type = ExtraNames.TypeOf(x.Type);
+            var name = ExtraNames.Of(x.Type, x.Number, language);
+            var audio = x.Type == "themesong";
+            if (!existing.Remove(x.Path, out var item) || (item is MediaBrowser.Controller.Entities.Audio.Audio) != audio)
+            {
+                if (item is not null)
+                {
+                    Remove([item]);
+                }
+
+                BaseItem made = audio
+                    ? new MediaBrowser.Controller.Entities.Audio.Audio { Id = _library.GetNewItemId(x.Path, typeof(MediaBrowser.Controller.Entities.Audio.Audio)) }
+                    : new Video { Id = _library.GetNewItemId(x.Path, typeof(Video)) };
+                made.Path = x.Path;
+                made.OwnerId = owner.Id;
+                made.ExtraType = type;
+                made.Name = name;
+                made.IsLocked = true;
+                made.ChannelId = ChannelId();
+                made.DateCreated = owner.DateCreated;
+                made.DateModified = DateTime.UtcNow;
+
+                // Its own: Jellyfin's lists for a user group items by it, and
+                // extras without one came as one (spike 0e's empty special features).
+                made.PresentationUniqueKey = made.CreatePresentationUniqueKey();
+                _library.CreateItem(made, null);
+                item = made;
+            }
+            else if (item.OwnerId != owner.Id || item.ExtraType != type || item.Name != name || !item.IsLocked || string.IsNullOrEmpty(item.PresentationUniqueKey))
+            {
+                item.PresentationUniqueKey = item.CreatePresentationUniqueKey();
+                item.OwnerId = owner.Id;
+                item.ExtraType = type;
+                item.Name = name;
+                item.IsLocked = true;
+                await _library.UpdateItemAsync(item, owner, ItemUpdateType.MetadataEdit, ct).ConfigureAwait(false);
+            }
+
+            await DescribeAsync(item, owner, x.Copy, owner.DateCreated, null, ct).ConfigureAwait(false);
+            kept++;
+        }
+
+        Remove(existing.Values);
+        return kept;
+    }
+
+    // The stand-in an extra belongs to, once made: by its path, as its ID is made.
+    private BaseItem? OwnerOf(WantedExtra x)
+    {
+        foreach (var type in new[] { typeof(Movie), typeof(Series), typeof(Season) })
+        {
+            if (_library.GetItemById(_library.GetNewItemId(x.Owner, type)) is { } owner && owner.Path == x.Owner)
+            {
+                return owner;
+            }
+        }
+
+        return null;
+    }
+
     // A season's or an episode's keys to its series, which Jellyfin's
     // metadata refresh sets otherwise (a local title gets none): without
     // them, the series lists none of its episodes. True when they changed.
@@ -938,6 +1048,14 @@ public sealed class StandIns : IHostedService, IDisposable
         _streams.SaveMediaStreams(item.Id, sources[0].MediaStreams.ToList(), CancellationToken.None);
         SaveSources(item, sources);
         SaveChapters(item, best);
+        try
+        {
+            await _previews.RegisterAsync(item, best).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            _log.LogInformation(e, "MSFP: the previews of {Path} couldn't be registered", item.Path);
+        }
 
         var changed = false;
         void Set<T>(T now, T was, Action<T> set)
@@ -1226,6 +1344,9 @@ public sealed class StandInStatus
     public int SeriesCount { get; set; }
 
     public int EpisodeCount { get; set; }
+
+    /// <summary>The extras shown under them (trailers, featurettes, themes when let in…).</summary>
+    public int ExtraCount { get; set; }
 
     public DateTimeOffset? Kept { get; set; }
 }

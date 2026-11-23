@@ -58,9 +58,26 @@ public sealed class PairedSources : IMediaSourceProvider
         }
 
         var play = ctx.Items[HandOverFilter.ItemKey] as PlayToken;
+        string? shownAs = null;
         if (play is null && Guid.TryParse(ctx.User.FindFirst("Jellyfin-UserId")?.Value, out var user))
         {
-            play = Handles(ctx).Select(h => _plays.Tokens.OfHandle(h, user, item.Id)).FirstOrDefault(p => p is not null);
+            var device = ctx.User.FindFirst("Jellyfin-DeviceId")?.Value;
+            foreach (var h in Handles(ctx))
+            {
+                if (_plays.Tokens.OfHandle(h, user, item.Id) is { } byHandle)
+                {
+                    play = byHandle;
+                    break;
+                }
+
+                // A client naming the ID it was shown (Kodi's static stream).
+                if (_plays.Tokens.OfShown(h, user, item.Id, device) is { } byShown)
+                {
+                    play = byShown;
+                    shownAs = byShown.Shown;
+                    break;
+                }
+            }
         }
 
         if (play is not { Way: Way.File, Source: { } source } || play.Item != item.Id)
@@ -68,7 +85,13 @@ public sealed class PairedSources : IMediaSourceProvider
             return Task.FromResult(Enumerable.Empty<MediaSourceInfo>());
         }
 
-        return Task.FromResult<IEnumerable<MediaSourceInfo>>([RemotePlays.Clone(source)]);
+        var clone = RemotePlays.Clone(source);
+        if (shownAs is not null)
+        {
+            clone.Id = shownAs;
+        }
+
+        return Task.FromResult<IEnumerable<MediaSourceInfo>>([clone]);
     }
 
     // The media source IDs a request names: its query's MediaSourceId, its
@@ -151,7 +174,10 @@ public sealed class PairedSources : IMediaSourceProvider
         ETag = copy.ETag,
         RunTimeTicks = StandInStreams.DurationMs(copy) is > 0 and var ms ? ms * TimeSpan.TicksPerMillisecond : item.RunTimeTicks,
         Type = MediaSourceType.Default,
-        VideoType = VideoType.VideoFile,
+        // None: Jellyfin sorts a play's source, of the same ID when the
+        // client names the one it was shown, before this saved one (its
+        // VideoFile first).
+        VideoType = null,
         Video3DFormat = StandInStreams.ThreeD(copy.ThreeD),
         MediaStreams = streams,
         HasSegments = hasSegments,

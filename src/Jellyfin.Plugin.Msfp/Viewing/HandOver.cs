@@ -200,11 +200,19 @@ public sealed class HandOverFilter : IAsyncActionFilter
     /// <inheritdoc />
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
-        if (context.ActionDescriptor is not ControllerActionDescriptor { ControllerName: "MediaInfo", ActionName: "GetPostedPlaybackInfo" or "GetPlaybackInfo" }
+        var action = context.ActionDescriptor as ControllerActionDescriptor;
+        var universal = action is { ControllerName: "UniversalAudio", ActionName: "GetUniversalAudioStream" };
+        if (action is null || (!universal && action is not { ControllerName: "MediaInfo", ActionName: "GetPostedPlaybackInfo" or "GetPlaybackInfo" })
             || Arg<Guid?>(context.ActionArguments, "itemId") is not { } itemId || itemId == Guid.Empty
             || _library.GetItemById(itemId) is not { } item || !PairedSources.IsStandIn(item))
         {
             await next().ConfigureAwait(false);
+            return;
+        }
+
+        if (universal)
+        {
+            await UniversalAsync(context, next, item).ConfigureAwait(false);
             return;
         }
 
@@ -224,8 +232,10 @@ public sealed class HandOverFilter : IAsyncActionFilter
         var liveStreamId = Arg<string>(args, "liveStreamId") ?? Member<string>(dto, "LiveStreamId");
 
         // The play this user is on (a seek or a track picked in a
-        // conversion, another PlaybackInfo of the same play): the same.
-        if (_plays.Tokens.OfHandle(sourceId, user.Id, item.Id) is { Way: Way.File } same)
+        // conversion, another PlaybackInfo of the same play, by its handle
+        // or the ID its client was shown from this device): the same.
+        var device = context.HttpContext.User.FindFirst("Jellyfin-DeviceId")?.Value;
+        if ((_plays.Tokens.OfHandle(sourceId, user.Id, item.Id) ?? _plays.Tokens.OfShown(sourceId, user.Id, item.Id, device)) is { Way: Way.File } same)
         {
             await PlainAsync(context, next, same, args, dto).ConfigureAwait(false);
             return;
@@ -278,6 +288,8 @@ public sealed class HandOverFilter : IAsyncActionFilter
         if (choice.Way == Way.File)
         {
             var play = _plays.Mint(user.Id, item, choice);
+            play.Device = device;
+            play.Shown = title.Chosen == choice.Holder ? _plays.SavedSourceId(item, title, choice) : null;
             _log.LogInformation("MSFP: {Key} handed over as a file from {Peer}", choice.Holder.Key, choice.Holder.Peer);
             await PlainAsync(context, next, play, args, dto).ConfigureAwait(false);
             return;
@@ -295,11 +307,66 @@ public sealed class HandOverFilter : IAsyncActionFilter
         await next().ConfigureAwait(false);
     }
 
+    // Jellyfin's universal audio route (jellyfin-web's audio player: a
+    // paired server's theme song), which gets its sources without the
+    // PlaybackInfo action: a play of the plain file made here as there, its
+    // handle the route's source, so that Jellyfin streams or converts it as a
+    // local file. Its HLS way isn't offered on this route: busy or refused
+    // answer 404.
+    private async Task UniversalAsync(ActionExecutingContext context, ActionExecutionDelegate next, MediaBrowser.Controller.Entities.BaseItem item)
+    {
+        var claim = context.HttpContext.User.FindFirst("Jellyfin-UserId")?.Value;
+        if (!Guid.TryParse(claim, out var userId) || _users.GetUserById(userId) is not { } user || !Allowed(item, user)
+            || await _plays.TitleAsync(item, CancellationToken.None).ConfigureAwait(false) is not { } title)
+        {
+            context.Result = new NotFoundResult();
+            return;
+        }
+
+        // The same device asking again before reading (a HEAD, then the GET): the same play.
+        var device = context.HttpContext.User.FindFirst("Jellyfin-DeviceId")?.Value ?? string.Empty;
+        var play = _plays.Tokens.All.Where(t => t.User == user.Id && t.Item == item.Id && t.Way == Way.File && t.FirstRead is null && (t.Device ?? string.Empty) == device)
+            .OrderByDescending(t => t.Made).FirstOrDefault();
+        if (play is null)
+        {
+            var states = await _plays.PeerStatesAsync(CancellationToken.None).ConfigureAwait(false);
+            var choice = HandOver.Choose(title, null, p => states.TryGetValue(p, out var s) ? s : new HandOver.PeerState(true, false, 0));
+            if (choice.Failure != HandOver.Failure.None || choice.Way != Way.File)
+            {
+                _log.LogInformation("MSFP: {Path} can't be played as a file now", item.Path);
+                context.Result = new NotFoundResult();
+                return;
+            }
+
+            play = _plays.Mint(user.Id, item, choice);
+            play.Device = device;
+            _log.LogInformation("MSFP: {Key} handed over as a file from {Peer} (universal audio)", choice.Holder.Key, choice.Holder.Peer);
+        }
+
+        context.HttpContext.Items[ItemKey] = play;
+        context.ActionArguments["mediaSourceId"] = play.Handle;
+
+        // When Jellyfin converts, its playlist's URLs repeat this request's
+        // query: the handle goes in it, so that its segments find the play.
+        var request = context.HttpContext.Request;
+        if (!request.Query.ContainsKey("mediaSourceId"))
+        {
+            request.QueryString = request.QueryString.Add("mediaSourceId", play.Handle);
+        }
+
+        await next().ConfigureAwait(false);
+    }
+
     // The user may see the stand-in: its parental rating and tags, and its
     // library (a stand-in is a channel item, which Jellyfin's own check
-    // lets through by the channel's access alone).
-    private bool Allowed(MediaBrowser.Controller.Entities.BaseItem item, Jellyfin.Database.Implementations.Entities.User user) =>
-        item.IsVisibleStandalone(user) && _library.GetCollectionFolders(item) is { Count: > 0 } folders && folders.Any(f => f.IsVisible(user));
+    // lets through by the channel's access alone); an extra, as the title
+    // it belongs to.
+    private bool Allowed(MediaBrowser.Controller.Entities.BaseItem item, Jellyfin.Database.Implementations.Entities.User user)
+    {
+        var title = !item.OwnerId.Equals(Guid.Empty) ? _library.GetItemById(item.OwnerId) : item;
+        return title is not null && item.IsVisibleStandalone(user) && title.IsVisibleStandalone(user)
+            && _library.GetCollectionFolders(title) is { Count: > 0 } folders && folders.Any(f => f.IsVisible(user));
+    }
 
     // The plain file: Jellyfin's answer keeps only the play's source, its
     // path the request's own address (Jellyfin's own reads take the
@@ -323,6 +390,14 @@ public sealed class HandOverFilter : IAsyncActionFilter
         foreach (var s in answer.MediaSources)
         {
             s.Path = address;
+
+            // The client sees the stand-in's source for the copy (its
+            // trickplay, its version), Jellyfin's own URLs in the answer
+            // keep the handle.
+            if (play.Shown is { } shown)
+            {
+                s.Id = shown;
+            }
         }
 
         if (answer.MediaSources.Count == 0 && answer.ErrorCode is null)

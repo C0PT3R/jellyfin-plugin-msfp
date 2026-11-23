@@ -46,6 +46,8 @@ public sealed class RemotePlays : IHostedService, IDisposable
     private readonly StandIns _standIns;
     private readonly ISessionManager _sessions;
     private readonly IConfigurationManager _config;
+    private readonly ILibraryManager _library;
+    private readonly PeerPreviews _previews;
     private readonly ILogger<RemotePlays> _log;
 
     // Remembered: the paired servers that refused delivery file (until their
@@ -54,8 +56,10 @@ public sealed class RemotePlays : IHostedService, IDisposable
     private readonly ConcurrentDictionary<string, DateTimeOffset> _busyUntil = new(StringComparer.Ordinal);
     private Timer? _sweep;
 
-    public RemotePlays(EngineHost host, StandIns standIns, ISessionManager sessions, IConfigurationManager config, ILogger<RemotePlays> log)
+    public RemotePlays(EngineHost host, StandIns standIns, ISessionManager sessions, IConfigurationManager config, ILibraryManager library, PeerPreviews previews, ILogger<RemotePlays> log)
     {
+        _library = library;
+        _previews = previews;
         _host = host;
         _standIns = standIns;
         _sessions = sessions;
@@ -172,6 +176,10 @@ public sealed class RemotePlays : IHostedService, IDisposable
             source.OpenToken = null;
             source.IsRemote = false;
             source.SupportsProbing = false;
+
+            // A file: sorted before the stand-in's saved source of the same
+            // ID (a client naming the ID it was shown, PairedSources).
+            source.VideoType = VideoType.VideoFile;
 
             // Played as a file the client reads, unless the title is only
             // part of the copy: then Jellyfin reads it, from the episode's
@@ -328,6 +336,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
             }
 
             _log.LogInformation("MSFP: playing {Key} from {Peer} as a file", play.Key, play.Peer);
+            Previews(engine, play);
             return play.Playback;
         }
         catch (MsfpException e)
@@ -339,6 +348,17 @@ public sealed class RemotePlays : IHostedService, IDisposable
         finally
         {
             play.Starting.Release();
+        }
+    }
+
+    // A playback started: the copy's previews fetched in the background
+    // when they are the stand-in's (its first source's copy, answer 8).
+    private void Previews(MsfpEngine engine, PlayToken play)
+    {
+        if (_library.GetItemById(play.Item) is { Path: { } path } item
+            && _standIns.CopyOf(path)?.Chosen is { } h && h.Peer == play.Peer && h.Best.Id == play.Copy.Id)
+        {
+            _previews.Fetch(engine, item, play.Peer, play.Key, play.Copy);
         }
     }
 
@@ -415,6 +435,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
 
         play.Playback = playback;
         play.FirstRead = play.Touched = DateTimeOffset.UtcNow;
+        Previews(engine, play);
         _log.LogInformation("MSFP: playing {Key} from {Peer} ({Method}, {Protocol})", play.Key, play.Peer, playback.Method, playback.Protocol);
         var source = HlsSource(item, play, playback, Loopback());
         return new PairedLiveStream(this, play, source);
@@ -565,7 +586,8 @@ public sealed class RemotePlays : IHostedService, IDisposable
             return null;
         }
 
-        if (Tokens.OfHandle(e.MediaSourceId ?? e.Session?.PlayState?.MediaSourceId) is { } byHandle && byHandle.Item == item.Id)
+        var source = e.MediaSourceId ?? e.Session?.PlayState?.MediaSourceId;
+        if ((Tokens.OfHandle(source) ?? Shown(source, e.Session, item.Id)) is { } byHandle && byHandle.Item == item.Id)
         {
             if (e.Session?.Id is { } sid)
             {
@@ -577,6 +599,10 @@ public sealed class RemotePlays : IHostedService, IDisposable
 
         return LiveOf(item.Id, e.Session?.PlayState?.LiveStreamId, e.Session?.Id, starting);
     }
+
+    // A play by the source ID its client was shown, for a session's user and device.
+    private PlayToken? Shown(string? source, SessionInfo? session, Guid item) =>
+        session is null ? null : Tokens.OfShown(source, session.UserId, item, session.DeviceId);
 
     private PlayToken? LiveOf(Guid item, string? liveStreamId, string? sessionId, bool starting = false)
     {
@@ -658,7 +684,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
         foreach (var session in _sessions.Sessions)
         {
             if (session.NowPlayingItem is not { } item
-                || (Tokens.OfHandle(session.PlayState?.MediaSourceId) is { } h && h.Item == item.Id ? h : LiveOf(item.Id, session.PlayState?.LiveStreamId, session.Id)) is not { } play
+                || ((Tokens.OfHandle(session.PlayState?.MediaSourceId) ?? Shown(session.PlayState?.MediaSourceId, session, item.Id)) is { } h && h.Item == item.Id ? h : LiveOf(item.Id, session.PlayState?.LiveStreamId, session.Id)) is not { } play
                 || !kept.Add(play))
             {
                 continue;

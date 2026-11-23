@@ -120,6 +120,29 @@ internal sealed class WantedFilm
 }
 
 /// <summary>
+/// An extra of a film, a series or a season as a stand-in (MSFP video
+/// section 3.9): Jellyfin's extra of the stand-in it belongs to, played
+/// like any copy. It carries no name: it is shown by its type, and a number
+/// when its owner has several of that type.
+/// </summary>
+internal sealed class WantedExtra
+{
+    /// <summary>Its stand-in's path: its owner's, then x/, the paired server and the key's opaque part.</summary>
+    public string Path { get; init; } = string.Empty;
+
+    /// <summary>The path of the stand-in it belongs to (a film, a series or a season).</summary>
+    public string Owner { get; init; } = string.Empty;
+
+    /// <summary>Its type, MSFP's token (trailer, featurette, themesong…).</summary>
+    public string Type { get; init; } = string.Empty;
+
+    /// <summary>Its number among its owner's extras of its type, from 1 (by key); 0 when it is the only one.</summary>
+    public int Number { get; set; }
+
+    public Playable Copy { get; init; } = new();
+}
+
+/// <summary>
 /// What this server holds itself, for the stand-ins to leave out: its films
 /// by TMDB ID; its series by TMDB and by TheTVDB ID, their episodes by
 /// TMDB's or TheTVDB's ID of them, and by their numbers where neither is
@@ -170,7 +193,10 @@ internal sealed class HeldSeries
 /// servers; a series keyed under tvdb joins the tmdb one its ids (or
 /// Jellyfin's metadata of the stand-in, <c>links</c>) name, its episodes
 /// matched by their ids (MSFP video section 4.3); local titles are each
-/// server's own (section 4.5). Extras: migration phase 7.
+/// server's own (section 4.5). Extras are their owner's holder's: a
+/// film's chosen holder's, a series' (and its seasons') of the paired
+/// server holding the most of its episodes shown; theme songs and videos
+/// only when the operator lets them (<c>themes</c>).
 /// </summary>
 internal sealed class Wanted
 {
@@ -178,7 +204,10 @@ internal sealed class Wanted
 
     public SortedDictionary<string, WantedSeries> Series { get; } = new(StringComparer.Ordinal);
 
-    /// <summary>Every film and episode, by its stand-in's path.</summary>
+    /// <summary>The extras, by their stand-ins' paths.</summary>
+    public SortedDictionary<string, WantedExtra> Extras { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Every film, episode and extra, by its stand-in's path.</summary>
     public Dictionary<string, Playable> ByPath { get; } = new(StringComparer.Ordinal);
 
     public int Count => Films.Count + Series.Values.Sum(s => s.Episodes.Count);
@@ -186,19 +215,21 @@ internal sealed class Wanted
     /// <summary>
     /// The stand-ins for the titles of the paired servers given (each with
     /// the titles read of it), less what this server holds. <paramref name="links"/>
-    /// are TMDB series known to be TheTVDB series (Jellyfin's metadata of the stand-ins).
+    /// are TMDB series known to be TheTVDB series (Jellyfin's metadata of the stand-ins);
+    /// <paramref name="themes"/> lets the paired servers' theme songs and videos in.
     /// </summary>
-    public static Wanted Of(IEnumerable<(string Peer, IEnumerable<Title> Titles)> peers, Held held, IReadOnlyDictionary<long, long>? links = null)
+    public static Wanted Of(IEnumerable<(string Peer, IEnumerable<Title> Titles)> peers, Held held, IReadOnlyDictionary<long, long>? links = null, bool themes = false)
     {
         var w = new Wanted();
         var all = new List<(string Peer, VideoTitle Title, VideoKey Key)>();
+        var extras = new List<(string Peer, VideoTitle Title, VideoKey Key)>();
         foreach (var (peer, titles) in peers)
         {
             foreach (var t in titles.OfType<VideoTitle>())
             {
-                if (VideoKey.TryParse(t.Key, out var k) && k.Kind != "extra")
+                if (VideoKey.TryParse(t.Key, out var k))
                 {
-                    all.Add((peer, t, k));
+                    (k.Kind == "extra" ? extras : all).Add((peer, t, k));
                 }
             }
         }
@@ -288,6 +319,7 @@ internal sealed class Wanted
         var byTmdbEpisode = new Dictionary<(string, long), WantedEpisode>();
         var byTvdbEpisode = new Dictionary<(string, long), WantedEpisode>();
         var groupIds = new Dictionary<string, (long Tmdb, long Tvdb)>(StringComparer.Ordinal);
+        var seriesOf = new Dictionary<(string Peer, string Key), WantedSeries>();
         foreach (var (peer, t, k) in episodes)
         {
             if (k.Scheme == Video.SchemeLocal)
@@ -296,6 +328,7 @@ internal sealed class Wanted
                 {
                     var ls = w.SeriesAt(LocalPath(peer, k.Series), local);
                     Episode(ls, LocalPath(peer, t.Key), k.Season, k.Episode).Copy.Add(peer, t);
+                    seriesOf[(peer, k.Series)] = ls;
                 }
 
                 continue;
@@ -350,6 +383,7 @@ internal sealed class Wanted
             }
 
             var series = w.SeriesAt(tmdbSeries > 0 ? PathOf(SeriesKey(tmdbSeries)) : PathOf("series/tvdb/" + Number(tvdbSeries)), null);
+            seriesOf[(peer, k.Series)] = series;
             series.Tmdb = tmdbSeries;
             series.Tvdb = tvdbSeries;
             if (seriesIds.TryGetValue(root, out var sids))
@@ -393,9 +427,15 @@ internal sealed class Wanted
             found.Copy.Add(peer, t);
         }
 
+        w.AddExtras(extras, seriesOf, themes);
         foreach (var f in w.Films.Values)
         {
             w.ByPath[f.Path] = f.Copy;
+        }
+
+        foreach (var x in w.Extras.Values)
+        {
+            w.ByPath[x.Path] = x.Copy;
         }
 
         foreach (var s in w.Series.Values)
@@ -408,6 +448,77 @@ internal sealed class Wanted
 
         return w;
     }
+
+    /// <summary>Whether an extra of this type is a theme song or video (played on a title's page without the viewer asking).</summary>
+    internal static bool IsTheme(string type) => type is "themesong" or "themevideo";
+
+    // The extras of the films and series wanted: each under its owner's
+    // stand-in, from the paired server whose copies the owner shows.
+    private void AddExtras(List<(string Peer, VideoTitle Title, VideoKey Key)> extras, Dictionary<(string Peer, string Key), WantedSeries> seriesOf, bool themes)
+    {
+        var shownBy = new Dictionary<WantedSeries, string>();
+        foreach (var (peer, t, k) in extras.OrderBy(x => x.Title.Key, StringComparer.Ordinal).ThenBy(x => x.Peer, StringComparer.Ordinal))
+        {
+            var type = t.ExtraType ?? string.Empty;
+            if (type.Length == 0 || t.Copies is not { Count: > 0 } || (!themes && IsTheme(type)) || k.Parent is not { } parent)
+            {
+                continue;
+            }
+
+            string? owner = null;
+            if (parent.Kind == "movie")
+            {
+                var path = parent.Scheme == Video.SchemeLocal ? LocalPath(peer, parent.ToString()) : PathOf(FilmKey(parent.Id));
+                if (Films.TryGetValue(path, out var film) && film.Copy.Chosen?.Peer == peer)
+                {
+                    owner = path;
+                }
+            }
+            else if (seriesOf.TryGetValue((peer, k.Series), out var series) && series.Episodes.Count > 0)
+            {
+                if (!shownBy.TryGetValue(series, out var shower))
+                {
+                    shower = ShownBy(series);
+                    shownBy[series] = shower;
+                }
+
+                if (shower == peer)
+                {
+                    owner = parent.Kind == "series" ? series.Path
+                        : series.Episodes.Values.Any(e => e.Season == parent.Season) ? SeasonPath(series.Path, parent.Season) : null;
+                }
+            }
+
+            if (owner is null)
+            {
+                continue;
+            }
+
+            var x = new WantedExtra { Path = owner + "/x/" + peer + "/" + k.Extra, Owner = owner, Type = type, Copy = new Playable { Path = owner + "/x/" + peer + "/" + k.Extra } };
+            x.Copy.Add(peer, t);
+            if (x.Copy.Chosen is not null)
+            {
+                Extras.TryAdd(x.Path, x);
+            }
+        }
+
+        // Numbered by type within their owner when it has several.
+        foreach (var group in Extras.Values.GroupBy(x => (x.Owner, x.Type)))
+        {
+            var list = group.OrderBy(x => x.Path, StringComparer.Ordinal).ToList();
+            for (var i = 0; list.Count > 1 && i < list.Count; i++)
+            {
+                list[i].Number = i + 1;
+            }
+        }
+    }
+
+    // The paired server whose extras a series shows: the one chosen for the
+    // most of its episodes, then by its ID.
+    private static string ShownBy(WantedSeries series) =>
+        series.Episodes.Values.Select(e => e.Copy.Chosen?.Peer).OfType<string>()
+            .GroupBy(p => p).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => g.Key).FirstOrDefault() ?? string.Empty;
 
     private WantedSeries SeriesAt(string path, LocalTitle? local)
     {

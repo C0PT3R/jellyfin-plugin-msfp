@@ -216,6 +216,13 @@
                             </label>
                             <div class="fieldDescription checkboxFieldDescription">When a paired server asks for a subtitle drawn into the picture, this server converts the video to draw it. Off: such a request is refused, and the paired server is told so. Off by default.</div>
                         </div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label>
+                                <input id="MsfpPeersThemes" name="MsfpPeersThemes" type="checkbox" is="emby-checkbox" />
+                                <span>Play paired servers' theme songs and videos</span>
+                            </label>
+                            <div class="fieldDescription checkboxFieldDescription">Themes of paired servers' titles play on a title's page, as your own do, without the viewer asking: each is a playback on the paired server, which so learns which page was opened. Off by default.</div>
+                        </div>
                         <div class="inputContainer">
                             <label class="inputLabel inputLabelUnfocused" for="MsfpTmdbKey">Your TMDB key (optional)</label>
                             <input id="MsfpTmdbKey" name="MsfpTmdbKey" type="password" is="emby-input" autocomplete="off" />
@@ -1678,6 +1685,7 @@
                         document.querySelector('#MsfpDiscovery').checked = !!config.Discovery;
                         document.querySelector('#MsfpTranscodes').value = config.TranscodesAtOnce == null ? 2 : config.TranscodesAtOnce;
                         document.querySelector('#MsfpBurnSubtitles').checked = !!config.BurnSubtitles;
+                        document.querySelector('#MsfpPeersThemes').checked = !!config.PeersThemes;
                         document.querySelector('#MsfpTmdbKey').value = config.TmdbKey || '';
                         Dashboard.hideLoadingMsg();
                     });
@@ -1695,6 +1703,7 @@
                         var most = parseInt(document.querySelector('#MsfpTranscodes').value, 10);
                         config.TranscodesAtOnce = isNaN(most) ? 2 : Math.max(0, Math.min(100, most));
                         config.BurnSubtitles = document.querySelector('#MsfpBurnSubtitles').checked;
+                        config.PeersThemes = document.querySelector('#MsfpPeersThemes').checked;
                         config.TmdbKey = document.querySelector('#MsfpTmdbKey').value.trim();
                         ApiClient.updatePluginConfiguration(MsfpConfig.pluginUniqueId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);

@@ -47,6 +47,7 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
         // Jellyfin finds a plugin's channels among its services), and the
         // stand-ins' keeper.
         serviceCollection.AddSingleton<MediaBrowser.Controller.Channels.IChannel, PairedChannel>();
+        serviceCollection.AddSingleton<PeerPreviews>();
         serviceCollection.AddSingleton<StandIns>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<StandIns>());
         // Jellyfin takes its segment providers from here: the stand-ins' skip markers.
