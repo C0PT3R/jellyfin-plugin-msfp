@@ -90,7 +90,15 @@ starts at its strictest:
    bytes, allowed the `file` protocol only, at most 32 MiB read and 30
    seconds analysed, 60 seconds and 8 MiB of output per run, at the lowest
    priority. Only the facts MSFP lists are kept from its output, each
-   checked.
+   checked. An embedded PGS track, asked for by a paired server holding a
+   play token, is copied out the same way by Jellyfin's own ffmpeg: no
+   shell, an empty environment, the `file` protocol only on the file
+   opened by rule 4, at the lowest priority, at most 10 minutes (copying
+   a track out reads the whole file) and 128 MiB of output (an external
+   `.sup` is read only within the same 128 MiB); a run past either is
+   killed and the track not served. One run per track at a time: asks
+   meanwhile, from any playback, wait for that run, and a track that
+   couldn't be read isn't tried again in that playback.
 9. The import of an earlier header read (made for another server on the
    same libraries) is for administrators only, reads only the plugin's own
    import folder (`import/probe.jsonl.gz` or `import/probe.jsonl` in its
@@ -131,11 +139,14 @@ starts at its strictest:
     own trickplay sheets, checked as JPEGs within their size and re-encoded
     by the engine before they leave.
 15. A title is shared under a key only when it's known: a TMDB title the
-    owner chose or a match that is clearly the one; a series Jellyfin
-    places only on TheTVDB; or, where the owner switched them on, a local
+    owner chose or a match that is clearly the one; when the plugin looked
+    and TMDB had nothing for it, a series Jellyfin places only on TheTVDB
+    (under its TheTVDB ID) or, where the owner switched them on, a local
     title (its name as plain text, its year, its image re-encoded). A
-    title whose TMDB match waits for the owner's confirmation is not shared
-    at all.
+    title whose TMDB match waits for the owner's confirmation, or that the
+    plugin hasn't looked at yet, is not shared at all, a series on TheTVDB
+    included: its key never changes once shared. Once confirmed, it is
+    shared at once under its TMDB key.
 16. Copies carry facts only: no file or track names, no paths, no dates
     added. Chapter names are sent as plain text, and dropped when they look
     like file names, addresses or sites, or are Jellyfin's generated
