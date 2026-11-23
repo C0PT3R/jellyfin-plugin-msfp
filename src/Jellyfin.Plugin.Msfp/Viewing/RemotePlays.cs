@@ -48,20 +48,16 @@ public sealed class RemotePlays : IHostedService, IDisposable
     private readonly StandIns _standIns;
     private readonly ISessionManager _sessions;
     private readonly IConfigurationManager _config;
-    private readonly IMediaEncoder _encoder;
     private readonly ILocalizationManager _localization;
     private readonly PeerPreviews _previews;
-    private readonly MediaBrowser.Controller.MediaSegments.IMediaSegmentManager _segments;
     private readonly ILogger<RemotePlays> _log;
     private readonly ConcurrentDictionary<string, Live> _byToken = new(StringComparer.Ordinal);
     private Timer? _sweep;
 
-    public RemotePlays(EngineHost host, StandIns standIns, ISessionManager sessions, IConfigurationManager config, IMediaEncoder encoder, ILocalizationManager localization, MediaBrowser.Controller.Trickplay.ITrickplayManager trickplay, MediaBrowser.Controller.MediaSegments.IMediaSegmentManager segments, ILogger<RemotePlays> log)
+    public RemotePlays(EngineHost host, StandIns standIns, ISessionManager sessions, IConfigurationManager config, ILocalizationManager localization, MediaBrowser.Controller.Trickplay.ITrickplayManager trickplay, ILogger<RemotePlays> log)
     {
-        _segments = segments;
         _previews = new PeerPreviews(trickplay, log);
         _localization = localization;
-        _encoder = encoder;
         _host = host;
         _standIns = standIns;
         _sessions = sessions;
@@ -132,12 +128,12 @@ public sealed class RemotePlays : IHostedService, IDisposable
         _ = wishes;
         var request = new PlayRequest { Title = string.Empty };
         var engine = _host.Engine ?? throw new InvalidOperationException("Federation is off on this server.");
-        var key = item.Path![Wanted.PathOf(string.Empty).Length..];
-        var copy = await _standIns.CopyOfAsync(key, ct).ConfigureAwait(false) ?? throw new InvalidOperationException("No paired server holds this title now.");
+        var copy = await _standIns.CopyOfAsync(item.Path!, ct).ConfigureAwait(false) ?? throw new InvalidOperationException("No paired server holds this title now.");
         var busy = false;
         foreach (var holder in copy.Holders)
         {
             RemotePlayback playback;
+            var key = holder.Key;
             try
             {
                 // A track picked during a playback: its ID on the server that
@@ -159,11 +155,9 @@ public sealed class RemotePlays : IHostedService, IDisposable
             var source = SourceOf(item, playback, token);
             try
             {
-                live.VideoBitrateFilled = await ProbeAsync(source, ct).ConfigureAwait(false);
                 NameAudio(source, playback);
                 ListAllAudio(source, playback, live);
                 live.DurationMs = (source.RunTimeTicks ?? 0) / TimeSpan.TicksPerMillisecond;
-                await KeepRuntimeAsync(item, live.DurationMs, ct).ConfigureAwait(false);
 
                 // PGS tracks are fetched before Jellyfin has the source: it
                 // may burn one in from its first segment. One not ready in
@@ -179,22 +173,6 @@ public sealed class RemotePlays : IHostedService, IDisposable
                 continue;
             }
 
-            StandIns.Playing.AddOrUpdate(item.Id, 1, (_, n) => n + 1);
-            StandIns.SavePlaying(item, source.MediaStreams.ToList());
-            // The skip markers before Jellyfin hands the source over: clients ask for them as playing starts.
-            try
-            {
-                // The copy's segments since MSFP's revision: saved at each
-                // catalog reading in phase 5, not at play.
-                IReadOnlyList<global::Msfp.Protocol.CopySegment> segments = [];
-                await PairedSegments.SaveAsync(_segments, item, segments, ct).ConfigureAwait(false);
-                source.HasSegments = segments.Count > 0;
-            }
-            catch (Exception e) when (e is not OperationCanceledException)
-            {
-                _log.LogInformation(e, "MSFP: the skip markers of {Key} couldn't be kept", key);
-            }
-
             _previews.Fetch(engine, item, playback);
             return new PairedLiveStream(live, source);
         }
@@ -205,27 +183,6 @@ public sealed class RemotePlays : IHostedService, IDisposable
         }
 
         throw new InvalidOperationException("No paired server could play this title now.");
-    }
-
-    // A stand-in's runtime, from its copy's length: Jellyfin marks an item
-    // without one as played at any stop (UserDataManager.UpdatePlayState),
-    // and its TMDB provider gives none to films and episodes. Kept on the
-    // item Jellyfin holds, from the first play on.
-    private static async Task KeepRuntimeAsync(BaseItem item, long durationMs, CancellationToken ct)
-    {
-        if (durationMs <= 0)
-        {
-            return;
-        }
-
-        var ticks = durationMs * TimeSpan.TicksPerMillisecond;
-        if (item.RunTimeTicks is { } had && Math.Abs(had - ticks) < 5 * TimeSpan.TicksPerSecond)
-        {
-            return;
-        }
-
-        item.RunTimeTicks = ticks;
-        await item.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, ct).ConfigureAwait(false);
     }
 
     /// <summary>A playback by its relay token, null when none: each read keeps it from going idle.</summary>
@@ -280,7 +237,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
             IsRemote = true,
             RequiresOpening = false,
             RequiresClosing = true,
-            SupportsProbing = true,
+            SupportsProbing = false,
             SupportsDirectPlay = false,
             SupportsDirectStream = true,
             SupportsTranscoding = true,
@@ -290,48 +247,6 @@ public sealed class RemotePlays : IHostedService, IDisposable
             Type = MediaSourceType.Default,
             MediaStreams = [],
         };
-    }
-
-    // Its streams, read here through the relay: Jellyfin's own probe of a
-    // live stream keeps one video and one audio track only (made for live
-    // TV), and every audio language counts here.
-    // True when the video's bitrate was filled in (VideoBitrate).
-    private async Task<bool> ProbeAsync(MediaSourceInfo source, CancellationToken ct)
-    {
-        var info = await _encoder.GetMediaInfo(new MediaInfoRequest
-        {
-            MediaSource = source,
-            MediaType = MediaBrowser.Model.Dlna.DlnaProfileType.Video,
-            ExtractChapters = false,
-        }, ct).ConfigureAwait(false);
-        source.MediaStreams = info.MediaStreams;
-        source.Container = info.Container ?? source.Container;
-        source.Bitrate = info.Bitrate;
-        source.RunTimeTicks = info.RunTimeTicks ?? source.RunTimeTicks;
-        source.SupportsProbing = false;
-        return VideoBitrate(source);
-    }
-
-    // A video track without a bitrate (a Matroska file without statistics)
-    // gets the file's share left after its audio: Jellyfin guesses one from
-    // the picture's width for an opened live stream otherwise (8 Mbit/s for
-    // 720p, MediaSourceManager.AddMediaInfo), which a local file never
-    // gets, and which then caps the player's quality choices and makes
-    // Jellyfin convert for a viewer limited below it.
-    // The answer to the client then shows none, as for the local file
-    // (AudioSwitchFilter): Jellyfin's own decisions keep the share.
-    internal static bool VideoBitrate(MediaSourceInfo source)
-    {
-        var video = source.MediaStreams.FirstOrDefault(s => s.Type == MediaStreamType.Video);
-        if (video is null || video.BitRate is > 0 || source.Bitrate is not { } total || total <= 0)
-        {
-            return false;
-        }
-
-        var audio = source.MediaStreams.Where(s => s.Type == MediaStreamType.Audio).Sum(s => (long)(s.BitRate ?? 0));
-        var left = total - audio;
-        video.BitRate = (int)Math.Clamp(left > 0 ? left : total, 1, int.MaxValue);
-        return true;
     }
 
     // A converted stream carries one audio track and no language: the one
@@ -574,13 +489,6 @@ public sealed class RemotePlays : IHostedService, IDisposable
         }
 
         Subtitles.ForgetPictures(live.Token);
-        if (StandIns.Playing.AddOrUpdate(live.Item.Id, 0, (_, n) => n - 1) <= 0)
-        {
-            StandIns.Playing.TryRemove(live.Item.Id, out _);
-
-            // Its saved source back to what the catalogs say, at the next pass.
-            _standIns.Soon();
-        }
 
         try
         {
@@ -611,9 +519,6 @@ public sealed class RemotePlays : IHostedService, IDisposable
         public BaseItem Item { get; } = item;
 
         public string StreamId { get; set; } = string.Empty;
-
-        /// <summary>Whether the video's bitrate was filled in, the file stating none (<see cref="VideoBitrate"/>).</summary>
-        public bool VideoBitrateFilled { get; set; }
 
         /// <summary>The Jellyfin session playing it, once known (<see cref="LiveOf"/>).</summary>
         public string? SessionId { get; set; }

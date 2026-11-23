@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.Msfp.Federation;
 using Jellyfin.Plugin.Msfp.Identification;
+using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Channels;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
@@ -17,6 +18,7 @@ using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Persistence;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Configuration;
+using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Globalization;
 using MediaBrowser.Model.IO;
@@ -31,9 +33,13 @@ namespace Jellyfin.Plugin.Msfp.Viewing;
 /// libraries the plugin makes, "Films from paired servers" and "Series
 /// from paired servers", with a stand-in for each film and episode read of
 /// a paired server that this server doesn't hold itself. A stand-in has no
-/// file: an msfp:// path from its key, the paired servers' channel, a
-/// source of its own to open at play, the languages and picture the
-/// catalog gave, and Jellyfin's own metadata from its TMDB ID.
+/// file: an msfp:// path from its key, the paired servers' channel, one
+/// source per copy of the holder with the best copy, each with its streams
+/// as Jellyfin's reading of the file would give them (StandInStreams), the
+/// copy's length, size, chapters and skip markers, the day this server
+/// first saw the title (FirstSeen), and Jellyfin's own metadata from its
+/// TMDB or TheTVDB ID; a local title the owner's name, year and image,
+/// never looked up elsewhere.
 ///
 /// Kept in step 30 seconds after a reading of a peer's catalog, a pairing's
 /// end or a change of the libraries settles, and every hour. A stand-in
@@ -62,6 +68,8 @@ public sealed class StandIns : IHostedService, IDisposable
     private readonly Identifier _identifier;
     private readonly IUserDataManager _userData;
     private readonly IUserManager _users;
+    private readonly MediaBrowser.Controller.Chapters.IChapterManager _chapters;
+    private readonly MediaBrowser.Controller.MediaSegments.IMediaSegmentManager _segments;
     private readonly ILogger<StandIns> _log;
     private readonly object _lock = new();
     private readonly SemaphoreSlim _running = new(1, 1);
@@ -80,8 +88,12 @@ public sealed class StandIns : IHostedService, IDisposable
         Identifier identifier,
         IUserDataManager userData,
         IUserManager users,
+        MediaBrowser.Controller.Chapters.IChapterManager chapters,
+        MediaBrowser.Controller.MediaSegments.IMediaSegmentManager segments,
         ILogger<StandIns> log)
     {
+        _chapters = chapters;
+        _segments = segments;
         _library = library;
         _channels = channels;
         _streams = streams;
@@ -106,22 +118,14 @@ public sealed class StandIns : IHostedService, IDisposable
     private volatile Wanted? _wanted;
 
     /// <summary>
-    /// A film's or an episode's copies, by its key, as the last pass found
-    /// them: the paired servers holding it, best copy first; null when none.
+    /// A film's or an episode's copies, by its stand-in's path, as the last
+    /// pass found them: the paired servers holding it, best copy first; null
+    /// when none.
     /// </summary>
-    internal Playable? CopyOf(string key) => CopyOf(_wanted, key);
+    internal Playable? CopyOf(string path) => CopyOf(_wanted, path);
 
-    internal static Playable? CopyOf(Wanted? w, string key)
-    {
-        if (w is null || !global::Msfp.Protocol.VideoKey.TryParse(key, out var k) || k.Scheme != "tmdb")
-        {
-            return null;
-        }
-
-        return k.Kind == "movie"
-            ? w.Films.TryGetValue(k.Id, out var f) ? f.Copy : null
-            : w.Series.TryGetValue(k.Id, out var s) && s.Episodes.TryGetValue(key, out var e) ? e.Copy : null;
-    }
+    internal static Playable? CopyOf(Wanted? w, string path) =>
+        w is not null && w.ByPath.TryGetValue(path, out var p) ? p : null;
 
     /// <summary>
     /// <see cref="CopyOf"/> for a playback: the copies are taken from the
@@ -131,14 +135,14 @@ public sealed class StandIns : IHostedService, IDisposable
     /// (the next pass comes 30 seconds after; a server paired since may
     /// hold the title).
     /// </summary>
-    internal async Task<Playable?> CopyOfAsync(string key, CancellationToken ct)
+    internal async Task<Playable?> CopyOfAsync(string path, CancellationToken ct)
     {
         if (_host.Engine is not { } engine)
         {
-            return CopyOf(key);
+            return CopyOf(path);
         }
 
-        var cached = CopyOf(key);
+        var cached = CopyOf(path);
         if (cached is not null)
         {
             var paired = (await engine.PeersAsync(ct).ConfigureAwait(false))
@@ -149,14 +153,26 @@ public sealed class StandIns : IHostedService, IDisposable
             }
         }
 
-        var wanted = Wanted.Of(await LivePeersAsync(engine, ct).ConfigureAwait(false), Held());
+        var wanted = Wanted.Of(await LivePeersAsync(engine, ct).ConfigureAwait(false), Held(), Links());
         lock (_lock)
         {
             _wanted ??= wanted;
         }
 
-        return CopyOf(wanted, key);
+        return CopyOf(wanted, path);
     }
+
+    /// <summary>The skip markers of a stand-in's best copy, as Jellyfin's segments (the provider's answer, <see cref="PairedSegments"/>).</summary>
+    internal IReadOnlyList<MediaBrowser.Model.MediaSegments.MediaSegmentDto> SegmentsOf(Guid itemId) =>
+        _library.GetItemById(itemId) is { Path: { } path } && CopyOf(path)?.Chosen is { } h
+            ? PairedSegments.Wanted(h.Best.Segments).Select(m => new MediaBrowser.Model.MediaSegments.MediaSegmentDto
+            {
+                ItemId = itemId,
+                Type = m.Type,
+                StartTicks = m.StartTicks,
+                EndTicks = m.EndTicks,
+            }).ToList()
+            : [];
 
     /// <summary>Whether every server a copy names is still paired.</summary>
     internal static bool Fresh(Playable copy, IReadOnlySet<string> paired) => copy.Holders.All(h => paired.Contains(h.Peer));
@@ -259,14 +275,6 @@ public sealed class StandIns : IHostedService, IDisposable
     /// <summary>One pass: the libraries made, the stand-ins as the catalogs and this server's titles say.</summary>
     internal async Task KeepAsync(CancellationToken ct)
     {
-        // Off on this branch until phase 5 of the migration builds the
-        // stand-ins from the copies' facts (MSFP's revised version 0): those
-        // already made are left as they are.
-        if (!RemotePlays.ViewingOn)
-        {
-            return;
-        }
-
         if (Plugin.Instance is not { } plugin || !await _running.WaitAsync(0, ct).ConfigureAwait(false))
         {
             return;
@@ -274,15 +282,15 @@ public sealed class StandIns : IHostedService, IDisposable
 
         try
         {
-            Wanted wanted;
+            List<(string Peer, IEnumerable<Title> Titles)> peers;
             if (_host.Engine is { } engine)
             {
-                wanted = Wanted.Of(await LivePeersAsync(engine, ct).ConfigureAwait(false), Held());
+                peers = await LivePeersAsync(engine, ct).ConfigureAwait(false);
             }
             else if (_host.Problem.Length > 0)
             {
                 // Federation off: the libraries empty, kept.
-                wanted = new Wanted();
+                peers = [];
             }
             else
             {
@@ -297,6 +305,7 @@ public sealed class StandIns : IHostedService, IDisposable
                 await _channels.GetChannelsInternalAsync(new MediaBrowser.Model.Channels.ChannelQuery()).ConfigureAwait(false);
             }
 
+            var wanted = Wanted.Of(peers, Held(), Links());
             _wanted = wanted;
             var films = Library(plugin, Shelf.Films);
             var series = Library(plugin, Shelf.Series);
@@ -307,16 +316,40 @@ public sealed class StandIns : IHostedService, IDisposable
                 FilmsName = films.Name,
                 SeriesName = series.Name,
             };
+
+            // "Recently added": when this server first saw each title.
+            var seenFile = FirstSeen.PathIn(plugin.DataFolderPath);
+            var seen = FirstSeen.Load(seenFile);
+            if (!seen.Existed)
+            {
+                var before = (films.Folder is { } a ? Existing(a).Values : Enumerable.Empty<BaseItem>()).Concat(series.Folder is { } b ? Existing(b).Values : Enumerable.Empty<BaseItem>()).ToList();
+                foreach (var item in before)
+                {
+                    seen.Seed(item.Path!, item.DateCreated);
+                }
+
+                // An update: the paired servers were read before.
+                if (before.Count > 0)
+                {
+                    seen.Read(peers.Select(p => p.Peer));
+                }
+            }
+
+            var pass = new Pass(seen, DateTime.UtcNow);
             if (films.Folder is { } ff)
             {
-                counts.FilmCount = await KeepFilmsAsync(ff, wanted, ct).ConfigureAwait(false);
+                counts.FilmCount = await KeepFilmsAsync(ff, wanted, pass, ct).ConfigureAwait(false);
             }
 
             if (series.Folder is { } sf)
             {
-                (counts.SeriesCount, counts.EpisodeCount) = await KeepSeriesAsync(sf, wanted, ct).ConfigureAwait(false);
+                (counts.SeriesCount, counts.EpisodeCount) = await KeepSeriesAsync(sf, wanted, pass, ct).ConfigureAwait(false);
             }
 
+            // Only once their titles are dated: a first reading's count as old.
+            seen.Read(peers.Where(p => p.Titles.Any()).Select(p => p.Peer));
+            seen.Prune(pass.Now);
+            seen.Save(seenFile);
             counts.Kept = DateTimeOffset.UtcNow;
             Status = counts;
         }
@@ -325,6 +358,9 @@ public sealed class StandIns : IHostedService, IDisposable
             _running.Release();
         }
     }
+
+    // A pass's clock and records of when titles were first seen.
+    private sealed record Pass(FirstSeen Seen, DateTime Now);
 
     // The paired servers heard from within 7 days, each with the titles read of it.
     private async Task<List<(string Peer, IEnumerable<Title> Titles)>> LivePeersAsync(MsfpEngine engine, CancellationToken ct)
@@ -364,15 +400,16 @@ public sealed class StandIns : IHostedService, IDisposable
         return peers;
     }
 
-    // What this server holds itself, by TMDB: the plugin's identity of a
-    // title where there is one (the libraries offered), Jellyfin's ID
-    // otherwise; a series' episodes by TMDB's ID where the identity mapped
-    // them, by their numbers otherwise.
+    // What this server holds itself, by TMDB and TheTVDB: the plugin's
+    // identity of a title where there is one (the libraries offered),
+    // Jellyfin's IDs otherwise; a series' episodes by TMDB's or TheTVDB's ID
+    // where known (the identity's map, Jellyfin's IDs), by their numbers
+    // otherwise.
     private Held Held()
     {
         var held = new Held();
         var identities = _identifier.Identities;
-        var seriesTmdb = new Dictionary<Guid, (long Tmdb, TitleIdentity? Identity)>();
+        var seriesIds = new Dictionary<Guid, (long Tmdb, long Tvdb, TitleIdentity? Identity)>();
         foreach (var item in _library.GetItemList(new InternalItemsQuery
         {
             IncludeItemTypes = [BaseItemKind.Movie, BaseItemKind.Series],
@@ -386,19 +423,21 @@ public sealed class StandIns : IHostedService, IDisposable
             }
 
             var identity = identities.Of(item.Id);
-            var tmdb = identity?.Taken ?? Catalog.JellyfinCatalogSource.TmdbId(item.GetProviderId(MetadataProvider.Tmdb));
-            if (tmdb is not { } id)
+            var tmdb = identity?.Taken ?? Catalog.JellyfinCatalogSource.TmdbId(item.GetProviderId(MetadataProvider.Tmdb)) ?? 0;
+            if (item is Movie)
             {
+                if (tmdb > 0)
+                {
+                    held.Films.Add(tmdb);
+                }
+
                 continue;
             }
 
-            if (item is Movie)
+            var tvdb = Catalog.JellyfinCatalogSource.TmdbId(item.GetProviderId(MetadataProvider.Tvdb)) ?? 0;
+            if (tmdb > 0 || tvdb > 0)
             {
-                held.Films.Add(id);
-            }
-            else
-            {
-                seriesTmdb[item.Id] = (id, identity);
+                seriesIds[item.Id] = (tmdb, tvdb, identity);
             }
         }
 
@@ -409,28 +448,72 @@ public sealed class StandIns : IHostedService, IDisposable
             IsVirtualItem = false,
         }))
         {
-            if (item is not Episode e || PairedSources.IsStandIn(e) || !seriesTmdb.TryGetValue(e.SeriesId, out var s)
+            if (item is not Episode e || PairedSources.IsStandIn(e) || !seriesIds.TryGetValue(e.SeriesId, out var s)
                 || e.ParentIndexNumber is not { } season || e.IndexNumber is not { } first)
             {
                 continue;
             }
 
-            var hs = held.SeriesOf(s.Tmdb);
-            var last = e.IndexNumberEnd is { } end && end > first && end - first < 16 ? end : first;
-            for (var n = first; n <= last; n++)
+            var sides = new List<HeldSeries>();
+            if (s.Tmdb > 0)
             {
-                if (s.Identity?.Episodes.TryGetValue(TitleIdentity.EpisodeKey(season, n), out var mapped) == true)
+                sides.Add(held.SeriesOf(s.Tmdb));
+            }
+
+            if (s.Tvdb > 0)
+            {
+                sides.Add(held.TvdbSeriesOf(s.Tvdb));
+            }
+
+            var tvdbEpisode = Catalog.JellyfinCatalogSource.TmdbId(e.GetProviderId(MetadataProvider.Tvdb));
+            var tmdbEpisode = Catalog.JellyfinCatalogSource.TmdbId(e.GetProviderId(MetadataProvider.Tmdb));
+            var last = e.IndexNumberEnd is { } end && end > first && end - first < 16 ? end : first;
+            foreach (var hs in sides)
+            {
+                if (tvdbEpisode is { } tv)
                 {
-                    hs.EpisodeIds.Add(mapped.EpisodeId);
+                    hs.TvdbEpisodeIds.Add(tv);
                 }
-                else
+
+                if (tmdbEpisode is { } tm && last == first)
                 {
-                    hs.Numbers.Add((season, n));
+                    hs.EpisodeIds.Add(tm);
+                }
+
+                for (var n = first; n <= last; n++)
+                {
+                    if (s.Identity?.Episodes.TryGetValue(TitleIdentity.EpisodeKey(season, n), out var mapped) == true)
+                    {
+                        hs.EpisodeIds.Add(mapped.EpisodeId);
+                    }
+                    else
+                    {
+                        hs.Numbers.Add((season, n));
+                    }
                 }
             }
         }
 
         return held;
+    }
+
+    // The TMDB series of the stand-ins that Jellyfin's metadata gives a
+    // TheTVDB ID too: a series another paired server keys under tvdb is the
+    // same show (MSFP video section 4.3).
+    private Dictionary<long, long> Links()
+    {
+        var links = new Dictionary<long, long>();
+        foreach (var item in _library.GetItemList(new InternalItemsQuery { IncludeItemTypes = [BaseItemKind.Series], Recursive = true }))
+        {
+            if (PairedSources.IsStandIn(item)
+                && Catalog.JellyfinCatalogSource.TmdbId(item.GetProviderId(MetadataProvider.Tmdb)) is { } tmdb
+                && Catalog.JellyfinCatalogSource.TmdbId(item.GetProviderId(MetadataProvider.Tvdb)) is { } tvdb)
+            {
+                links.TryAdd(tmdb, tvdb);
+            }
+        }
+
+        return links;
     }
 
     // A library of the plugin's: found by its folder, made when it never
@@ -486,31 +569,39 @@ public sealed class StandIns : IHostedService, IDisposable
         return _library.FindByPath(dir, true) is Folder folder ? (folder, "ready", existing.Name ?? string.Empty) : (null, "making", existing.Name ?? string.Empty);
     }
 
-    private async Task<int> KeepFilmsAsync(Folder library, Wanted wanted, CancellationToken ct)
+    private async Task<int> KeepFilmsAsync(Folder library, Wanted wanted, Pass pass, CancellationToken ct)
     {
         var existing = Existing(library);
         var created = new List<Guid>();
         foreach (var f in wanted.Films.Values)
         {
-            var path = Wanted.PathOf(f.Copy.Key);
+            var path = f.Path;
+            var date = pass.Seen.Of(path, f.Copy.Holders.Select(h => h.Peer), pass.Now);
             if (!existing.Remove(path, out var item))
             {
                 var movie = new Movie { Id = _library.GetNewItemId(path, typeof(Movie)), Path = path };
-                Prepare(movie, library.Id);
-                movie.SetProviderId(MetadataProvider.Tmdb, Wanted.Number(f.Tmdb));
-                SetIds(movie, f.Ids);
+                Prepare(movie, library.Id, date);
+                if (f.Local is null)
+                {
+                    movie.SetProviderId(MetadataProvider.Tmdb, Wanted.Number(f.Tmdb));
+                }
+
                 _library.CreateItem(movie, library);
                 await movie.ReattachUserDataAsync(ct).ConfigureAwait(false);
-                created.Add(movie.Id);
+                if (f.Local is null)
+                {
+                    created.Add(movie.Id);
+                }
+
                 item = movie;
             }
-            else if (string.IsNullOrEmpty(item.Name))
+            else if (string.IsNullOrEmpty(item.Name) && f.Local is null)
             {
                 // Its metadata never came (TMDB unreachable, ...): asked again.
                 created.Add(item.Id);
             }
 
-            SaveStreams(item, f.Copy);
+            await DescribeAsync(item, library, f.Copy, date, f.Local, ct).ConfigureAwait(false);
         }
 
         await RemoveAsync(existing.Values, ct).ConfigureAwait(false);
@@ -518,36 +609,49 @@ public sealed class StandIns : IHostedService, IDisposable
         return wanted.Films.Count;
     }
 
-    private async Task<(int Series, int Episodes)> KeepSeriesAsync(Folder library, Wanted wanted, CancellationToken ct)
+    private async Task<(int Series, int Episodes)> KeepSeriesAsync(Folder library, Wanted wanted, Pass pass, CancellationToken ct)
     {
         var existing = Existing(library);
         var created = new List<Guid>();
         var episodes = 0;
         foreach (var w in wanted.Series.Values)
         {
-            var seriesPath = Wanted.PathOf(Wanted.SeriesKey(w.Tmdb));
-            if (!existing.Remove(seriesPath, out var seriesItem) || seriesItem is not Series series)
+            if (w.Episodes.Count == 0)
             {
-                series = new Series { Id = _library.GetNewItemId(seriesPath, typeof(Series)), Path = seriesPath };
-                Prepare(series, library.Id);
-                series.SetProviderId(MetadataProvider.Tmdb, Wanted.Number(w.Tmdb));
-                SetIds(series, w.Ids);
-                _library.CreateItem(series, library);
-                created.Add(series.Id);
+                continue;
             }
-            else if (string.IsNullOrEmpty(series.Name))
+
+            var holders = w.Episodes.Values.SelectMany(e => e.Copy.Holders.Select(h => h.Peer)).Distinct().ToList();
+            var seriesDate = pass.Seen.Of(w.Path, holders, pass.Now);
+            if (!existing.Remove(w.Path, out var seriesItem) || seriesItem is not Series series)
+            {
+                series = new Series { Id = _library.GetNewItemId(w.Path, typeof(Series)), Path = w.Path };
+                Prepare(series, library.Id, seriesDate);
+                SetIds(series, w);
+                _library.CreateItem(series, library);
+                if (w.Local is null)
+                {
+                    created.Add(series.Id);
+                }
+            }
+            else if (string.IsNullOrEmpty(series.Name) && w.Local is null)
             {
                 created.Add(series.Id);
             }
 
             await OutOfChannelAsync(series, library, ct).ConfigureAwait(false);
+            await KeepIdsAsync(series, library, w, ct).ConfigureAwait(false);
+            await DescribeLocalAsync(series, library, w.Local, ct).ConfigureAwait(false);
+            await DateAsync(series, library, seriesDate, ct).ConfigureAwait(false);
 
             var seasons = new Dictionary<int, Season>();
-            foreach (var e in w.Episodes.Values)
+            foreach (var (path, e) in w.Episodes)
             {
                 if (!seasons.TryGetValue(e.Season, out var season))
                 {
-                    var seasonPath = Wanted.PathOf(Wanted.SeasonKey(w.Tmdb, e.Season));
+                    var seasonPath = Wanted.SeasonPath(w.Path, e.Season);
+                    var inSeason = w.Episodes.Values.Where(x => x.Season == e.Season).SelectMany(x => x.Copy.Holders.Select(h => h.Peer)).Distinct().ToList();
+                    var seasonDate = pass.Seen.Of(seasonPath, inSeason, pass.Now);
                     if (!existing.Remove(seasonPath, out var seasonItem) || seasonItem is not Season s)
                     {
                         s = new Season
@@ -558,11 +662,19 @@ public sealed class StandIns : IHostedService, IDisposable
                             SeriesId = series.Id,
                             SeriesName = series.Name,
                         };
-                        Prepare(s, series.Id);
+                        Prepare(s, series.Id, seasonDate);
                         // Named as Jellyfin names its own (else by its path's end, "s1").
                         s.Name = SeasonName(e.Season);
+                        if (w.Local is not null)
+                        {
+                            s.IsLocked = true;
+                        }
+
                         _library.CreateItem(s, series);
-                        created.Add(s.Id);
+                        if (w.Local is null)
+                        {
+                            created.Add(s.Id);
+                        }
                     }
                     else if (s.Name != SeasonName(e.Season) && s.Name == Path.GetFileName(seasonPath))
                     {
@@ -571,15 +683,16 @@ public sealed class StandIns : IHostedService, IDisposable
                     }
 
                     await OutOfChannelAsync(s, series, ct).ConfigureAwait(false);
+                    await DateAsync(s, series, seasonDate, ct).ConfigureAwait(false);
                     season = s;
                     seasons[e.Season] = season;
                 }
 
-                var path = Wanted.PathOf(e.Copy.Key);
+                var date = pass.Seen.Of(path, e.Copy.Holders.Select(h => h.Peer), pass.Now);
                 existing.Remove(path, out var item);
                 if (item is Episode moved && (moved.ParentIndexNumber != e.Season || moved.IndexNumber != e.Episode))
                 {
-                    // TMDB moved it: made again at its new place, its user data kept.
+                    // Moved (TMDB's place, another numbering): made again at its new place, its user data kept.
                     Remove([moved]);
                     item = null;
                 }
@@ -597,23 +710,24 @@ public sealed class StandIns : IHostedService, IDisposable
                         SeriesId = series.Id,
                         SeriesName = series.Name,
                     };
-                    Prepare(episode, season.Id);
-                    if (e.EpisodeId > 0)
-                    {
-                        episode.SetProviderId(MetadataProvider.Tmdb, Wanted.Number(e.EpisodeId));
-                    }
-
+                    Prepare(episode, season.Id, date);
+                    SetIds(episode, e.Ids);
                     _library.CreateItem(episode, season);
                     await episode.ReattachUserDataAsync(ct).ConfigureAwait(false);
-                    created.Add(episode.Id);
+                    if (w.Local is null)
+                    {
+                        created.Add(episode.Id);
+                    }
+
                     item = episode;
                 }
-                else if (string.IsNullOrEmpty(item.Name))
+                else if (string.IsNullOrEmpty(item.Name) && w.Local is null)
                 {
                     created.Add(item.Id);
                 }
 
-                SaveStreams(item, e.Copy);
+                var local = w.Local is null ? null : w.Local with { Name = EpisodeName(e), Year = 0, Image = false };
+                await DescribeAsync(item, season, e.Copy, date, local, ct).ConfigureAwait(false);
                 episodes++;
             }
         }
@@ -621,8 +735,12 @@ public sealed class StandIns : IHostedService, IDisposable
         // Episodes first, then their seasons and series.
         await RemoveAsync(existing.Values.OrderBy(i => i is Episode ? 0 : i is Season ? 1 : 2), ct).ConfigureAwait(false);
         Refresh(created);
-        return (wanted.Series.Count, episodes);
+        return (wanted.Series.Values.Count(s => s.Episodes.Count > 0), episodes);
     }
+
+    // A local series' episode has no name of its own: its numbers name it (MSFP video section 3.10).
+    private static string EpisodeName(WantedEpisode e) =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"S{e.Season:00}E{e.Episode:00}");
 
     // The stand-ins under a library, by path.
     private Dictionary<string, BaseItem> Existing(Folder library)
@@ -649,14 +767,23 @@ public sealed class StandIns : IHostedService, IDisposable
     // library item, or Jellyfin counts none of its episodes for it (unplayed
     // count, watched percentage: Folder.SupportsUserDataFromChildren is
     // false for an item from a channel).
-    private void Prepare(BaseItem item, Guid parent)
+    private void Prepare(BaseItem item, Guid parent, DateTime created)
     {
-        var now = DateTime.UtcNow;
         item.ParentId = parent;
         item.ChannelId = item is Series or Season ? Guid.Empty : ChannelId();
-        item.DateCreated = now;
-        item.DateModified = now;
+        item.DateCreated = created;
+        item.DateModified = DateTime.UtcNow;
         item.Name = string.Empty;
+    }
+
+    // "Recently added" as this server first saw the title (FirstSeen).
+    private async Task DateAsync(BaseItem item, BaseItem parent, DateTime date, CancellationToken ct)
+    {
+        if (item.DateCreated != date)
+        {
+            item.DateCreated = date;
+            await _library.UpdateItemAsync(item, parent, ItemUpdateType.MetadataEdit, ct).ConfigureAwait(false);
+        }
     }
 
     // A series or a season made by an earlier version in the channel: taken
@@ -678,63 +805,235 @@ public sealed class StandIns : IHostedService, IDisposable
 
     private Guid ChannelId() => _library.GetNewItemId("Channel " + PairedChannel.ChannelName, typeof(Channel));
 
+    // A series' IDs: TMDB's, TheTVDB's (Jellyfin's TMDB provider finds a
+    // series by it too), IMDb's.
+    private static void SetIds(Series series, WantedSeries w)
+    {
+        if (w.Local is not null)
+        {
+            return;
+        }
+
+        if (w.Tmdb > 0)
+        {
+            series.SetProviderId(MetadataProvider.Tmdb, Wanted.Number(w.Tmdb));
+        }
+
+        if (w.Tvdb > 0)
+        {
+            series.SetProviderId(MetadataProvider.Tvdb, Wanted.Number(w.Tvdb));
+        }
+
+        if (w.Ids.TryGetValue("imdb", out var imdb))
+        {
+            series.SetProviderId(MetadataProvider.Imdb, imdb);
+        }
+    }
+
+    // A series' IDs where the stand-in lacks one the catalogs now give
+    // (a tvdb series now known to TMDB, say): added, never removed
+    // (Jellyfin's metadata adds its own).
+    private async Task KeepIdsAsync(Series series, BaseItem parent, WantedSeries w, CancellationToken ct)
+    {
+        var before = string.Join(',', series.ProviderIds.OrderBy(p => p.Key).Select(p => p.Key + "=" + p.Value));
+        if (w.Tmdb > 0 && string.IsNullOrEmpty(series.GetProviderId(MetadataProvider.Tmdb)))
+        {
+            series.SetProviderId(MetadataProvider.Tmdb, Wanted.Number(w.Tmdb));
+        }
+
+        if (w.Tvdb > 0 && string.IsNullOrEmpty(series.GetProviderId(MetadataProvider.Tvdb)))
+        {
+            series.SetProviderId(MetadataProvider.Tvdb, Wanted.Number(w.Tvdb));
+        }
+
+        if (before != string.Join(',', series.ProviderIds.OrderBy(p => p.Key).Select(p => p.Key + "=" + p.Value)))
+        {
+            await _library.UpdateItemAsync(series, parent, ItemUpdateType.MetadataEdit, ct).ConfigureAwait(false);
+        }
+    }
+
+    // An episode's IDs: TMDB's, TheTVDB's and IMDb's of it.
     private static void SetIds(BaseItem item, Dictionary<string, string> ids)
     {
-        if (ids.TryGetValue("imdb", out var imdb))
+        if (ids.TryGetValue("tmdb", out var tmdb))
         {
-            item.SetProviderId(MetadataProvider.Imdb, imdb);
+            item.SetProviderId(MetadataProvider.Tmdb, tmdb);
         }
 
         if (ids.TryGetValue("tvdb", out var tvdb))
         {
             item.SetProviderId(MetadataProvider.Tvdb, tvdb);
         }
+
+        if (ids.TryGetValue("imdb", out var imdb))
+        {
+            item.SetProviderId(MetadataProvider.Imdb, imdb);
+        }
     }
 
-    // The languages and picture the catalogs gave, as the item's streams,
-    // and its own source (saved where Jellyfin keeps a channel item's), at
-    // every pass: one saved right after an item was made was lost once.
-    private void SaveStreams(BaseItem item, Playable copy)
+    // A film's or an episode's description from its holder's copies, at
+    // every pass (one saved right after an item was made was lost once):
+    // one source per copy, best first, each with its streams; the item's
+    // length, size, container, picture size and 3D from the best; its
+    // chapters and skip markers; its day; a local title's description.
+    private async Task DescribeAsync(BaseItem item, BaseItem parent, Playable copy, DateTime date, LocalTitle? local, CancellationToken ct)
     {
-        // Playing now: its saved source is the playback's (SavePlaying).
-        if (Playing.ContainsKey(item.Id))
+        if (copy.Chosen is not { } holder)
         {
             return;
         }
 
-        var streams = Streams.Of(copy, Three);
-        _streams.SaveMediaStreams(item.Id, streams, CancellationToken.None);
-        SaveSource(item, streams);
+        var best = holder.Best;
+        var options = _library.GetLibraryOptions(item);
+        var hasSegments = false;
+        try
+        {
+            hasSegments = await PairedSegments.SaveAsync(_segments, item, options, best.Segments, ct).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            _log.LogInformation(e, "MSFP: the skip markers of {Path} couldn't be kept", item.Path);
+        }
+
+        var sources = Sources(item, holder, hasSegments);
+        _streams.SaveMediaStreams(item.Id, sources[0].MediaStreams.ToList(), CancellationToken.None);
+        SaveSources(item, sources);
+        SaveChapters(item, best);
+
+        var changed = false;
+        void Set<T>(T now, T was, Action<T> set)
+        {
+            if (!EqualityComparer<T>.Default.Equals(now, was))
+            {
+                set(now);
+                changed = true;
+            }
+        }
+
+        Set<long?>(best.DurationMs > 0 ? best.DurationMs * TimeSpan.TicksPerMillisecond : item.RunTimeTicks, item.RunTimeTicks, v => item.RunTimeTicks = v);
+        Set<long?>(best.Size, item.Size, v => item.Size = v);
+        Set(StandInStreams.Container(best.MediaType), item.Container, v => item.Container = v);
+        Set(StandInStreams.Bitrate(best), item.TotalBitrate, v => item.TotalBitrate = v);
+        Set(best.Video?.Width ?? 0, item.Width, v => item.Width = v);
+        Set(best.Video?.Height ?? 0, item.Height, v => item.Height = v);
+        if (item is Video video)
+        {
+            Set(StandInStreams.ThreeD(best.ThreeD), video.Video3DFormat, v => video.Video3DFormat = v);
+        }
+
+        Set(date, item.DateCreated, v => item.DateCreated = v);
+        if (changed)
+        {
+            await _library.UpdateItemAsync(item, parent, ItemUpdateType.MetadataEdit, ct).ConfigureAwait(false);
+        }
+
+        await DescribeLocalAsync(item, parent, local, ct).ConfigureAwait(false);
     }
 
-    /// <summary>The stand-ins playing now: the passes leave their saved source alone.</summary>
-    internal static System.Collections.Concurrent.ConcurrentDictionary<Guid, int> Playing { get; } = new();
+    // A local title's description, the owner's (MSFP video section 3.10):
+    // its name and year, its image fetched once (re-encoded by the engine),
+    // the item locked so that Jellyfin never looks it up elsewhere.
+    private async Task DescribeLocalAsync(BaseItem item, BaseItem parent, LocalTitle? local, CancellationToken ct)
+    {
+        if (local is null)
+        {
+            return;
+        }
 
-    /// <summary>
-    /// A stand-in's saved source while it plays: the playback's streams, its
-    /// subtitle tracks at the relay among them. Jellyfin's subtitle route
-    /// reads the item's saved source, not the live one.
-    /// </summary>
-    internal static void SavePlaying(BaseItem item, List<MediaStream> streams) => SaveSource(item, streams);
+        int? year = local.Year is >= 1800 and <= 9999 ? local.Year : null;
+        if (item.Name != local.Name || item.ProductionYear != year || !item.IsLocked)
+        {
+            item.Name = local.Name;
+            item.ProductionYear = year;
+            item.IsLocked = true;
+            await _library.UpdateItemAsync(item, parent, ItemUpdateType.MetadataEdit, ct).ConfigureAwait(false);
+        }
 
-    private static void SaveSource(BaseItem item, List<MediaStream> streams)
+        if (!local.Image || item.HasImage(ImageType.Primary, 0) || _host.Engine is not { } engine)
+        {
+            return;
+        }
+
+        try
+        {
+            var (image, format) = await engine.TitleImageAsync(local.Peer, local.Key, ct).ConfigureAwait(false);
+            using var stream = new MemoryStream(image);
+            await _providers.SaveImage(item, stream, "image/" + format, ImageType.Primary, null, ct).ConfigureAwait(false);
+            await _library.UpdateItemAsync(item, parent, ItemUpdateType.ImageUpdate, ct).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            // Asked again at a next pass.
+            _log.LogInformation("MSFP: the image of a paired server's local title couldn't be fetched: {Message}", e.Message);
+        }
+    }
+
+    // The holder's copies as the stand-in's sources, best first, each named
+    // by its label.
+    private List<MediaSourceInfo> Sources(BaseItem item, Holder holder, bool hasSegments)
+    {
+        var labels = StandInStreams.Labels(holder.Copies);
+        var sources = new List<MediaSourceInfo>();
+        for (var i = 0; i < holder.Copies.Count; i++)
+        {
+            var c = holder.Copies[i];
+            var id = PairedSources.SourceIdOf(item, holder.Peer, c.Id, i == 0);
+            var built = StandInStreams.Of(c, Three, s => SubtitlePath(item, id, s.Id));
+            sources.Add(PairedSources.SourceOf(item, id, labels[i], c, built.Streams, hasSegments));
+        }
+
+        return sources;
+    }
+
+    // Where Jellyfin reads a subtitle track beside a copy's file: the
+    // plugin's route on its own loopback, which fetches it from the paired
+    // server during a playback (migration phase 6).
+    private string SubtitlePath(BaseItem item, string sourceId, string track)
+    {
+        var net = _server.GetConfiguration<MediaBrowser.Common.Net.NetworkConfiguration>("network");
+        var baseUrl = (net.BaseUrl ?? string.Empty).Trim().TrimEnd('/');
+        if (baseUrl.Length > 0 && !baseUrl.StartsWith('/'))
+        {
+            baseUrl = "/" + baseUrl;
+        }
+
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"http://127.0.0.1:{net.InternalHttpPort}{baseUrl}/Msfp/Subtitle/{item.Id:N}/{sourceId}/{track}");
+    }
+
+    // The sources, saved where Jellyfin keeps a channel item's.
+    private static void SaveSources(BaseItem item, List<MediaSourceInfo> sources)
     {
         var dir = item.GetInternalMetadataPath();
         Directory.CreateDirectory(dir);
         var file = Path.Combine(dir, "channelmediasourceinfos.json");
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(new[] { PairedSources.SourceOf(item, streams) }, Jellyfin.Extensions.Json.JsonDefaults.Options);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(sources, Jellyfin.Extensions.Json.JsonDefaults.Options);
         if (!File.Exists(file) || !File.ReadAllBytes(file).AsSpan().SequenceEqual(bytes))
         {
             File.WriteAllBytes(file, bytes);
         }
     }
 
-    // A language tag of the catalog (BCP 47) as Jellyfin's three-letter code.
+    // The best copy's chapters, as a local file's (no images), when they changed.
+    private void SaveChapters(BaseItem item, global::Msfp.Protocol.Copy best)
+    {
+        var name = _localization.GetLocalizedString("ChapterNameValue");
+        var wanted = StandInStreams.Chapters(best, n => string.Format(System.Globalization.CultureInfo.CurrentCulture, name, n));
+        var had = _chapters.GetChapters(item.Id);
+        if (had.Count == wanted.Count && had.Zip(wanted).All(p => p.First.StartPositionTicks == p.Second.StartPositionTicks && p.First.Name == p.Second.Name))
+        {
+            return;
+        }
+
+        _chapters.SaveChapters(item, wanted);
+    }
+
+    // A language tag of the catalog (BCP 47) as Jellyfin writes a stream's ("fra").
     private string? Three(string tag)
     {
         var two = tag.Split('-')[0];
-        return Identification.Languages.Three(tag) is { Length: > 0 } three ? three
-            : _localization.FindLanguageInfo(two)?.ThreeLetterISOLanguageName ?? (two.Length == 3 ? two : null);
+        return Identification.Languages.Terminology(tag) is { Length: > 0 } three ? three
+            : two.Length == 3 ? two.ToLowerInvariant()
+            : _localization.FindLanguageInfo(two)?.ThreeLetterISOLanguageName;
     }
 
     private void Remove(IEnumerable<BaseItem> items)
@@ -788,7 +1087,8 @@ public sealed class StandIns : IHostedService, IDisposable
         }
     }
 
-    // New stand-ins get Jellyfin's metadata at once, names included.
+    // New stand-ins get Jellyfin's metadata at once, names included (never
+    // local titles: they are the owner's).
     private void Refresh(List<Guid> items)
     {
         foreach (var id in items)
