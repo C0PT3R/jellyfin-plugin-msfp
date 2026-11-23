@@ -14,7 +14,8 @@ namespace Jellyfin.Plugin.Msfp.Catalog;
 /// Tells the engine when this server's titles change: 30 seconds after
 /// Jellyfin's library events settle, and every 10 minutes whatever happens
 /// (a change Jellyfin raised no event for). The engine reads the catalog
-/// again then, and keeps what changed in its log. A library gone from
+/// again then, and keeps what changed in its log; and whenever the copy
+/// keeper's pass changed some title's copies. A library gone from
 /// Jellyfin is told apart: peers' playbacks from it end.
 /// </summary>
 public sealed class CatalogWatcher : IHostedService, IDisposable
@@ -26,6 +27,7 @@ public sealed class CatalogWatcher : IHostedService, IDisposable
     private readonly HostCatalog _catalog;
     private readonly EngineHost _host;
     private readonly Identification.Identifier _identifier;
+    private readonly CopyKeeper _copies;
     private readonly ILogger<CatalogWatcher> _log;
     private readonly object _lock = new();
     private HashSet<string>? _libraries;
@@ -33,8 +35,9 @@ public sealed class CatalogWatcher : IHostedService, IDisposable
     private Timer? _every;
     private int _running;
 
-    public CatalogWatcher(ILibraryManager library, HostCatalog catalog, EngineHost host, Identification.Identifier identifier, ILogger<CatalogWatcher> log)
+    public CatalogWatcher(ILibraryManager library, HostCatalog catalog, EngineHost host, Identification.Identifier identifier, CopyKeeper copies, ILogger<CatalogWatcher> log)
     {
+        _copies = copies;
         _library = library;
         _catalog = catalog;
         _host = host;
@@ -50,6 +53,8 @@ public sealed class CatalogWatcher : IHostedService, IDisposable
         _library.ItemRemoved += Changed;
         // An identity changed (a match, the owner's choice): the titles may have.
         _identifier.Identities.Changed += IdentitiesChanged;
+        // The copies changed (a pass, a file read): read again now.
+        _copies.Changed += CopiesChanged;
         _every = new Timer(_ => Run(), null, TimeSpan.FromSeconds(15), Every);
         return Task.CompletedTask;
     }
@@ -61,6 +66,7 @@ public sealed class CatalogWatcher : IHostedService, IDisposable
         _library.ItemUpdated -= Changed;
         _library.ItemRemoved -= Changed;
         _identifier.Identities.Changed -= IdentitiesChanged;
+        _copies.Changed -= CopiesChanged;
         _every?.Change(Timeout.Infinite, Timeout.Infinite);
         _settle?.Change(Timeout.Infinite, Timeout.Infinite);
         return Task.CompletedTask;
@@ -80,10 +86,13 @@ public sealed class CatalogWatcher : IHostedService, IDisposable
             return;
         }
 
-        // Files changed: identified again where needed, then read.
+        // Files changed: identified again where needed, described again, then read.
         _identifier.Poke();
+        _copies.Wake();
         Soon();
     }
+
+    private void CopiesChanged(object? sender, EventArgs e) => Task.Run(Run);
 
     private void IdentitiesChanged(object? sender, EventArgs e) => Soon();
 

@@ -16,6 +16,8 @@ public class OfferedTests
         public IReadOnlyList<Library> Libraries() => libraries;
 
         public IEnumerable<CatalogEntry> Entries() => [];
+
+        public ValueTask<byte[]?> ImageAsync(Guid item, System.Threading.CancellationToken ct) => ValueTask.FromResult<byte[]?>(null);
     }
 
     // A library offered only to a group gets identified: without it, the

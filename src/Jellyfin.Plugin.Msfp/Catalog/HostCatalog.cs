@@ -4,25 +4,18 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Msfp;
-using Picture = Jellyfin.Plugin.Msfp.Federation.Picture;
+using Copy = Msfp.Protocol.Copy;
 
 namespace Jellyfin.Plugin.Msfp.Catalog;
 
-/// <summary>One title of one copy, as the media server holds it.</summary>
+/// <summary>One title as one library holds it, with that library's copies of it.</summary>
 /// <param name="Library">The media server's library ID: never sent (the engine maps it to a public ID).</param>
 /// <param name="Key">The title key (MSFP video section 4).</param>
-/// <param name="Kind">movie, series, season or episode.</param>
-/// <param name="Copy">The copy's handle (Jellyfin's item ID) for films and episodes; null for series and seasons.</param>
-public sealed record CatalogEntry(string Library, string Key, string Kind, string? Copy)
+/// <param name="Kind">movie, series, season, episode or extra.</param>
+public sealed record CatalogEntry(string Library, string Key, string Kind)
 {
-    /// <summary>The copy's audio languages, as the media server's codes.</summary>
-    public IReadOnlyList<string> Audio { get; init; } = [];
-
-    /// <summary>The copy's subtitle languages, of the tracks it can serve (text ones).</summary>
-    public IReadOnlyList<string> Subtitles { get; init; } = [];
-
-    /// <summary>The copy's picture; null when unknown.</summary>
-    public Picture? Picture { get; init; }
+    /// <summary>A film's, an episode's or an extra's copies in this library, in the owner's order (its default version first); their IDs are Jellyfin's item IDs (handles, never sent).</summary>
+    public IReadOnlyList<Copy> Copies { get; init; } = [];
 
     /// <summary>
     /// For an episode keyed by its TMDB ID: its place in TMDB's numbering
@@ -33,29 +26,23 @@ public sealed record CatalogEntry(string Library, string Key, string Kind, strin
     /// <summary>The other episodes the copy holds (a file of several episodes).</summary>
     public IReadOnlyList<string> With { get; init; } = [];
 
-    /// <summary>Other identifiers, by scheme (imdb, tvdb).</summary>
+    /// <summary>Other identifiers, by scheme (imdb, tvdb, tmdb), where MSFP takes them (video section 4.3).</summary>
     public IReadOnlyDictionary<string, string> Ids { get; init; } = new Dictionary<string, string>();
 
-    /// <summary>The copy's name, for versions.</summary>
-    public string CopyName { get; init; } = string.Empty;
-}
+    /// <summary>An extra's type, a token (trailer, featurette…).</summary>
+    public string? ExtraType { get; init; }
 
-/// <summary>
-/// A copy as this plugin keeps it: Jellyfin's item ID (the handle), its
-/// name and library, its audio languages. The engine's own Copy went with
-/// MSFP's revision; until phase 2 of the migration describes copies in
-/// MSFP's facts (Protocol.Copy on the title), they stay here and titles
-/// leave without copies.
-/// </summary>
-public sealed record OwnCopy
-{
-    public string Handle { get; init; } = string.Empty;
+    /// <summary>A local film's or series' name.</summary>
+    public string? Name { get; init; }
 
-    public string Name { get; init; } = string.Empty;
+    /// <summary>A local film's or series' year; 0 for none.</summary>
+    public int Year { get; init; }
 
-    public string Library { get; init; } = string.Empty;
+    /// <summary>A local film or series whose image is shared.</summary>
+    public bool Image { get; init; }
 
-    public List<string>? Audio { get; init; }
+    /// <summary>The item whose image a local title shares.</summary>
+    public Guid? ImageItem { get; init; }
 }
 
 /// <summary>Where this server's titles come from: Jellyfin, or a test's list.</summary>
@@ -64,17 +51,22 @@ public interface ICatalogSource
     /// <summary>The server's libraries, by the media server's IDs.</summary>
     IReadOnlyList<Library> Libraries();
 
-    /// <summary>Every title of every library, keyed by TMDB.</summary>
+    /// <summary>Every title of every library.</summary>
     IEnumerable<CatalogEntry> Entries();
+
+    /// <summary>A local title's image (a JPEG within MSFP's bounds), from its item; null for none.</summary>
+    ValueTask<byte[]?> ImageAsync(Guid item, CancellationToken ct);
 }
 
 /// <summary>
 /// This server's catalog for the engine (its ICatalog): the source read
 /// whole, its entries joined by key, kept until the source changes
 /// (<see cref="Changed"/>). The engine keeps the change log itself, from
-/// snapshots of these titles, in its store.
+/// snapshots of these titles, in its store. A title's copies leave only
+/// to the libraries that hold them: a peer offered one library never sees
+/// another's copies of the same title.
 /// </summary>
-public sealed class HostCatalog : ICatalog
+public sealed class HostCatalog : ICatalog, IImages
 {
     private readonly ICatalogSource _source;
     private readonly object _lock = new();
@@ -124,16 +116,26 @@ public sealed class HostCatalog : ICatalog
                 continue;
             }
 
+            List<Copy>? copies = null;
+            if (t.Copies is { } all)
+            {
+                copies = all.Where(c => s.CopyLibraries.TryGetValue((t.Key, c.Id), out var held) && held.Any(wanted.Contains)).ToList();
+                if (copies.Count == 0)
+                {
+                    continue;
+                }
+            }
+
             if (titles.Count == limit)
             {
                 more = true;
                 break;
             }
 
-            // Titles leave without copies until phase 2 (copies as facts).
             titles.Add(t with
             {
                 Libraries = libs,
+                Copies = copies,
                 With = t.With?.ToList(),
                 Ids = t.Ids is null ? null : new Dictionary<string, string>(t.Ids),
             });
@@ -142,18 +144,15 @@ public sealed class HostCatalog : ICatalog
         return ValueTask.FromResult(new TitlePage(titles, more));
     }
 
-    /// <summary>
-    /// A title's copies in the given libraries, best first (the engine's
-    /// CopiesAsync before MSFP's revision; the plugin's own until phase 2
-    /// puts them on the titles).
-    /// </summary>
-    public ValueTask<IReadOnlyList<OwnCopy>> CopiesAsync(string key, IReadOnlyList<string> libraries, CancellationToken ct)
+    /// <inheritdoc />
+    public async ValueTask<byte[]> ImageAsync(string key, CancellationToken ct)
     {
-        var s = Read();
-        IReadOnlyList<OwnCopy> copies = s.Copies.TryGetValue(key, out var all)
-            ? all.Where(c => libraries.Contains(c.Library, StringComparer.Ordinal)).Select(c => c with { Audio = c.Audio?.ToList() }).ToList()
-            : [];
-        return ValueTask.FromResult(copies);
+        if (!Read().Images.TryGetValue(key, out var item) || await _source.ImageAsync(item, ct).ConfigureAwait(false) is not { Length: > 0 } image)
+        {
+            throw new MsfpException(MsfpError.NotFound);
+        }
+
+        return image;
     }
 
     /// <summary>The catalog as read once.</summary>
@@ -166,7 +165,11 @@ public sealed class HostCatalog : ICatalog
 
         public required IReadOnlyDictionary<string, VideoTitle> Titles { get; init; }
 
-        public required IReadOnlyDictionary<string, List<OwnCopy>> Copies { get; init; }
+        /// <summary>The libraries holding each title's copy, by (key, copy ID).</summary>
+        public required IReadOnlyDictionary<(string Key, string Copy), HashSet<string>> CopyLibraries { get; init; }
+
+        /// <summary>The item whose image each local title shares, by key.</summary>
+        public required IReadOnlyDictionary<string, Guid> Images { get; init; }
 
         /// <summary>The index of the first key strictly after this one.</summary>
         public int FirstAfter(string after)
@@ -196,8 +199,8 @@ public sealed class HostCatalog : ICatalog
         public static Snapshot Of(IReadOnlyList<Library> libraries, IEnumerable<CatalogEntry> entries)
         {
             var titles = new Dictionary<string, VideoTitle>(StringComparer.Ordinal);
-            var copies = new Dictionary<string, List<OwnCopy>>(StringComparer.Ordinal);
-            var pictures = new Dictionary<string, Picture>(StringComparer.Ordinal);
+            var held = new Dictionary<(string, string), HashSet<string>>();
+            var images = new Dictionary<string, Guid>(StringComparer.Ordinal);
             foreach (var e in entries)
             {
                 if (!titles.TryGetValue(e.Key, out var t))
@@ -215,36 +218,44 @@ public sealed class HostCatalog : ICatalog
                     t.Libraries.Add(e.Library);
                 }
 
-                // A title's languages and pictures come from its copies
-                // since MSFP's revision: phase 2.
                 t.With = Union(t.With, e.With);
                 t.Place ??= e.Place;
+                t.ExtraType ??= e.ExtraType;
+                if (e.Name is { Length: > 0 } && t.Name is null)
+                {
+                    (t.Name, t.Year, t.Image) = (e.Name, e.Year, e.Image);
+                    if (e.ImageItem is { } item)
+                    {
+                        images[e.Key] = item;
+                    }
+                }
 
                 foreach (var (scheme, id) in e.Ids)
                 {
                     (t.Ids ??= new Dictionary<string, string>(StringComparer.Ordinal)).TryAdd(scheme, id);
                 }
 
-                if (e.Copy is { } handle)
+                // The copies in the order the libraries list them, each
+                // once, each with the libraries holding it (the owner's
+                // order: Jellyfin's default version first).
+                foreach (var c in e.Copies)
                 {
-                    if (e.Picture is { } cp)
+                    if (!held.TryGetValue((e.Key, c.Id), out var libs))
                     {
-                        pictures[handle] = cp;
+                        held[(e.Key, c.Id)] = libs = new HashSet<string>(StringComparer.Ordinal);
+                        (t.Copies ??= []).Add(c);
                     }
 
-                    var list = copies.TryGetValue(e.Key, out var l) ? l : copies[e.Key] = [];
-                    if (!list.Any(c => c.Handle == handle && c.Library == e.Library))
-                    {
-                        list.Add(new OwnCopy { Handle = handle, Name = e.CopyName, Audio = e.Audio.ToList(), Library = e.Library });
-                    }
+                    libs.Add(e.Library);
                 }
             }
 
-            // Best first, so that play without a version plays it (MSFP
-            // video section 3.2).
-            foreach (var list in copies.Values)
+            foreach (var t in titles.Values)
             {
-                list.Sort((a, b) => Rank(pictures.GetValueOrDefault(b.Handle), pictures.GetValueOrDefault(a.Handle)));
+                if (t.Copies is { Count: > CopyKeeper.MaxCopies } many)
+                {
+                    t.Copies = many.Take(CopyKeeper.MaxCopies).ToList();
+                }
             }
 
             return new Snapshot
@@ -252,22 +263,9 @@ public sealed class HostCatalog : ICatalog
                 Libraries = libraries,
                 Keys = titles.Keys.Order(StringComparer.Ordinal).ToList(),
                 Titles = titles,
-                Copies = copies,
+                CopyLibraries = held,
+                Images = images,
             };
-        }
-
-        // Orders two copies' pictures as Picture.Best ranks them: above 0
-        // when a is the better.
-        private static int Rank(Picture? a, Picture? b)
-        {
-            var sa = a is null ? null : Picture.Best([a]);
-            var sb = b is null ? null : Picture.Best([b]);
-            if (sa is null || sb is null)
-            {
-                return sa is null ? (sb is null ? 0 : -1) : 1;
-            }
-
-            return sa.Better(sb) ? 1 : sb.Better(sa) ? -1 : 0;
         }
 
         private static List<string>? Union(List<string>? have, IReadOnlyList<string> add)

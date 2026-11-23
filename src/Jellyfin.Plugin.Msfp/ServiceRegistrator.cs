@@ -20,8 +20,13 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
         // The catalog asks the identifier for its identities when it reads,
         // not when it's made: the identifier needs the engine, which needs
         // the catalog.
+        // The engine's opaque key parts (local titles, extras) likewise: the
+        // engine needs the catalog.
+        serviceCollection.AddSingleton<CopyKeeper>();
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<CopyKeeper>());
         serviceCollection.AddSingleton<ICatalogSource>(sp =>
-            new JellyfinCatalogSource(sp.GetRequiredService<ILibraryManager>(), () => sp.GetRequiredService<Identifier>().Identities));
+            new JellyfinCatalogSource(sp.GetRequiredService<ILibraryManager>(), () => sp.GetRequiredService<Identifier>().Identities,
+                sp.GetRequiredService<CopyKeeper>(), id => sp.GetRequiredService<EngineHost>().Engine?.OpaqueKeyPart(id)));
         serviceCollection.AddSingleton<HostCatalog>();
         serviceCollection.AddSingleton<JellyfinPlayback>();
         serviceCollection.AddSingleton<EngineHost>();

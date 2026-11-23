@@ -14,6 +14,7 @@ artifacts:
 - "Jellyfin.Plugin.Msfp.dll"
 - "Msfp.Engine.dll"
 - "Msfp.Protocol.dll"
+- "Msfp.Describe.dll"
 - "BouncyCastle.Cryptography.dll"
 changelog: >
   Series from paired servers show how many episodes are left to watch,

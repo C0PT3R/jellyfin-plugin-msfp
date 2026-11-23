@@ -30,6 +30,8 @@
          repository, by project reference. Release day: back to the
          published package (the migration plan, section 11). -->
     <ProjectReference Include="../../../msfp-dotnet/src/Msfp.Engine/Msfp.Engine.csproj" />
+    <!-- Its describe package: a file's headers as a copy (shipped too). -->
+    <ProjectReference Include="../../../msfp-dotnet/src/Msfp.Describe/Msfp.Describe.csproj" />
   </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

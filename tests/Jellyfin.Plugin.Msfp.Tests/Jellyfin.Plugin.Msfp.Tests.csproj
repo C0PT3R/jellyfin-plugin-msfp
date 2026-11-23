@@ -16,6 +16,10 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
+    <!-- msfp-dotnet's describe fixtures (msfp-go's testdata), a few copied. -->
+    <None Include="testdata/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../../src/Jellyfin.Plugin.Msfp/Jellyfin.Plugin.Msfp.csproj" />
   </ItemGroup>
 </Project>

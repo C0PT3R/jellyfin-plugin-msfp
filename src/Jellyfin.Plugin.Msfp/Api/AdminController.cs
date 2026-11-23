@@ -147,9 +147,11 @@ public class AdminController : ControllerBase
     private readonly WantsKeeper _wants;
     private readonly JellyfinPlayback _playback;
     private readonly Identification.Identifier _identifier;
+    private readonly CopyKeeper _copies;
 
-    public AdminController(EngineHost host, HostCatalog catalog, WantsKeeper wants, JellyfinPlayback playback, Identification.Identifier identifier)
+    public AdminController(EngineHost host, HostCatalog catalog, WantsKeeper wants, JellyfinPlayback playback, Identification.Identifier identifier, CopyKeeper copies)
     {
+        _copies = copies;
         _host = host;
         _catalog = catalog;
         _wants = wants;
@@ -180,6 +182,37 @@ public class AdminController : ControllerBase
             transcodes = _playback.Transcodes is var t ? new { own = t.Own, peers = t.Peers, most = t.Most } : null,
         };
     }, off: true);
+
+    /// <summary>The copies described: versions, those not read yet, files waiting to be read, the last import. Counts only.</summary>
+    [HttpGet("Copies")]
+    public ContentResult Copies()
+    {
+        var c = _copies.Counts;
+        return Content(JsonSerializer.Serialize(new { versions = c.Versions, notRead = c.NotRead, pending = c.Pending, passes = c.Passes, import = c.Import }, Options), "application/json");
+    }
+
+    /// <summary>
+    /// Imports the header read made for Overfin (its file put by the
+    /// operator in the plugin's data folder, import/probe.jsonl.gz or
+    /// import/probe.jsonl), its paths relative to root (the libraries'
+    /// mount as this server sees it), so that the files aren't probed
+    /// again. Counts only; the file is left where it is.
+    /// </summary>
+    [HttpPost("Copies/Import")]
+    public async Task<ContentResult> ImportCopies([FromQuery] string root, CancellationToken ct)
+    {
+        var dir = System.IO.Path.Combine(Plugin.Instance?.DataFolderPath ?? string.Empty, "import");
+        var path = new[] { "probe.jsonl.gz", "probe.jsonl" }.Select(n => System.IO.Path.Combine(dir, n)).FirstOrDefault(System.IO.File.Exists);
+        if (path is null || string.IsNullOrEmpty(root) || !System.IO.Path.IsPathFullyQualified(root))
+        {
+            Response.StatusCode = 400;
+            return Content(JsonSerializer.Serialize(new { error = "put the header read in the plugin's data folder (import/probe.jsonl.gz) and give the libraries' mount as root" }, Options), "application/json");
+        }
+
+        await using var read = System.IO.File.OpenRead(path);
+        var counts = await _copies.ImportAsync(read, root, ct).ConfigureAwait(false);
+        return Content(JsonSerializer.Serialize(counts, Options), "application/json");
+    }
 
     /// <summary>Makes a pairing code, shown once.</summary>
     [HttpPost("Codes")]
