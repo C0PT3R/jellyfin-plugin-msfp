@@ -161,6 +161,17 @@ internal static class Languages
         return two.Length > 0 ? Codes[two][^1] : string.Empty;
     }
 
+    /// <summary>
+    /// A language's three-letter code as Jellyfin 12's reading of a file
+    /// writes a stream's (ISO 639-2, the terminological one where there are
+    /// two: "fra", "deu"); "" when it's none of the languages known here.
+    /// </summary>
+    public static string Terminology(string tag)
+    {
+        var two = Base(tag);
+        return two.Length > 0 ? Codes[two][0] : string.Empty;
+    }
+
     private static Dictionary<string, string> MakeThreeToTwo()
     {
         var map = new Dictionary<string, string>();

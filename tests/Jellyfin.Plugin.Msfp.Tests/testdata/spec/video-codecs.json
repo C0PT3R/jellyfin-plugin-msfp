@@ -1,0 +1,335 @@
+{
+ "from": "msfp-spec vectors/v0/video.json (CC0), its codecs cases, 104f093",
+ "codecs": [
+  {
+   "name": "h264: High at level 4.0",
+   "text": "{\"codec\":\"h264\",\"codecs\":\"avc1.640028\"}",
+   "valid": true,
+   "output": "{\"codec\":\"h264\",\"codecs\":\"avc1.640028\",\"profile\":100,\"level\":40}"
+  },
+  {
+   "name": "h264: avc3",
+   "text": "{\"codec\":\"h264\",\"codecs\":\"avc3.4D401F\"}",
+   "valid": true,
+   "output": "{\"codec\":\"h264\",\"codecs\":\"avc3.4D401F\",\"profile\":77,\"level\":31}"
+  },
+  {
+   "name": "h264: constraint flags ignored (the stream's or zero)",
+   "text": "{\"codec\":\"h264\",\"codecs\":\"avc1.640828\"}",
+   "valid": true,
+   "output": "{\"codec\":\"h264\",\"codecs\":\"avc1.640828\",\"profile\":100,\"level\":40}"
+  },
+  {
+   "name": "h264: lowercase hexadecimal",
+   "text": "{\"codec\":\"h264\",\"codecs\":\"avc1.64001f\"}",
+   "valid": true,
+   "output": "{\"codec\":\"h264\",\"codecs\":\"avc1.64001f\",\"profile\":100,\"level\":31}"
+  },
+  {
+   "name": "h264: codecs missing: can't play as it is",
+   "text": "{\"codec\":\"h264\"}",
+   "valid": false,
+   "reason": "codecs missing or malformed, required for h264: can't play as it is"
+  },
+  {
+   "name": "h264: codecs malformed (counts as absent): can't play as it is",
+   "text": "{\"codec\":\"h264\",\"codecs\":\"avc1.64 28\"}",
+   "valid": false,
+   "reason": "codecs missing or malformed, required for h264: can't play as it is"
+  },
+  {
+   "name": "h264: codecs of another codec: can't play as it is",
+   "text": "{\"codec\":\"h264\",\"codecs\":\"hvc1.1.2.L123.B0\"}",
+   "valid": false,
+   "reason": "codecs isn't avc1 or avc3 and three bytes: can't play as it is"
+  },
+  {
+   "name": "h264: the 4CC in capitals (compared case-sensitively): can't play as it is",
+   "text": "{\"codec\":\"h264\",\"codecs\":\"AVC1.640028\"}",
+   "valid": false,
+   "reason": "codecs isn't avc1 or avc3 and three bytes: can't play as it is"
+  },
+  {
+   "name": "h264: two bytes only: can't play as it is",
+   "text": "{\"codec\":\"h264\",\"codecs\":\"avc1.6400\"}",
+   "valid": false,
+   "reason": "codecs isn't avc1 or avc3 and three bytes: can't play as it is"
+  },
+  {
+   "name": "h264 with Dolby Vision: the base avc1 string, Dolby Vision rebuilt as dva1",
+   "text": "{\"codec\":\"h264\",\"codecs\":\"avc1.640028\",\"dv\":{\"profile\":9,\"level\":5,\"compatibility\":2}}",
+   "valid": true,
+   "output": "{\"codec\":\"h264\",\"codecs\":\"avc1.640028\",\"profile\":100,\"level\":40,\"dolbyVision\":\"dva1.09.05\"}"
+  },
+  {
+   "name": "hevc: Main 10, tier L, level 5.1",
+   "text": "{\"codec\":\"hevc\",\"codecs\":\"hvc1.2.4.L153.B0\",\"bitDepth\":10}",
+   "valid": true,
+   "output": "{\"codec\":\"hevc\",\"codecs\":\"hvc1.2.4.L153.B0\",\"profile\":2,\"tier\":\"L\",\"level\":153,\"bitDepth\":10,\"constraints\":\"B0\"}"
+  },
+  {
+   "name": "hevc: hev1, tier H",
+   "text": "{\"codec\":\"hevc\",\"codecs\":\"hev1.1.6.H150.90\"}",
+   "valid": true,
+   "output": "{\"codec\":\"hevc\",\"codecs\":\"hev1.1.6.H150.90\",\"profile\":1,\"tier\":\"H\",\"level\":150,\"constraints\":\"90\"}"
+  },
+  {
+   "name": "hevc: compatibility flags ignored (only the profile's own bit)",
+   "text": "{\"codec\":\"hevc\",\"codecs\":\"hvc1.2.4.L153.B0\"}",
+   "valid": true,
+   "output": "{\"codec\":\"hevc\",\"codecs\":\"hvc1.2.4.L153.B0\",\"profile\":2,\"tier\":\"L\",\"level\":153,\"constraints\":\"B0\"}"
+  },
+  {
+   "name": "hevc: compatibility flags ignored (the stream's)",
+   "text": "{\"codec\":\"hevc\",\"codecs\":\"hvc1.2.6.L153.B0\"}",
+   "valid": true,
+   "output": "{\"codec\":\"hevc\",\"codecs\":\"hvc1.2.6.L153.B0\",\"profile\":2,\"tier\":\"L\",\"level\":153,\"constraints\":\"B0\"}"
+  },
+  {
+   "name": "hevc: no constraint bytes on Main",
+   "text": "{\"codec\":\"hevc\",\"codecs\":\"hvc1.1.2.L93\"}",
+   "valid": true,
+   "output": "{\"codec\":\"hevc\",\"codecs\":\"hvc1.1.2.L93\",\"profile\":1,\"tier\":\"L\",\"level\":93}"
+  },
+  {
+   "name": "hevc: range extensions (profile 4) with constraint bytes",
+   "text": "{\"codec\":\"hevc\",\"codecs\":\"hvc1.4.10.L120.9D.08\"}",
+   "valid": true,
+   "output": "{\"codec\":\"hevc\",\"codecs\":\"hvc1.4.10.L120.9D.08\",\"profile\":4,\"tier\":\"L\",\"level\":120,\"constraints\":\"9D.08\"}"
+  },
+  {
+   "name": "hevc: profile 4 without constraint bytes: can't play as it is",
+   "text": "{\"codec\":\"hevc\",\"codecs\":\"hvc1.4.10.L120\"}",
+   "valid": false,
+   "reason": "an HEVC profile of 4 or more without its constraint bytes: can't play as it is"
+  },
+  {
+   "name": "hevc: a tier other than L or H: can't play as it is",
+   "text": "{\"codec\":\"hevc\",\"codecs\":\"hvc1.2.4.M153.B0\"}",
+   "valid": false,
+   "reason": "codecs isn't an HEVC string of hvc1 or hev1: can't play as it is"
+  },
+  {
+   "name": "hevc: a Dolby Vision 4CC (dvh1) instead of the base's: can't play as it is",
+   "text": "{\"codec\":\"hevc\",\"codecs\":\"dvh1.08.06\"}",
+   "valid": false,
+   "reason": "a Dolby Vision 4CC (dvh1): codecs carries the base codec's; can't play as it is"
+  },
+  {
+   "name": "hevc with Dolby Vision profile 8: hvc1 and dv give dvh1.08.06",
+   "text": "{\"codec\":\"hevc\",\"codecs\":\"hvc1.2.4.L150.B0\",\"bitDepth\":10,\"dv\":{\"profile\":8,\"level\":6,\"compatibility\":1}}",
+   "valid": true,
+   "output": "{\"codec\":\"hevc\",\"codecs\":\"hvc1.2.4.L150.B0\",\"profile\":2,\"tier\":\"L\",\"level\":150,\"bitDepth\":10,\"constraints\":\"B0\",\"dolbyVision\":\"dvh1.08.06\"}"
+  },
+  {
+   "name": "hevc with Dolby Vision profile 7: hev1 and dv give dvhe.07.06",
+   "text": "{\"codec\":\"hevc\",\"codecs\":\"hev1.2.4.L153.B0\",\"dv\":{\"profile\":7,\"level\":6,\"compatibility\":6,\"el\":true}}",
+   "valid": true,
+   "output": "{\"codec\":\"hevc\",\"codecs\":\"hev1.2.4.L153.B0\",\"profile\":2,\"tier\":\"L\",\"level\":153,\"constraints\":\"B0\",\"dolbyVision\":\"dvhe.07.06\"}"
+  },
+  {
+   "name": "hevc: codecs missing: can't play as it is",
+   "text": "{\"codec\":\"hevc\",\"codecs\":\"\"}",
+   "valid": false,
+   "reason": "codecs missing or malformed, required for hevc: can't play as it is"
+  },
+  {
+   "name": "av1: Main, level 5.0, 10 bits",
+   "text": "{\"codec\":\"av1\",\"codecs\":\"av01.0.12M.10\"}",
+   "valid": true,
+   "output": "{\"codec\":\"av1\",\"codecs\":\"av01.0.12M.10\",\"profile\":0,\"tier\":\"M\",\"level\":12,\"bitDepth\":10,\"chroma\":\"4:2:0\"}"
+  },
+  {
+   "name": "av1: the long form, 4:2:0; its colour parts ignored",
+   "text": "{\"codec\":\"av1\",\"codecs\":\"av01.0.08M.10.0.110.09.16.09.0\"}",
+   "valid": true,
+   "output": "{\"codec\":\"av1\",\"codecs\":\"av01.0.08M.10.0.110.09.16.09.0\",\"profile\":0,\"tier\":\"M\",\"level\":8,\"bitDepth\":10,\"chroma\":\"4:2:0\"}"
+  },
+  {
+   "name": "av1: profile 1 (4:4:4) with the long form",
+   "text": "{\"codec\":\"av1\",\"codecs\":\"av01.1.08H.10.0.000.01.01.01.0\"}",
+   "valid": true,
+   "output": "{\"codec\":\"av1\",\"codecs\":\"av01.1.08H.10.0.000.01.01.01.0\",\"profile\":1,\"tier\":\"H\",\"level\":8,\"bitDepth\":10,\"chroma\":\"4:4:4\"}"
+  },
+  {
+   "name": "av1: profile 1 without the long form: can't play as it is",
+   "text": "{\"codec\":\"av1\",\"codecs\":\"av01.1.08H.10\"}",
+   "valid": false,
+   "reason": "AV1 profile 1 (4:4:4) without the long form: can't play as it is"
+  },
+  {
+   "name": "av1: monochrome",
+   "text": "{\"codec\":\"av1\",\"codecs\":\"av01.0.04M.08.1.110.01.01.01.0\"}",
+   "valid": true,
+   "output": "{\"codec\":\"av1\",\"codecs\":\"av01.0.04M.08.1.110.01.01.01.0\",\"profile\":0,\"tier\":\"M\",\"level\":4,\"bitDepth\":8,\"chroma\":\"4:0:0\"}"
+  },
+  {
+   "name": "av1: bitDepth decides when it differs from codecs",
+   "text": "{\"codec\":\"av1\",\"codecs\":\"av01.0.08M.08\",\"bitDepth\":10}",
+   "valid": true,
+   "output": "{\"codec\":\"av1\",\"codecs\":\"av01.0.08M.08\",\"profile\":0,\"tier\":\"M\",\"level\":8,\"bitDepth\":10,\"chroma\":\"4:2:0\"}"
+  },
+  {
+   "name": "av1 with Dolby Vision: dav1",
+   "text": "{\"codec\":\"av1\",\"codecs\":\"av01.0.13M.10\",\"dv\":{\"profile\":10,\"level\":9,\"compatibility\":1}}",
+   "valid": true,
+   "output": "{\"codec\":\"av1\",\"codecs\":\"av01.0.13M.10\",\"profile\":0,\"tier\":\"M\",\"level\":13,\"bitDepth\":10,\"chroma\":\"4:2:0\",\"dolbyVision\":\"dav1.10.09\"}"
+  },
+  {
+   "name": "av1: a short form cut: can't play as it is",
+   "text": "{\"codec\":\"av1\",\"codecs\":\"av01.0.08M\"}",
+   "valid": false,
+   "reason": "codecs isn't an AV1 string of av01: can't play as it is"
+  },
+  {
+   "name": "vp9: profile 0, 8 bits",
+   "text": "{\"codec\":\"vp9\",\"codecs\":\"vp09.00.41.08\"}",
+   "valid": true,
+   "output": "{\"codec\":\"vp9\",\"codecs\":\"vp09.00.41.08\",\"profile\":0,\"bitDepth\":8,\"chroma\":\"4:2:0\"}"
+  },
+  {
+   "name": "vp9: the level ignored (the stream's or a guess)",
+   "text": "{\"codec\":\"vp9\",\"codecs\":\"vp09.00.10.08\"}",
+   "valid": true,
+   "output": "{\"codec\":\"vp9\",\"codecs\":\"vp09.00.10.08\",\"profile\":0,\"bitDepth\":8,\"chroma\":\"4:2:0\"}"
+  },
+  {
+   "name": "vp9: profile 2, 10 bits, the long form",
+   "text": "{\"codec\":\"vp9\",\"codecs\":\"vp09.02.10.10.01.09.16.09.01\"}",
+   "valid": true,
+   "output": "{\"codec\":\"vp9\",\"codecs\":\"vp09.02.10.10.01.09.16.09.01\",\"profile\":2,\"bitDepth\":10,\"chroma\":\"4:2:0\"}"
+  },
+  {
+   "name": "vp9: profile 1 with the long form, 4:4:4",
+   "text": "{\"codec\":\"vp9\",\"codecs\":\"vp09.01.20.08.03\"}",
+   "valid": true,
+   "output": "{\"codec\":\"vp9\",\"codecs\":\"vp09.01.20.08.03\",\"profile\":1,\"bitDepth\":8,\"chroma\":\"4:4:4\"}"
+  },
+  {
+   "name": "vp9: profile 1 without the long form: can't play as it is",
+   "text": "{\"codec\":\"vp9\",\"codecs\":\"vp09.01.20.08\"}",
+   "valid": false,
+   "reason": "VP9 profile 1 or 3 (not 4:2:0) without the long form: can't play as it is"
+  },
+  {
+   "name": "vp9: a chroma subsampling of 04: can't play as it is",
+   "text": "{\"codec\":\"vp9\",\"codecs\":\"vp09.00.10.08.04\"}",
+   "valid": false,
+   "reason": "a VP9 chroma subsampling other than 00 to 03: can't play as it is"
+  },
+  {
+   "name": "vp9: codecs missing: can't play as it is",
+   "text": "{\"codec\":\"vp9\"}",
+   "valid": false,
+   "reason": "codecs missing or malformed, required for vp9: can't play as it is"
+  },
+  {
+   "name": "aac: LC",
+   "text": "{\"codec\":\"aac\",\"codecs\":\"mp4a.40.2\"}",
+   "valid": true,
+   "output": "{\"codec\":\"aac\",\"codecs\":\"mp4a.40.2\",\"mp4a\":\"40.2\"}"
+  },
+  {
+   "name": "aac: HE-AAC v2",
+   "text": "{\"codec\":\"aac\",\"codecs\":\"mp4a.40.29\"}",
+   "valid": true,
+   "output": "{\"codec\":\"aac\",\"codecs\":\"mp4a.40.29\",\"mp4a\":\"40.29\"}"
+  },
+  {
+   "name": "aac: MPEG-2 AAC LC",
+   "text": "{\"codec\":\"aac\",\"codecs\":\"mp4a.67\"}",
+   "valid": true,
+   "output": "{\"codec\":\"aac\",\"codecs\":\"mp4a.67\",\"mp4a\":\"67\"}"
+  },
+  {
+   "name": "aac: codecs missing: can't play as it is",
+   "text": "{\"codec\":\"aac\"}",
+   "valid": false,
+   "reason": "codecs missing or malformed, required for aac: can't play as it is"
+  },
+  {
+   "name": "aac: MP3's string: can't play as it is",
+   "text": "{\"codec\":\"aac\",\"codecs\":\"mp4a.6B\"}",
+   "valid": false,
+   "reason": "codecs isn't mp4a.40.<n> or an MPEG-2 AAC mp4a: can't play as it is"
+  },
+  {
+   "name": "aac: mp4a.40 without an object type: can't play as it is",
+   "text": "{\"codec\":\"aac\",\"codecs\":\"mp4a.40\"}",
+   "valid": false,
+   "reason": "codecs isn't mp4a.40.<n> or an MPEG-2 AAC mp4a: can't play as it is"
+  },
+  {
+   "name": "dts: dtsh",
+   "text": "{\"codec\":\"dts\",\"codecs\":\"dtsh\"}",
+   "valid": true,
+   "output": "{\"codec\":\"dts\",\"codecs\":\"dtsh\"}"
+  },
+  {
+   "name": "dts: dtse",
+   "text": "{\"codec\":\"dts\",\"codecs\":\"dtse\"}",
+   "valid": true,
+   "output": "{\"codec\":\"dts\",\"codecs\":\"dtse\"}"
+  },
+  {
+   "name": "dts: dtsx is DTS-UHD's, not dts's: can't play as it is",
+   "text": "{\"codec\":\"dts\",\"codecs\":\"dtsx\"}",
+   "valid": false,
+   "reason": "codecs isn't dtsc, dtsh, dtsl or dtse: can't play as it is"
+  },
+  {
+   "name": "dts: codecs missing: can't play as it is",
+   "text": "{\"codec\":\"dts\"}",
+   "valid": false,
+   "reason": "codecs missing or malformed, required for dts: can't play as it is"
+  },
+  {
+   "name": "eac3: the registry's fixed ec-3",
+   "text": "{\"codec\":\"eac3\",\"codecs\":\"ec-3\"}",
+   "valid": true,
+   "output": "{\"codec\":\"eac3\",\"codecs\":\"ec-3\"}"
+  },
+  {
+   "name": "eac3: codecs left out",
+   "text": "{\"codec\":\"eac3\"}",
+   "valid": true,
+   "output": "{\"codec\":\"eac3\"}"
+  },
+  {
+   "name": "truehd: mlpa",
+   "text": "{\"codec\":\"truehd\",\"codecs\":\"mlpa\"}",
+   "valid": true,
+   "output": "{\"codec\":\"truehd\",\"codecs\":\"mlpa\"}"
+  },
+  {
+   "name": "vvc: a string passed as it is",
+   "text": "{\"codec\":\"vvc\",\"codecs\":\"vvc1.1.L51.CQA\"}",
+   "valid": true,
+   "output": "{\"codec\":\"vvc\",\"codecs\":\"vvc1.1.L51.CQA\"}"
+  },
+  {
+   "name": "vvc: a string with + (its registered output-layer part) passed as it is",
+   "text": "{\"codec\":\"vvc\",\"codecs\":\"vvc1.1.L51.CQA.O1+3\"}",
+   "valid": true,
+   "output": "{\"codec\":\"vvc\",\"codecs\":\"vvc1.1.L51.CQA.O1+3\"}"
+  },
+  {
+   "name": "mpeg4: mp4v.20.9",
+   "text": "{\"codec\":\"mpeg4\",\"codecs\":\"mp4v.20.9\"}",
+   "valid": true,
+   "output": "{\"codec\":\"mpeg4\",\"codecs\":\"mp4v.20.9\"}"
+  },
+  {
+   "name": "a codec nobody registered, without codecs",
+   "text": "{\"codec\":\"h267\"}",
+   "valid": true,
+   "output": "{\"codec\":\"h267\"}"
+  },
+  {
+   "name": "codec missing: not a stream",
+   "text": "{\"codecs\":\"avc1.640028\"}",
+   "valid": false,
+   "reason": "codec missing or not a token"
+  }
+ ]
+}
