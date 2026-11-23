@@ -586,6 +586,7 @@ public sealed class StandIns : IHostedService, IDisposable
                     movie.SetProviderId(MetadataProvider.Tmdb, Wanted.Number(f.Tmdb));
                 }
 
+                movie.PresentationUniqueKey = movie.CreatePresentationUniqueKey();
                 _library.CreateItem(movie, library);
                 await movie.ReattachUserDataAsync(ct).ConfigureAwait(false);
                 if (f.Local is null)
@@ -628,6 +629,7 @@ public sealed class StandIns : IHostedService, IDisposable
                 series = new Series { Id = _library.GetNewItemId(w.Path, typeof(Series)), Path = w.Path };
                 Prepare(series, library.Id, seriesDate);
                 SetIds(series, w);
+                series.PresentationUniqueKey = series.CreatePresentationUniqueKey();
                 _library.CreateItem(series, library);
                 if (w.Local is null)
                 {
@@ -670,15 +672,20 @@ public sealed class StandIns : IHostedService, IDisposable
                             s.IsLocked = true;
                         }
 
+                        Keys(s, series);
                         _library.CreateItem(s, series);
                         if (w.Local is null)
                         {
                             created.Add(s.Id);
                         }
                     }
-                    else if (s.Name != SeasonName(e.Season) && s.Name == Path.GetFileName(seasonPath))
+                    else if ((s.Name != SeasonName(e.Season) && s.Name == Path.GetFileName(seasonPath)) || Keys(s, series))
                     {
-                        s.Name = SeasonName(e.Season);
+                        if (s.Name == Path.GetFileName(seasonPath))
+                        {
+                            s.Name = SeasonName(e.Season);
+                        }
+
                         await _library.UpdateItemAsync(s, series, ItemUpdateType.MetadataEdit, ct).ConfigureAwait(false);
                     }
 
@@ -712,6 +719,7 @@ public sealed class StandIns : IHostedService, IDisposable
                     };
                     Prepare(episode, season.Id, date);
                     SetIds(episode, e.Ids);
+                    Keys(episode, series);
                     _library.CreateItem(episode, season);
                     await episode.ReattachUserDataAsync(ct).ConfigureAwait(false);
                     if (w.Local is null)
@@ -725,6 +733,10 @@ public sealed class StandIns : IHostedService, IDisposable
                 {
                     created.Add(item.Id);
                 }
+                else if (Keys(item, series))
+                {
+                    await _library.UpdateItemAsync(item, season, ItemUpdateType.MetadataEdit, ct).ConfigureAwait(false);
+                }
 
                 var local = w.Local is null ? null : w.Local with { Name = EpisodeName(e), Year = 0, Image = false };
                 await DescribeAsync(item, season, e.Copy, date, local, ct).ConfigureAwait(false);
@@ -736,6 +748,33 @@ public sealed class StandIns : IHostedService, IDisposable
         await RemoveAsync(existing.Values.OrderBy(i => i is Episode ? 0 : i is Season ? 1 : 2), ct).ConfigureAwait(false);
         Refresh(created);
         return (wanted.Series.Values.Count(s => s.Episodes.Count > 0), episodes);
+    }
+
+    // A season's or an episode's keys to its series, which Jellyfin's
+    // metadata refresh sets otherwise (a local title gets none): without
+    // them, the series lists none of its episodes. True when they changed.
+    private static bool Keys(BaseItem item, Series series)
+    {
+        var key = series.GetPresentationUniqueKey();
+        var changed = false;
+        if (item is Season season && season.SeriesPresentationUniqueKey != key)
+        {
+            season.SeriesPresentationUniqueKey = key;
+            changed = true;
+        }
+        else if (item is Episode episode && episode.SeriesPresentationUniqueKey != key)
+        {
+            episode.SeriesPresentationUniqueKey = key;
+            changed = true;
+        }
+
+        if (string.IsNullOrEmpty(item.PresentationUniqueKey))
+        {
+            item.PresentationUniqueKey = item.CreatePresentationUniqueKey();
+            changed = true;
+        }
+
+        return changed;
     }
 
     // A local series' episode has no name of its own: its numbers name it (MSFP video section 3.10).
@@ -912,7 +951,7 @@ public sealed class StandIns : IHostedService, IDisposable
 
         Set<long?>(best.DurationMs > 0 ? best.DurationMs * TimeSpan.TicksPerMillisecond : item.RunTimeTicks, item.RunTimeTicks, v => item.RunTimeTicks = v);
         Set<long?>(best.Size, item.Size, v => item.Size = v);
-        Set(StandInStreams.Container(best.MediaType), item.Container, v => item.Container = v);
+        Set(StandInStreams.ItemContainer(best.MediaType), item.Container, v => item.Container = v);
         Set(StandInStreams.Bitrate(best), item.TotalBitrate, v => item.TotalBitrate = v);
         Set(best.Video?.Width ?? 0, item.Width, v => item.Width = v);
         Set(best.Video?.Height ?? 0, item.Height, v => item.Height = v);
@@ -979,6 +1018,11 @@ public sealed class StandIns : IHostedService, IDisposable
             var c = holder.Copies[i];
             var id = PairedSources.SourceIdOf(item, holder.Peer, c.Id, i == 0);
             var built = StandInStreams.Of(c, Three, s => SubtitlePath(item, id, s.Id));
+            foreach (var st in built.Streams)
+            {
+                StandInStreams.Localize(st, _localization.GetLocalizedString, l => _localization.GetLanguageDisplayName(l));
+            }
+
             sources.Add(PairedSources.SourceOf(item, id, labels[i], c, built.Streams, hasSegments));
         }
 

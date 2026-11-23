@@ -14,9 +14,11 @@ namespace Jellyfin.Plugin.Msfp.Viewing;
 /// of an installed channel for a remote one, which clients offer to play;
 /// an item with no file of its own would be virtual, like a missing episode,
 /// with no Play button (DESIGN-NOTES, the spike). The titles themselves
-/// are in the plugin's two libraries, not in the channel.
+/// are in the plugin's two libraries, not in the channel. Their sources
+/// are shown as a local file's (versions, video, audio and subtitle
+/// tracks): since migration phase 5 they are the copies' facts.
 /// </summary>
-public sealed class PairedChannel : IChannel, IDisableMediaSourceDisplay
+public sealed class PairedChannel : IChannel
 {
     /// <summary>The channel's name; its ID, which the stand-ins carry, comes from it.</summary>
     public const string ChannelName = "Paired servers";

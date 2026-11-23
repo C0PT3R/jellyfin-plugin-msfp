@@ -306,4 +306,24 @@ public class StandInStreamsTests
             [(Jellyfin.Database.Implementations.Enums.MediaSegmentType.Intro, 0L, 10_000_000L), (Jellyfin.Database.Implementations.Enums.MediaSegmentType.Outro, 50_000_000L, 60_000_000L), (Jellyfin.Database.Implementations.Enums.MediaSegmentType.Unknown, 70_000_000L, 80_000_000L)],
             wanted);
     }
+
+    // As Jellyfin 12.2 showed the same local files (phase 5): the item's
+    // container is ffprobe's format name, the source's Jellyfin's own; text
+    // and PGS tracks deliverable apart; the words players name tracks by.
+    [Fact]
+    public void WhatJellyfinAddsToALocalFilesStreams()
+    {
+        Assert.Equal("mov,mp4,m4a,3gp,3g2,mj2", StandInStreams.ItemContainer("video/mp4"));
+        Assert.Equal("mkv,webm", StandInStreams.ItemContainer("video/webm"));
+        Assert.Equal("mkv", StandInStreams.ItemContainer("video/matroska"));
+        Assert.Equal("ts", StandInStreams.ItemContainer("video/mp2t"));
+        var built = Built(CopyOf("handmade-dv-atmos"));
+        Assert.True(built.Streams[built.Tracks["s5"]].SupportsExternalStream);   // PGS
+        Assert.True(built.Streams[built.Tracks["s6"]].SupportsExternalStream);   // SubRip
+        var a = built.Streams[built.Tracks["a3"]];
+        StandInStreams.Localize(a, w => "<" + w + ">", l => l == "fra" ? "French" : null);
+        Assert.Equal(("French", "<Default>", "<External>", "<Original>", null), (a.LocalizedLanguage, a.LocalizedDefault, a.LocalizedExternal, a.LocalizedOriginal, a.LocalizedForced));
+        Assert.Equal(Video3DFormat.FullSideBySide, StandInStreams.ThreeD("sbs"));
+        Assert.Equal("HEVC", Built(CopyOf("hevc-hlg-atc-ts")).Streams.Single(s => s.Type == MediaStreamType.Video).CodecTag);
+    }
 }

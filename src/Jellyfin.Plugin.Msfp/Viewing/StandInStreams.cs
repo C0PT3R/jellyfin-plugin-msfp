@@ -84,6 +84,18 @@ internal static class StandInStreams
         };
     }
 
+    /// <summary>
+    /// A copy's media type as Jellyfin names a local item's container (the
+    /// format ffprobe names for ISO files, "mov,mp4,m4a,3gp,3g2,mj2"; "mkv,webm"
+    /// for WebM), where it differs from its source's (<see cref="Container"/>).
+    /// </summary>
+    internal static string? ItemContainer(string mediaType) => Container(mediaType) switch
+    {
+        "mp4" or "mov" or "3gp" or "3g2" => "mov,mp4,m4a,3gp,3g2,mj2",
+        "webm" => "mkv,webm",
+        var c => c,
+    };
+
     // Whether a container is ISO BMFF: its streams carry sample entries
     // (codec tags), its tracks a language ("und" when none) and the picture
     // the default flag, as ffmpeg writes such a file.
@@ -163,6 +175,37 @@ internal static class StandInStreams
         return new Built(streams, tracks);
     }
 
+    /// <summary>
+    /// A stream's words in the server's language, as Jellyfin gives a local
+    /// file's when it reads them (its language's name, "Default",
+    /// "External", "Forced"…): players name tracks from them.
+    /// </summary>
+    internal static void Localize(MediaStream s, Func<string, string> word, Func<string, string?> languageName)
+    {
+        if (s.Type is not (MediaStreamType.Audio or MediaStreamType.Subtitle))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(s.Language))
+        {
+            s.LocalizedLanguage = languageName(s.Language);
+        }
+
+        s.LocalizedDefault = word("Default");
+        s.LocalizedExternal = word("External");
+        if (s.Type == MediaStreamType.Audio)
+        {
+            s.LocalizedOriginal = word("Original");
+        }
+        else
+        {
+            s.LocalizedUndefined = word("Undefined");
+            s.LocalizedForced = word("Forced");
+            s.LocalizedHearingImpaired = word("HearingImpaired");
+        }
+    }
+
     /// <summary>The picture as Jellyfin's reading of a file writes it.</summary>
     internal static MediaStream Video(VideoStream v, string? container, bool iso)
     {
@@ -233,6 +276,11 @@ internal static class StandInStreams
             var entry = codecs.Split('.')[0];
             s.CodecTag = v.Dv is not null && Rfc6381.DolbyVisionEntry(entry) is { } dvEntry ? dvEntry : entry;
         }
+        else if (container == "ts" && v.Codec == "hevc")
+        {
+            // The transport stream's registration descriptor, as ffprobe reads it.
+            s.CodecTag = "HEVC";
+        }
 
         return s;
     }
@@ -268,14 +316,27 @@ internal static class StandInStreams
     }
 
     /// <summary>A subtitle track as Jellyfin's reading of a file writes it.</summary>
-    internal static MediaStream Subtitle(CopySubtitle t, Func<string, string?> three) => new()
+    internal static MediaStream Subtitle(CopySubtitle t, Func<string, string?> three)
     {
-        Type = MediaStreamType.Subtitle,
-        Codec = SubtitleCodec(t.Format),
-        Language = t.Language is { Length: > 0 } l ? three(l) : null,
-        IsDefault = t.Default,
-        IsForced = t.Forced,
-        IsHearingImpaired = t.HearingImpaired,
+        var codec = SubtitleCodec(t.Format);
+        return new MediaStream
+        {
+            Type = MediaStreamType.Subtitle,
+            Codec = codec,
+            Language = t.Language is { Length: > 0 } l ? three(l) : null,
+            IsDefault = t.Default,
+            IsForced = t.Forced,
+            IsHearingImpaired = t.HearingImpaired,
+
+            // As Jellyfin marks a file's text and PGS tracks: deliverable apart.
+            SupportsExternalStream = codec is not null && (TextFormats.Contains(codec) || codec == "PGSSUB"),
+        };
+    }
+
+    // The text subtitle formats of the registry, as Jellyfin names them.
+    private static readonly HashSet<string> TextFormats = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "subrip", "srt", "ass", "ssa", "webvtt", "vtt", "mov_text", "ttml", "text", "sami", "smi", "microdvd", "subviewer", "subviewer1", "mpl2", "jacosub", "realtext", "pjs", "stl", "vplayer",
     };
 
     /// <summary>A subtitle format of the registry as Jellyfin names it (its picture formats in capitals).</summary>
@@ -560,8 +621,9 @@ internal static class StandInStreams
     /// <summary>The 3D layout of a copy as Jellyfin's; null for 2D or a layout it has no name for.</summary>
     internal static Video3DFormat? ThreeD(string? threeD) => threeD switch
     {
-        "sbs" or "sbs-rl" => Video3DFormat.HalfSideBySide,
-        "tab" or "tab-rl" => Video3DFormat.HalfTopAndBottom,
+        // As Jellyfin's reading of a file's stereo side data names them.
+        "sbs" or "sbs-rl" => Video3DFormat.FullSideBySide,
+        "tab" or "tab-rl" => Video3DFormat.FullTopAndBottom,
         "mvc" => Video3DFormat.MVC,
         _ => null,
     };
