@@ -28,7 +28,15 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
             new JellyfinCatalogSource(sp.GetRequiredService<ILibraryManager>(), () => sp.GetRequiredService<Identifier>().Identities,
                 sp.GetRequiredService<CopyKeeper>(), id => sp.GetRequiredService<EngineHost>().Engine?.OpaqueKeyPart(id)));
         serviceCollection.AddSingleton<HostCatalog>();
-        serviceCollection.AddSingleton<JellyfinPlayback>();
+        // Peers' remuxes and transcodes, by Jellyfin's own transcoder: its
+        // watchdog runs as a service.
+        serviceCollection.AddSingleton<Deliveries>();
+        serviceCollection.AddHostedService(sp => sp.GetRequiredService<Deliveries>());
+        serviceCollection.AddSingleton(sp => new JellyfinPlayback(
+            sp.GetRequiredService<ILibraryManager>(), sp.GetRequiredService<MediaBrowser.Controller.MediaEncoding.ISubtitleEncoder>(),
+            sp.GetRequiredService<CopyKeeper>(), sp.GetRequiredService<Deliveries>(), sp.GetRequiredService<MediaBrowser.Controller.Session.ISessionManager>(),
+            sp.GetRequiredService<MediaBrowser.Controller.Trickplay.ITrickplayManager>(), sp.GetRequiredService<MediaBrowser.Controller.MediaEncoding.IMediaEncoder>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<JellyfinPlayback>>()));
         serviceCollection.AddSingleton<EngineHost>();
         serviceCollection.AddSingleton<WantsKeeper>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<EngineHost>());

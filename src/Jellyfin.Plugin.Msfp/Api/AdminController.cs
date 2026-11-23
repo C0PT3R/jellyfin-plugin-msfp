@@ -117,6 +117,28 @@ public sealed class LimitsRequest
     public int Transcodes { get; set; }
 
     public int BitrateKbps { get; set; }
+
+    /// <summary>Downloads at once (0, the default: none).</summary>
+    public int Downloads { get; set; }
+
+    /// <summary>Downloads started in any 24 hours (0: no cap besides Downloads).</summary>
+    public int DownloadsPerDay { get; set; }
+
+    /// <summary>Each download's speed cap, kbit/s (0: none).</summary>
+    public int DownloadKbps { get; set; }
+
+    /// <summary>Scans started in any 24 hours (0, the default: no scan access).</summary>
+    public int ScansPerDay { get; set; }
+
+    /// <summary>The bytes one scan may read (0: the floor, 4 MiB).</summary>
+    public int ScanBytes { get; set; }
+
+    /// <summary>The engine's limits of these.</summary>
+    public Limits ToLimits() => new()
+    {
+        Streams = Streams, Transcodes = Transcodes, BitrateKbps = BitrateKbps, Downloads = Downloads, DownloadsPerDay = DownloadsPerDay,
+        DownloadKbps = DownloadKbps, ScansPerDay = ScansPerDay, ScanBytes = ScanBytes,
+    };
 }
 
 /// <summary>A key change, from the operator's page.</summary>
@@ -290,7 +312,7 @@ public class AdminController : ControllerBase
         var ours = _catalog.Read().Libraries.Select(l => l.Id).ToHashSet(StringComparer.Ordinal);
         if (pool is { } p)
         {
-            await e.SetGroupPoolAsync(group, new Limits { Streams = p.Streams, Transcodes = p.Transcodes, BitrateKbps = p.BitrateKbps }, ct).ConfigureAwait(false);
+            await e.SetGroupPoolAsync(group, p.ToLimits(), ct).ConfigureAwait(false);
         }
 
         await e.SetGroupOffersAsync(group, libraries.Where(ours.Contains).ToList(), ct).ConfigureAwait(false);
@@ -387,7 +409,7 @@ public class AdminController : ControllerBase
     [HttpPost("Peers/{id}/Limits")]
     public Task<ContentResult> Limits(string id, [FromBody] LimitsRequest request, CancellationToken ct) => Run(async e =>
     {
-        await e.SetLimitsAsync(id, new Limits { Streams = request.Streams, Transcodes = request.Transcodes, BitrateKbps = request.BitrateKbps }, ct).ConfigureAwait(false);
+        await e.SetLimitsAsync(id, request.ToLimits(), ct).ConfigureAwait(false);
         return View(await e.PeerAsync(id, ct).ConfigureAwait(false));
     });
 
@@ -588,7 +610,7 @@ public class AdminController : ControllerBase
         }
 
         var p = request.Pool;
-        await e.SetGroupPoolAsync(id, new Limits { Streams = p.Streams, Transcodes = p.Transcodes, BitrateKbps = p.BitrateKbps }, ct).ConfigureAwait(false);
+        await e.SetGroupPoolAsync(id, p.ToLimits(), ct).ConfigureAwait(false);
         await e.SetGroupOffersAsync(id, request.Libraries, ct).ConfigureAwait(false);
         if (request.Accept is { } accept)
         {

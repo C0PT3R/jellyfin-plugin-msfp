@@ -120,6 +120,21 @@ public sealed class CopyKeeper : IHostedService, IDisposable
         return copies;
     }
 
+    /// <summary>
+    /// A version's copy as the catalog sends it (its ID and etag set), its
+    /// track map, and the file's size and time (whole seconds) when it was
+    /// described; null for a version not described.
+    /// </summary>
+    public (Copy Copy, IReadOnlyDictionary<string, int> Tracks, long Size, long Modified)? VersionOf(Guid version)
+    {
+        if (!Volatile.Read(ref _state).Versions.TryGetValue(version, out var d) || _key is not { } key)
+        {
+            return null;
+        }
+
+        return (d.Copy with { Id = version.ToString("N"), ETag = Fingerprints.ETag(key, d.Fingerprint) }, d.Tracks, d.Size, d.Modified);
+    }
+
     /// <summary>The map of a version's track IDs to Jellyfin's stream indexes; null for a version not described.</summary>
     public IReadOnlyDictionary<string, int>? TracksOf(Guid version) =>
         Volatile.Read(ref _state).Versions.TryGetValue(version, out var d) ? d.Tracks : null;
@@ -385,6 +400,24 @@ public sealed class CopyKeeper : IHostedService, IDisposable
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// A library's file opened through the path checks (LibraryFiles), with
+    /// the library's folders it was found under, for serving it; null when
+    /// no shared library's folders hold it.
+    /// </summary>
+    internal (LibraryFiles Files, LibraryFiles.Opened File)? OpenFile(string? path)
+    {
+        foreach (var (_, files) in Libraries())
+        {
+            if (files.Open(path) is { } f)
+            {
+                return (files, f);
+            }
+        }
+
+        return null;
     }
 
     // The libraries this server shares (the plugin's own two left out), each with its folders.

@@ -241,6 +241,9 @@ public sealed class EngineHost : IHostedService, IDisposable
             Catalog = _catalog,
             Playback = _playback,
             Media = _playback,
+            // What Jellyfin's transcoder makes for peers: h264 always, hevc
+            // and av1 as Jellyfin's settings allow, the range sdr only.
+            Encoders = _playback.Encoders(),
             // Paired servers' preview sheets, re-encoded as they're relayed.
             SheetEncoder = new Viewing.SheetEncoder(),
         };
