@@ -43,6 +43,17 @@ revoked with Overfin following, and Overfin's viewers playing the plugin's
 titles (a film and an episode direct, with WebVTT subtitles; an HEVC film
 transcoded to HLS; an H.264 film remuxed to HLS).
 
+On 2026-11-23, the branch `msfp-revision` (MSFP's revision, before
+0.11.0's release), on Jellyfin 12.2: msfp-spec's suite (main, 104f093,
+`--watch-pause 150`) 163 passed, 0 failed, 20 skipped (content the test
+server lacks: extras, local titles with an image, PGS, ASS and fonts; no
+`--media`; downloads and scans at their default 0; multi-file copies not
+listed; music; R1, X1, E1 as usual); `tools/check-jellyfin.py` passes on
+12.2, 12.3 and 12.4; the update from 0.10.1 (the public repository) to a
+package of the branch passes on 12.2 and 12.4; paired with msfp-go's
+`share-folder` and msfp-dotnet's ShareFolder, their catalogs read and a
+film of each played as a plain file.
+
 `tools/conformance.py` runs that suite (from msfp-spec, beside this
 repository or `$MSFP_CONFORMANCE`) against a Jellyfin with the plugin,
 playing the server's operator through the plugin's API: it accepts the
