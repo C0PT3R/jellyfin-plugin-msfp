@@ -6,6 +6,10 @@ section here.
 
 ## 0.11.0 (not released yet)
 
+**Not compatible with 0.10.x or older:** pairings with a server on an
+older version (or on the older MSFP draft) stop working until both
+servers run 0.11.0 or later. Pairings, groups and settings are kept.
+
 On MSFP's revised version 0 (msfp-spec proposals 16 and 17, msfp-dotnet's
 revision): titles from paired servers are described, chosen and played
 as your own files are.
