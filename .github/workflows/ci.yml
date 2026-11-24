@@ -23,13 +23,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # The migration to MSFP's revised version 0: the plugin builds against
-      # msfp-dotnet's branch revision by project reference (../msfp-dotnet)
-      # until release day, when it goes back to the published package.
-      - name: msfp-dotnet's revision beside
-        if: hashFiles('src/Jellyfin.Plugin.Msfp/Jellyfin.Plugin.Msfp.csproj') != '' && contains(github.ref, 'msfp-revision')
-        run: git clone --depth 1 --branch revision https://github.com/msfp-io/msfp-dotnet.git ../msfp-dotnet
-
       - name: Restore
         run: dotnet restore Jellyfin.Plugin.Msfp.slnx
 

@@ -85,11 +85,8 @@ ended it at 120).
 ## Building
 
 Released versions use msfp-dotnet's packages from nuget.org
-(`Msfp.Engine`, which brings `Msfp.Protocol`, and `Msfp.Describe`). Until
-0.11.0 is released, the branch `msfp-revision` builds against
-msfp-dotnet's branch `revision` by project reference: clone it beside
-this repository (`../msfp-dotnet`), as CI does. You need the .NET 10 SDK,
-or a container with it:
+(`Msfp.Engine`, which brings `Msfp.Protocol`, and `Msfp.Describe`). You
+need the .NET 10 SDK, or a container with it:
 
 ```sh
 dotnet test Jellyfin.Plugin.Msfp.slnx
@@ -97,7 +94,7 @@ dotnet build -c Release src/Jellyfin.Plugin.Msfp -o out
 ```
 
 With podman and no SDK on the host, from the folder holding this
-repository (and `msfp-dotnet` beside it, on the branch `msfp-revision`):
+repository:
 
 ```sh
 podman run --rm -v "$PWD":/src:Z -w /src/jellyfin-plugin-msfp mcr.microsoft.com/dotnet/sdk:10.0 \
