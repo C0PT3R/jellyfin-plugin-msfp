@@ -82,6 +82,52 @@ public class HandOverTests
         Assert.Equal("x", c.Copy.Id);
     }
 
+    // A holder down (its last reading or a play found it so) is passed over
+    // for one that answers; every free holder down, the first is tried, as
+    // it may be back.
+    [Fact]
+    public void ADownHolderPassedOverForOneThatAnswers()
+    {
+        var title = Title(("a", [C("x", 720)]), ("b", [C("hd", 2160)]));
+        var down = new HandOver.PeerState(true, false, 0, Down: true);
+        var c = HandOver.Choose(title, null, States(("b", down)));
+        Assert.Equal("a", c.Holder.Peer);
+
+        c = HandOver.Choose(title, null, States(("a", down), ("b", down)));
+        Assert.Equal(HandOver.Failure.None, c.Failure);
+        Assert.Equal("b", c.Holder.Peer);
+
+        // Busy stays busy: down or not, never tried.
+        Assert.Equal(HandOver.Failure.Busy, HandOver.Choose(title, null, States(("a", Busy), ("b", Busy with { Down = true }))).Failure);
+    }
+
+    [Fact]
+    public void DownFromItsReadingOrAPlayUntilReadAgain()
+    {
+        var t = new DateTimeOffset(2026, 11, 24, 12, 0, 0, TimeSpan.Zero);
+        LastReading Read(int minutes, string? failure = null, string? refusal = null) =>
+            new() { At = t.AddMinutes(minutes), Failure = failure, Refusal = refusal };
+
+        Assert.False(RemotePlays.Down(null, null));
+        Assert.False(RemotePlays.Down(Read(0), null));
+        Assert.True(RemotePlays.Down(Read(0, ReadFailure.Unreachable), null));
+        Assert.True(RemotePlays.Down(Read(0, ReadFailure.Timeout), null));
+        Assert.True(RemotePlays.Down(Read(0, ReadFailure.CertificateRefused), null));
+
+        // A signed refusal is an answer.
+        Assert.False(RemotePlays.Down(Read(0, ReadFailure.Refused, "rate-limited"), null));
+
+        // A play found it down: until a reading after that reads it.
+        Assert.True(RemotePlays.Down(null, t));
+        Assert.True(RemotePlays.Down(Read(-1), t));
+        Assert.False(RemotePlays.Down(Read(1), t));
+
+        // No answer to a play: busy for the protocol, down here.
+        var noAnswer = new MsfpException(MsfpError.ServerBusy, "no answer", new MsfpException(MsfpError.Unreachable));
+        Assert.Equal(MsfpError.Unreachable, RemotePlays.DownOrCode(noAnswer));
+        Assert.Equal(MsfpError.ServerBusy, RemotePlays.DownOrCode(new MsfpException(MsfpError.ServerBusy)));
+    }
+
     [Fact]
     public void AllBusyIsBusyNoneHeldIsNotHeld()
     {

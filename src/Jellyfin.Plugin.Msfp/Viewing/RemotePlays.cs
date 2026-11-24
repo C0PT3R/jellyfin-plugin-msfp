@@ -54,6 +54,9 @@ public sealed class RemotePlays : IHostedService, IDisposable
     // catalog is read again), and those that answered busy at a first read.
     private readonly ConcurrentDictionary<string, bool> _refusedFile = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, DateTimeOffset> _busyUntil = new(StringComparer.Ordinal);
+
+    // Paired servers a play found down, and when: until a reading after it.
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _downSince = new(StringComparer.Ordinal);
     private Timer? _sweep;
 
     public RemotePlays(EngineHost host, StandIns standIns, ISessionManager sessions, IConfigurationManager config, ILibraryManager library, PeerPreviews previews, ILogger<RemotePlays> log)
@@ -148,18 +151,35 @@ public sealed class RemotePlays : IHostedService, IDisposable
         var now = DateTimeOffset.UtcNow;
         foreach (var p in await engine.PeersAsync(ct).ConfigureAwait(false))
         {
-            states[p.Id] = State(p.Id, p.TheirLimits, Tokens.Holding(p.Id), _busyUntil.TryGetValue(p.Id, out var until) && until > now, _refusedFile.ContainsKey(p.Id));
+            states[p.Id] = State(p.Id, p.TheirLimits, Tokens.Holding(p.Id), _busyUntil.TryGetValue(p.Id, out var until) && until > now, _refusedFile.ContainsKey(p.Id),
+                Down(p.Reading, _downSince.TryGetValue(p.Id, out var since) ? since : null));
         }
 
         return states;
     }
 
     /// <summary>A paired server's state for a choice, from its limits for us (null: not known), our plays holding a stream on it and what was remembered.</summary>
-    internal static HandOver.PeerState State(string peer, Limits? theirs, int holding, bool busyLately, bool refusedFile)
+    internal static HandOver.PeerState State(string peer, Limits? theirs, int holding, bool busyLately, bool refusedFile, bool down = false)
     {
         _ = peer;
         var free = !busyLately && (theirs is null || holding < theirs.Streams);
-        return new HandOver.PeerState(free, refusedFile, theirs?.BitrateKbps ?? 0);
+        return new HandOver.PeerState(free, refusedFile, theirs?.BitrateKbps ?? 0, down);
+    }
+
+    /// <summary>
+    /// Whether a paired server is down: its last reading failed short of an
+    /// answer (or of one that can be played from), or a play on it failed
+    /// that way (<paramref name="playFailed"/>) and it hasn't been read
+    /// since. A signed refusal is an answer: not down.
+    /// </summary>
+    internal static bool Down(LastReading? reading, DateTimeOffset? playFailed)
+    {
+        if (playFailed is { } since && !(reading is { Failure: null } r && r.At > since))
+        {
+            return true;
+        }
+
+        return reading?.Failure is { } f && f != ReadFailure.Refused;
     }
 
     /// <summary>A play of a choice, for a user: its token and the source Jellyfin is given.</summary>
@@ -361,7 +381,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
         }
         catch (MsfpException e)
         {
-            Remember(play.Peer, e.Code);
+            Remember(play.Peer, e);
             _log.LogInformation("MSFP: {Peer} didn't play {Key} as a file: {Code}", play.Peer, play.Key, e.Code);
             return null;
         }
@@ -401,18 +421,31 @@ public sealed class RemotePlays : IHostedService, IDisposable
 
     // A refusal remembered: delivery file refused, until the server's
     // catalog is read again; busy, for a while.
-    private void Remember(string peer, MsfpError code)
+    private void Remember(string peer, MsfpException e)
     {
-        switch (code)
+        switch (DownOrCode(e))
         {
             case MsfpError.DeliveryRefused:
                 _refusedFile[peer] = true;
                 break;
-            case MsfpError.StreamLimitReached or MsfpError.ServerBusy or MsfpError.BackingOff:
+            case MsfpError.StreamLimitReached or MsfpError.ServerBusy:
                 _busyUntil[peer] = DateTimeOffset.UtcNow + BusyFor;
+                break;
+            case MsfpError.Unreachable or MsfpError.BackingOff or MsfpError.Uncallable or MsfpError.CertificateRefused
+                or MsfpError.RefusedDestination or MsfpError.Suspended or MsfpError.KeyLost or MsfpError.NotPaired:
+                // Down until it is read again (Down).
+                _downSince[peer] = DateTimeOffset.UtcNow;
                 break;
         }
     }
+
+    /// <summary>
+    /// A play's failure as remembered: a server that didn't answer is
+    /// Unreachable, though the engine says busy (playback section 2.5), the
+    /// cause kept inside.
+    /// </summary>
+    internal static MsfpError DownOrCode(MsfpException e) =>
+        e is { Code: MsfpError.ServerBusy, InnerException: MsfpException { Code: MsfpError.Unreachable } } ? MsfpError.Unreachable : e.Code;
 
     // ---- The HLS way (PairedSources) ----
 
@@ -441,7 +474,7 @@ public sealed class RemotePlays : IHostedService, IDisposable
             }
             catch (MsfpException e)
             {
-                Remember(play.Peer, e.Code);
+                Remember(play.Peer, e);
                 Tokens.Drop(play);
                 _log.LogInformation("MSFP: {Peer} didn't play {Key}: {Code}", play.Peer, play.Key, e.Code);
                 if (e.Code is MsfpError.StreamLimitReached or MsfpError.ServerBusy or MsfpError.BackingOff)

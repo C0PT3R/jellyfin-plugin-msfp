@@ -56,13 +56,16 @@ internal static class HandOver
     /// <param name="Free">A stream is free on it: its limits and our count of plays on it, and no recent busy answer.</param>
     /// <param name="RefusedFile">It refused delivery file since its catalog was last read.</param>
     /// <param name="CapKbps">The pairing's bitrate cap (its limits for us); 0 for none.</param>
-    internal sealed record PeerState(bool Free, bool RefusedFile, int CapKbps);
+    /// <param name="Down">It didn't answer lately (its last reading, or a play, failed that way), and hasn't been read since.</param>
+    internal sealed record PeerState(bool Free, bool RefusedFile, int CapKbps, bool Down = false);
 
     /// <summary>
     /// The play to make of a title: the holder chosen for the stand-in (its
     /// copy <paramref name="picked"/>, a source the client picked, else its
-    /// best) when a stream is free on it; else the next holder with one
-    /// free, its best copy. The way follows the copy and the server.
+    /// best) when a stream is free on it and it isn't down; else the next
+    /// such holder, its best copy; else, every free holder being down, the
+    /// first of them (it may be back). The way follows the copy and the
+    /// server.
     /// </summary>
     /// <param name="title">The title's holders, best first.</param>
     /// <param name="picked">The copy picked (its ID on the stand-in's holder), null for none.</param>
@@ -76,17 +79,20 @@ internal static class HandOver
             return Choice.Failed(Failure.NotHeld);
         }
 
-        foreach (var holder in title.Holders)
+        foreach (var down in new[] { false, true })
         {
-            var s = state(holder.Peer);
-            if (!s.Free)
+            foreach (var holder in title.Holders)
             {
-                continue;
-            }
+                var s = state(holder.Peer);
+                if (!s.Free || s.Down != down)
+                {
+                    continue;
+                }
 
-            var copy = holder == title.Chosen && picked is not null ? holder.Copies.FirstOrDefault(c => c.Id == picked) ?? holder.Best : holder.Best;
-            var way = WayOf(copy, s);
-            return new Choice(holder, copy, way, way == Way.Hls ? HlsAsk(holder.Key, copy, s.CapKbps, s.RefusedFile, audioTrack, audioPlayed ?? (_ => false)) : null);
+                var copy = holder == title.Chosen && picked is not null ? holder.Copies.FirstOrDefault(c => c.Id == picked) ?? holder.Best : holder.Best;
+                var way = WayOf(copy, s);
+                return new Choice(holder, copy, way, way == Way.Hls ? HlsAsk(holder.Key, copy, s.CapKbps, s.RefusedFile, audioTrack, audioPlayed ?? (_ => false)) : null);
+            }
         }
 
         return Choice.Failed(Failure.Busy);
