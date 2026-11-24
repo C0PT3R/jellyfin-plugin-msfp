@@ -67,13 +67,6 @@ public sealed class EngineHost : IHostedService, IDisposable
     /// <summary>The engine's events, as they happen (a reading of a peer's catalog ended, a pairing ended, ...).</summary>
     public event Action<MsfpEvent>? Events;
 
-    /// <summary>
-    /// The last reading of each peer's titles since Jellyfin started, for
-    /// the operator's page: when, how many titles, and the error's code when
-    /// it failed (a peer on another draft of MSFP shows so). Memory only.
-    /// </summary>
-    public LastReads Reads { get; } = new();
-
     /// <summary>Federation's changes, counted, for the configuration page to follow.</summary>
     public Changes Changes { get; } = new();
 
@@ -240,7 +233,6 @@ public sealed class EngineHost : IHostedService, IDisposable
             AllowLoopback = config.AllowLoopback,
             Notifier = new LogNotifier(_loggers.CreateLogger("Jellyfin.Plugin.Msfp.Events"), e =>
             {
-                Reads.Note(e);
                 Changes.Bump();
                 Events?.Invoke(e);
             }),

@@ -479,6 +479,43 @@
 
             function msfpLibrary(l) { return l.name; }
             function msfpWhen(d) { return new Date(d).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }); }
+            // Why the last reading of a paired server's titles failed, in one
+            // plain line: the engine's codes only (never anything the other
+            // server wrote); a code this page doesn't know shows nothing.
+            var msfpReadFailures = {
+                'unreachable': "Its titles couldn't be read: it didn't answer.",
+                'timeout': "Its titles couldn't be read: it took too long to answer.",
+                'certificate-refused': "Its titles couldn't be read: its certificate is neither publicly trusted nor one it named.",
+                'refused-unsigned': "Its titles couldn't be read: its answer wasn't signed by its key. It may have ended the pairing or lost its records, or something else answers at its address.",
+                'refused': 'It refused to give its titles.',
+                'not-paired': "Its titles couldn't be read: it isn't paired with this server any more, or the two must pair again.",
+                'suspended': "Its titles aren't read: it revoked its key.",
+                'uncallable': "Its titles couldn't be read: it can't be called.",
+                'no-common-version': "Its titles couldn't be read: the two servers have no version of the protocol in common; one of them needs to update.",
+                'catalog-off': "Its titles aren't read: sharing titles isn't on between the two servers.",
+                'older-draft': "Its titles couldn't be read: it runs an older draft of the protocol and needs to update.",
+                'answer-not-understood': "Its titles couldn't be read: its answer couldn't be understood.",
+                'internal': "Its titles couldn't be read: this server failed (its log says why)."
+            };
+            var msfpRefusals = {
+                'not-found': 'It refused to give its titles: not found.',
+                'not-supported': 'It refused to give its titles: not supported.',
+                'invalid-request': 'It refused to give its titles: it found the request invalid.',
+                'rotation-refused': 'It refused to give its titles: key change refused.',
+                'stream-limit-reached': 'It refused to give its titles: stream limit reached.',
+                'not-playable': 'It refused to give its titles: not playable.',
+                'delivery-refused': 'It refused to give its titles: delivery refused.',
+                'playback-stopped': 'It refused to give its titles: playback stopped.',
+                'rate-limited': 'It refused to give its titles: too many requests. It is asked again later.',
+                'internal-error': 'It refused to give its titles: an error on its side.',
+                'server-busy': 'It refused to give its titles: it is busy. It is asked again later.'
+            };
+            function msfpReadingText(r) {
+                if (!r) return '';
+                var text = r.failure === 'refused' && r.refusal && msfpRefusals.hasOwnProperty(r.refusal) ? msfpRefusals[r.refusal]
+                    : msfpReadFailures.hasOwnProperty(r.failure) ? msfpReadFailures[r.failure] : '';
+                return text && text + ' (' + msfpWhen(r.at) + ')';
+            }
             function msfpNum(n) { return Number(n || 0).toLocaleString(); }
             function msfpEl(tag, cls, text) {
                 var e = document.createElement(tag);
@@ -559,14 +596,10 @@
                         var st = msfpServerState(p);
                         var state = [msfpTag(st[0], st[1])];
                         if (p.inbound === 'No') state.push(msfpTag("Can't be called", 'Info'));
-                        var failed = p.state === 'paired' && p.lastRead && p.lastRead.error;
+                        var failed = p.state === 'paired' ? msfpReadingText(p.readFailed) : '';
                         if (failed) state.push(msfpTag('Titles not read', 'Warn'));
                         var detail = [msfpEl('div', null, (p.asks || p.asked || p.keepChoice ? '' : msfpShareText(p)) || st[2])];
-                        if (failed) {
-                            var away = p.lastRead.error === 'Unreachable' || p.lastRead.error === 'Timeout';
-                            detail.push(msfpEl('div', 'msfpSub', 'Its titles could not be read on ' + msfpWhen(p.lastRead.at) + (away ? ': it could not be reached.' :
-                                ' (' + p.lastRead.error + '). A server still on the older draft of MSFP (this plugin 0.10 and before) can\'t be read until it updates; the pairing is kept.')));
-                        }
+                        if (failed) detail.push(msfpEl('div', 'msfpSub', failed));
                         if (p.wantsGone) detail.push(msfpEl('div', 'msfpSub', msfpPlural(p.wantsGone, 'library', 'libraries') + ' you show is no longer offered'));
                         if (msfpGroupsText(p)) detail.push(msfpEl('div', 'msfpSub', msfpGroupsText(p)));
                         var buttons = [];
@@ -1358,8 +1391,11 @@
                         if (!m.me && !m.peer && !m.refused && !m.asked && !m.requested) buttons.push(msfpButton('Ask to pair', function () { msfpGroupAct('Ask', { member: m.id }).catch(msfpLoad); }));
                         if (m.refused) buttons.push(msfpButton('Hear it again', function () { msfpGroupAct('LiftRefusal', { member: m.id }).catch(msfpLoad); }));
                         if (!m.me) buttons.push(msfpButton('More…', function () { msfpMember(g, m); }));
-                        members.appendChild(msfpRow([[name, msfpLine((m.invitedBy ? 'Invited by ' + m.invitedBy + ', joined ' : 'Joined ') + new Date(m.joined).toLocaleDateString() + ' · ' + state, 'fieldDescription'),
-                            msfpLine(m.fingerprint, 'msfpMono fieldDescription'), buttons.length ? msfpRowActions(buttons) : msfpLine('')]]));
+                        var cells = [name, msfpLine((m.invitedBy ? 'Invited by ' + m.invitedBy + ', joined ' : 'Joined ') + new Date(m.joined).toLocaleDateString() + ' · ' + state, 'fieldDescription'),
+                            msfpLine(m.fingerprint, 'msfpMono fieldDescription')];
+                        if (msfpReadingText(m.readFailed)) cells.push(msfpLine(msfpReadingText(m.readFailed), 'fieldDescription'));
+                        cells.push(buttons.length ? msfpRowActions(buttons) : msfpLine(''));
+                        members.appendChild(msfpRow([cells]));
                     });
                     body.appendChild(members);
                 } else if (msfpGroupTab === 'requests') {

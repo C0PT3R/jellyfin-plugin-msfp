@@ -16,7 +16,7 @@ namespace Jellyfin.Plugin.Msfp.Tests;
 
 // What the operator's page sets and shows: the settings and their defaults,
 // a pairing's or a pool's limits as the page sends them, the libraries
-// described by their titles, the last reading of a peer's titles.
+// described by their titles, why the last reading of a peer's titles failed.
 public class OperatorPageTests
 {
     [Fact]
@@ -98,26 +98,22 @@ public class OperatorPageTests
     }
 
     [Fact]
-    public void LastReadingsKeepCodesOnly()
+    public void ReadFailuresAreTheEnginesCodesOnly()
     {
-        var reads = new LastReads();
-        Assert.Null(reads.Of("p1"));
-        reads.Note(new CatalogReadEnded("p1", "Peer", 12, false, null));
-        Assert.Equal((12, ""), (reads.Of("p1")!.Titles, reads.Of("p1")!.Error));
+        var at = DateTimeOffset.UnixEpoch;
+        Assert.Null(ReadFailed.Of(null));
+        Assert.Null(ReadFailed.Of(new LastReading { At = at }));
+        Assert.Equal(new ReadFailed("unreachable", null, at), ReadFailed.Of(new LastReading { At = at, Failure = ReadFailure.Unreachable }));
 
-        // A failure: its code, never its message (which may hold an address).
-        reads.Note(new CatalogReadEnded("p1", "Peer", 0, true, new MsfpException(MsfpError.InvalidLimits, "at https://peer.example.org/x")));
-        Assert.Equal("InvalidLimits", reads.Of("p1")!.Error);
-        reads.Note(new CatalogReadEnded("p2", "Other", 0, false, new System.Net.Http.HttpRequestException("no route to 192.0.2.7")));
-        Assert.Equal("Unreachable", reads.Of("p2")!.Error);
-        Assert.Equal("Failed", LastReads.CodeOf(new InvalidOperationException("x")));
-        Assert.Equal("Timeout", LastReads.CodeOf(new TaskCanceledExceptionStandIn()));
+        // A signed refusal keeps its problem type; another failure never carries one.
+        Assert.Equal(new ReadFailed("refused", "rate-limited", at), ReadFailed.Of(new LastReading { At = at, Failure = ReadFailure.Refused, Refusal = "rate-limited" }));
+        Assert.Equal(new ReadFailed("timeout", null, at), ReadFailed.Of(new LastReading { At = at, Failure = ReadFailure.Timeout, Refusal = "rate-limited" }));
 
-        // A pairing's end forgets it.
-        reads.Note(new PeerEnded("p1", "Peer", true));
-        Assert.Null(reads.Of("p1"));
-        Assert.NotNull(reads.Of("p2"));
+        // A code this build doesn't know shows nothing, rather than raw words.
+        Assert.Null(ReadFailed.Of(new LastReading { At = at, Failure = "at https://peer.example.org/x" }));
+        foreach (var code in ReadFailure.All)
+        {
+            Assert.NotNull(ReadFailed.Of(new LastReading { At = at, Failure = code }));
+        }
     }
-
-    private sealed class TaskCanceledExceptionStandIn : OperationCanceledException;
 }

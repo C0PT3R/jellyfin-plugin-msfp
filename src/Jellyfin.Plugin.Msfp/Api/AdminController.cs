@@ -773,6 +773,7 @@ public class AdminController : ControllerBase
                 peer = m.Peer,
                 paired = m.Peer.Length > 0 && byId.TryGetValue(m.Peer, out var p) && p.State == PeerState.Paired,
                 individual = m.Peer.Length > 0 && byId.TryGetValue(m.Peer, out var ip) && ip.Individual,
+                readFailed = m.Peer.Length > 0 && byId.TryGetValue(m.Peer, out var rp) && rp.State == PeerState.Paired ? ReadFailed.Of(rp.Reading) : null,
                 refused = m.Refused,
                 asked = m.Asked,
                 requested = g.Requests.Any(r => r.From == m.Id),
@@ -819,11 +820,11 @@ public class AdminController : ControllerBase
     private Task<ContentResult> Run<T>(Func<MsfpEngine, Task<T>> action, bool off = false) =>
         Run(async e => (object)(await action(e).ConfigureAwait(false))!, off);
 
-    private object View(PeerView p) => new
+    private static object View(PeerView p) => new
     {
         core = p.Core,
         local = p.Local,
-        lastRead = _host.Reads.Of(p.Id) is { } r ? new { at = r.At, titles = r.Titles, error = r.Error } : null,
+        readFailed = ReadFailed.Of(p.Reading),
         id = p.Id,
         name = p.Name,
         address = p.Address,
