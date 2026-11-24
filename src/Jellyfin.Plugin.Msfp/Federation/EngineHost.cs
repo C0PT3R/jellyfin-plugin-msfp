@@ -175,6 +175,7 @@ public sealed class EngineHost : IHostedService, IDisposable
             {
                 var dir = Path.Combine(plugin.DataFolderPath, "msfp");
                 _store = JsonFileStore.Open(dir);
+                await ReadWholeOnceAsync(plugin.DataFolderPath, _store, _log, ct).ConfigureAwait(false);
             }
 
             var address = (config.Address ?? string.Empty).Trim().TrimEnd('/');
@@ -212,6 +213,49 @@ public sealed class EngineHost : IHostedService, IDisposable
             _opening.Release();
             Changes.Bump();
         }
+    }
+
+    /// <summary>
+    /// Once, after an update from 0.10.x (MSFP's previous draft): each
+    /// paired server is read whole again at its next reading. 0.10.x kept
+    /// its titles in that draft's shapes, without copies, so they can't be
+    /// played, with the change number it read up to; a reading of changes
+    /// from there would keep them. A file in the plugin's folder says it's
+    /// done.
+    /// </summary>
+    /// <returns>How many paired servers will be read whole.</returns>
+    internal static async Task<int> ReadWholeOnceAsync(string dataFolder, JsonFileStore store, ILogger log, CancellationToken ct)
+    {
+        var done = Path.Combine(dataFolder, "read-whole-0.11");
+        if (File.Exists(done))
+        {
+            return 0;
+        }
+
+        var count = await store.UpdateAsync(async tx =>
+        {
+            var n = 0;
+            foreach (var p in await tx.PeersAsync().ConfigureAwait(false))
+            {
+                if (p.CatalogRead.Seq == 0)
+                {
+                    continue;
+                }
+
+                p.CatalogRead = new CatalogRead { Wants = p.CatalogRead.Wants };
+                await tx.PutPeerAsync(p).ConfigureAwait(false);
+                n++;
+            }
+
+            return n;
+        }, ct).ConfigureAwait(false);
+        await File.WriteAllTextAsync(done, string.Empty, ct).ConfigureAwait(false);
+        if (count > 0)
+        {
+            log.LogInformation("MSFP: {Count} paired servers read whole again at their next reading (titles kept by 0.10.x)", count);
+        }
+
+        return count;
     }
 
     private MsfpConfig Settings(PluginConfiguration config, string address, JsonFileStore store)

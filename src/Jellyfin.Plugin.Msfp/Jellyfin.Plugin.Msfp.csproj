@@ -5,7 +5,7 @@
     <AssemblyName>Jellyfin.Plugin.Msfp</AssemblyName>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Version>0.11.0</Version>
+    <Version>0.11.1</Version>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <!-- Copy package DLLs (MSFP, BouncyCastle) next to the plugin's on
          build, so the output folder is the plugin as Jellyfin loads it. -->

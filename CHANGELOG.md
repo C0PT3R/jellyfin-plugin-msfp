@@ -4,6 +4,15 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
+## 0.11.1 (2026-11-24)
+
+**Fixed:** after an update from 0.10.x, titles from paired servers
+couldn't be played ("this client isn't compatible with the media"): they
+were kept as 0.10.x had read them, without their copies, and 0.11.0 only
+asked what changed since. At its first start, 0.11.1 reads each paired
+server's titles whole again, once. Like 0.11.0, not compatible with
+servers on 0.10.x or older.
+
 ## 0.11.0 (2026-11-24)
 
 **Not compatible with 0.10.x or older:** pairings with a server on an
