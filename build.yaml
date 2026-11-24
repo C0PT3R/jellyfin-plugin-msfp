@@ -20,5 +20,6 @@ changelog: >
   Fixes titles from paired servers that couldn't be played after an
   update from 0.10.x ("this client isn't compatible with the media"):
   they were kept as 0.10.x had read them. At its first start, 0.11.1
-  reads each paired server's titles whole again. Like 0.11.0, not
-  compatible with servers on 0.10.x or older.
+  reads each paired server's titles whole again. Their pictures are
+  no longer converted when only the audio or the container needs it.
+  Like 0.11.0, not compatible with servers on 0.10.x or older.

@@ -157,6 +157,12 @@ internal static class StandInStreams
 
             inFile[at] = Video(v, container, iso);
             ids[at] = "v";
+
+            // Jellyfin copies a picture as it is only when it knows its
+            // bitrate (CanStreamCopyVideo); its reading of a file with none
+            // per stream estimates it from the overall one. The overall one
+            // here: the picture's at most.
+            inFile[at].BitRate = Bitrate(copy);
         }
 
         var last = inFile.Count == 0 ? -1 : inFile.Keys.Max();

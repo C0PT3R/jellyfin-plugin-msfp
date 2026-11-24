@@ -13,6 +13,12 @@ asked what changed since. At its first start, 0.11.1 reads each paired
 server's titles whole again, once. Like 0.11.0, not compatible with
 servers on 0.10.x or older.
 
+**Fixed:** a paired server's file whose audio track or container Jellyfin
+had to change was converted in full, its picture too: the picture had no
+bitrate, and Jellyfin copies a picture as it is only when it knows one.
+It now has the file's overall bitrate, so Jellyfin repackages the file as
+it would its own.
+
 ## 0.11.0 (2026-11-24)
 
 **Not compatible with 0.10.x or older:** pairings with a server on an

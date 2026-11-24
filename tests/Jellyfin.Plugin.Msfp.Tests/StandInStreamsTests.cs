@@ -70,6 +70,11 @@ public class StandInStreamsTests
                 Assert.Equal((double?)(int?)p["level"], s.Level);
                 Assert.Equal((string?)p["pix_fmt"], s.PixelFormat);
                 Assert.Equal(1, s.RefFrames);
+
+                // A bitrate, as Jellyfin's reading estimates one, or it
+                // converts every picture it could copy: the copy's overall.
+                Assert.Equal(StandInStreams.Bitrate(copy), s.BitRate);
+                Assert.True(s.BitRate is > 0 || copy.DurationMs == 0);
                 Assert.Equal((int)p["width"]!, s.Width);
                 Assert.Equal((int)p["height"]!, s.Height);
                 if ((string?)p["display_aspect_ratio"] is { } dar)
