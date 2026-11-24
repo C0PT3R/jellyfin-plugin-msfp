@@ -4,7 +4,7 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
-## 0.11.0 (not released yet)
+## 0.11.0 (2026-11-24)
 
 **Not compatible with 0.10.x or older:** pairings with a server on an
 older version (or on the older MSFP draft) stop working until both
