@@ -58,7 +58,7 @@ own people". Jellyfin has no budget of transcodes: it starts as many as
 are asked. Whether a host without one must make one (an operator setting),
 or may have the pairings' limits as the only bound, isn't said.
 
-**Assumed.** The plugin makes one: "Transcodes at once on this server"
+**Assumed.** The plugin makes one: "Transcodes at once"
 (2 by default), counting the server's own users' transcodes and peers'
 together; at it, a peer's transcode gets `server-busy`, and the server's
 own users are never refused. The pairings' `transcodes` apply as well.
@@ -106,7 +106,7 @@ plays music to test it with (Overfin has none).
 
 ## Version 0: the plugin's own protocol code (history, every entry closed)
 
-Places where [MSFP version 0](https://github.com/msfp-io/msfp-spec/blob/main/spec/v0.md)
+Places where [MSFP version 0](https://github.com/msfp-io/msfp-spec/blob/main/spec/history/test-draft.md)
 is unclear, incomplete or wrong, found while building this plugin from the
 specification alone. Each entry names the section, the issue, and what the
 plugin assumed.

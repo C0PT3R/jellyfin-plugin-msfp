@@ -217,8 +217,8 @@ changed.
 Every address a peer gives is checked each time the engine connects to
 it, as MSFP core section 3.3 says: loopback, link-local (a cloud's
 metadata service among them), unspecified, multicast and reserved
-addresses are refused; private ranges are fine. "Allow peers on this
-machine" in the plugin's page allows loopback, and nothing else.
+addresses are refused; private ranges are fine. "Allow paired servers
+on this machine" in the plugin's page allows loopback, and nothing else.
 Federation calls are limited as MSFP core section 8.3 suggests (the
 engine's defaults). Behind a reverse proxy, set Jellyfin's known proxies
 (Dashboard, Networking), so that the per-address limit counts the client
@@ -266,7 +266,7 @@ starts:
   (`deliveries.json`). At most 32 deliveries run at once.
 - **Subtitles apart**: text tracks as WebVTT (Jellyfin's subtitle
   encoder), PGS tracks (inside the file, or an external `.sup`) as
-  pictures in 2-minute parts by display set (MSFP video section 6.4),
+  pictures in 2-minute parts by display set (MSFP video section 6.5),
   copied out by Jellyfin's ffmpeg once per track, bounded as SECURITY.md
   rule 8 says. ASS, fonts, DVD and DVB subtitles aren't served apart this
   release; they stay inside a `file` play.

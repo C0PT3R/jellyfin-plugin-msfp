@@ -146,7 +146,7 @@ This avoids sharing the wrong film or series when folder names are ambiguous or 
 ## Troubleshooting
 
 - **Federation is disabled:** The plugin displays the reason at the top of its page. Usually, the server address is missing or isn't HTTPS.
-- **A paired server shows "Titles not read":** The line under it says why. "It runs an older draft of the protocol" means it still runs this plugin 0.10 or earlier (or an Overfin of that time): 0.11.0 and later can't read it, nor it them, until it updates. The pairing is kept meanwhile.
+- **A paired server shows "Titles not read":** The line under it says why. "It runs an older draft of the protocol and needs to update" means it still runs this plugin 0.10 or earlier (or an Overfin of that time): 0.11.0 and later can't read it, nor it them, until it updates. The pairing is kept meanwhile.
 - **The other server reports an incompatible protocol version:** Update both servers to their latest plugin or Overfin versions.
 - **Your server's key was stolen:** For example, if a backup containing your server's private key was exposed, use **This server's key was stolen** under the **This server** tab. Paired servers will stop trusting the old key and follow your server to its replacement.
 - **You move your server:** Update **This server's address** under Settings and save. Paired servers are notified of the change.
