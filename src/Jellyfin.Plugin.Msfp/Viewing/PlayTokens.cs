@@ -81,6 +81,17 @@ internal sealed class PlayToken
     /// <summary>The Jellyfin session playing it, once known.</summary>
     public string? SessionId { get; set; }
 
+    /// <summary>
+    /// The ID the client is shown for the play's source: the stand-in's
+    /// saved source for the copy (so that the client finds that source's
+    /// trickplay and version), null for a copy the stand-in doesn't show
+    /// (another holder's): the handle then.
+    /// </summary>
+    public string? Shown { get; set; }
+
+    /// <summary>The device the play was made for (Jellyfin's device ID), null when not known.</summary>
+    public string? Device { get; set; }
+
     /// <summary>Jellyfin's ID of the live stream (the HLS way).</summary>
     public string StreamId { get; set; } = string.Empty;
 
@@ -156,6 +167,17 @@ internal sealed class PlayTokens
     /// </summary>
     public PlayToken? OfHandle(string? handle, Guid user, Guid item) =>
         handle is { Length: 32 } && _byHandle.TryGetValue(handle, out var t) && Live(t) && t.User == user && t.Item == item ? t : null;
+
+    /// <summary>
+    /// A play by the source ID its client was shown (<see cref="PlayToken.Shown"/>),
+    /// for a request of a Jellyfin user from a device: the newest live one of
+    /// that user, item and device (any of the user's devices for a request
+    /// that names none, as one authenticated by a key in its URL); null when none.
+    /// </summary>
+    public PlayToken? OfShown(string? shown, Guid user, Guid item, string? device) =>
+        string.IsNullOrEmpty(shown) ? null
+            : _bySecret.Values.Where(t => Live(t) && t.User == user && t.Item == item && (string.IsNullOrEmpty(device) || (t.Device ?? string.Empty) == device)
+                && string.Equals(t.Shown, shown, StringComparison.OrdinalIgnoreCase)).OrderByDescending(t => t.Made).FirstOrDefault();
 
     /// <summary>A play by its handle, whoever's: for Jellyfin's own reads (no user).</summary>
     public PlayToken? OfHandle(string? handle) =>

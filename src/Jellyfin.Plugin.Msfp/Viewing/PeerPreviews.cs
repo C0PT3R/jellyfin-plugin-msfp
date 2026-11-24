@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Concurrent;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -8,113 +10,167 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Trickplay;
 using Microsoft.Extensions.Logging;
 using Msfp;
+using Copy = Msfp.Protocol.Copy;
+using PreviewLayout = Msfp.Protocol.PreviewLayout;
 
 namespace Jellyfin.Plugin.Msfp.Viewing;
 
 /// <summary>
-/// A paired server's seek-bar previews as the stand-in's own trickplay:
-/// when a playback's answer carries previews (MSFP video section 5.5) and
-/// the stand-in has none of that size, its sheets are fetched through the
-/// engine (re-encoded, <see cref="SheetEncoder"/>), written where Jellyfin
-/// keeps an item's trickplay, and registered. In the background, so that
-/// playing doesn't wait: they show from the next time the title is opened.
-/// They stay for the next viewers, and go with the stand-in.
+/// A paired server's seek-bar previews as the stand-in's own trickplay
+/// (migration plan 4.3, answer 8). The stand-in's first source (its
+/// holder's best copy) has its layout registered with Jellyfin from the
+/// catalog, without a sheet: Jellyfin then lists the trickplay with the
+/// item, as clients read it before they play. The sheets themselves are
+/// fetched only when that copy's playback starts, all of them, in the
+/// background, under the playback's ticket (the engine), one fetch at a time
+/// across the server, a rate limit waited out; each re-encoded by the
+/// engine, written where Jellyfin keeps an item's trickplay. They stay for
+/// the next viewers while the copy's etag and layout hold; never fetched
+/// for a whole library ahead, nor for a title that is only part of its copy.
 /// </summary>
-internal sealed class PeerPreviews
+public sealed class PeerPreviews
 {
-    private readonly ITrickplayManager _trickplay;
-    private readonly ILogger _log;
-    private readonly SemaphoreSlim _one = new(1, 1);
+    /// <summary>The file beside the sheets that names the copy they are of (its etag and layout).</summary>
+    internal const string MarkName = "msfp-copy.txt";
 
-    public PeerPreviews(ITrickplayManager trickplay, ILogger log)
+    private static readonly TimeSpan[] Waits = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60)];
+
+    private readonly ITrickplayManager _trickplay;
+    private readonly ILogger<PeerPreviews> _log;
+    private readonly SemaphoreSlim _one = new(1, 1);
+    private readonly ConcurrentDictionary<Guid, bool> _fetching = new();
+
+    public PeerPreviews(ITrickplayManager trickplay, ILogger<PeerPreviews> log)
     {
         _trickplay = trickplay;
         _log = log;
     }
 
-    public void Fetch(MsfpEngine engine, BaseItem item, RemotePlayback playback) =>
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await FetchAsync(engine, item, playback).ConfigureAwait(false);
-            }
-            catch (Exception e)
-            {
-                _log.LogInformation(e, "MSFP: the previews of {Key} couldn't be fetched", playback.Title);
-            }
-        });
+    /// <summary>Whether a copy's previews can be a stand-in's: a layout, and the copy is the title whole.</summary>
+    internal static bool Usable(Copy copy) => copy.PreviewLayout is { Sheets: > 0 } && !StandInStreams.Spanned(copy);
 
-    private async Task FetchAsync(MsfpEngine engine, BaseItem item, RemotePlayback playback)
+    /// <summary>
+    /// What Jellyfin keeps of a copy's previews (its TrickplayInfo): tile
+    /// sizes, the grid, the count and interval; the bandwidth estimated (at
+    /// one bit a pixel) until the sheets are fetched and measured.
+    /// </summary>
+    internal static TrickplayInfo InfoOf(Guid item, PreviewLayout l, long sheetBytes = 0)
     {
-        // Since MSFP's revision the previews' layout is the copy's
-        // (Protocol.Copy.PreviewLayout) and sheets come under the playback's
-        // ticket one by one: phase 7 of the migration takes the layout from
-        // the stand-in's copy. Until then, none.
-        global::Msfp.Protocol.PreviewLayout? layout = null;
-        if (layout is not { Sheets: > 0 } tp)
+        var seconds = Math.Max(l.IntervalMs * (double)l.Columns * l.Rows / 1000, 1);
+        var bytes = sheetBytes > 0 ? sheetBytes : (long)l.TileWidth * l.TileHeight * l.Columns * l.Rows / 8;
+        return new TrickplayInfo
+        {
+            ItemId = item,
+            Width = l.TileWidth,
+            Height = l.TileHeight,
+            TileWidth = l.Columns,
+            TileHeight = l.Rows,
+            ThumbnailCount = l.TileCount,
+            Interval = l.IntervalMs,
+            Bandwidth = (int)Math.Min((long)Math.Ceiling(bytes * 8 / seconds), int.MaxValue),
+        };
+    }
+
+    /// <summary>What names a copy's sheets: its etag and its layout.</summary>
+    internal static string Mark(Copy copy) => copy.ETag + "\n" + copy.PreviewLayout;
+
+    /// <summary>
+    /// At each pass of the stand-ins: the stand-in's trickplay as its first
+    /// source's copy says (its layout registered, sheets of another copy or
+    /// layout removed), or none when the copy has no usable previews.
+    /// </summary>
+    internal async Task RegisterAsync(BaseItem item, Copy best)
+    {
+        var known = await _trickplay.GetTrickplayResolutions(item.Id).ConfigureAwait(false);
+        if (!Usable(best) || best.PreviewLayout is not { } l)
+        {
+            if (known.Count > 0)
+            {
+                await ForgetAsync(item, known).ConfigureAwait(false);
+            }
+
+            return;
+        }
+
+        var wanted = InfoOf(item.Id, l);
+        var dir = _trickplay.GetTrickplayDirectory(item, l.Columns, l.Rows, l.TileWidth, false);
+        var mark = Path.Combine(dir, MarkName);
+        var same = known.Count == 1 && known.TryGetValue(l.TileWidth, out var had) && Same(had, wanted);
+        if (same && (!File.Exists(mark) || File.ReadAllText(mark) == Mark(best)))
         {
             return;
         }
 
-        // One fetch at a time across the server: a few megabytes each.
-        await _one.WaitAsync().ConfigureAwait(false);
-        try
+        // Another copy, layout or etag: what was kept goes, the new layout is registered.
+        if (known.Count > 0)
         {
-            var known = await _trickplay.GetTrickplayResolutions(item.Id).ConfigureAwait(false);
-            if (known.ContainsKey(tp.TileWidth))
-            {
-                return;
-            }
+            await ForgetAsync(item, known).ConfigureAwait(false);
+        }
 
-            var dir = _trickplay.GetTrickplayDirectory(item, tp.Columns, tp.Rows, tp.TileWidth, false);
-            var temp = dir + ".msfp-" + Guid.NewGuid().ToString("N")[..8];
-            Directory.CreateDirectory(temp);
-            long bandwidth = 0;
+        await _trickplay.SaveTrickplayInfo(wanted).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A copy's playback started: its whole preview set fetched in the
+    /// background if it is the stand-in's first source's copy and its sheets
+    /// aren't here yet. Returns at once.
+    /// </summary>
+    internal void Fetch(MsfpEngine engine, BaseItem item, string peer, string key, Copy copy)
+    {
+        if (!Usable(copy) || !_fetching.TryAdd(item.Id, true))
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
             try
             {
-                for (var n = 0; n < tp.Sheets; n++)
-                {
-                    var sink = new Bytes();
-                    await engine.FetchAsync(playback.Id, new MediaPath { Kind = MediaKind.Sheet, Sheet = n }, string.Empty, sink, CancellationToken.None).ConfigureAwait(false);
-                    if (sink.Status != 200 || sink.Body.Length == 0)
-                    {
-                        return;
-                    }
-
-                    await File.WriteAllBytesAsync(Path.Combine(temp, n.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".jpg"), sink.Body.ToArray()).ConfigureAwait(false);
-                    // Jellyfin's measure: a sheet's bits over the time its tiles cover.
-                    var seconds = Math.Max(tp.IntervalMs * (double)tp.Columns * tp.Rows / 1000, 1);
-                    bandwidth = Math.Max(bandwidth, (long)Math.Ceiling(sink.Body.Length * 8 / seconds));
-                }
-
-                if (Directory.Exists(dir))
-                {
-                    Directory.Delete(dir, true);
-                }
-
-                Directory.Move(temp, dir);
+                await FetchAsync(engine, item, peer, key, copy).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                _log.LogInformation("MSFP: the previews of {Key} couldn't be fetched: {Message}", key, e.Message);
             }
             finally
             {
-                if (Directory.Exists(temp))
-                {
-                    Directory.Delete(temp, true);
-                }
+                _fetching.TryRemove(item.Id, out _);
+            }
+        });
+    }
+
+    private async Task FetchAsync(MsfpEngine engine, BaseItem item, string peer, string key, Copy copy)
+    {
+        var l = copy.PreviewLayout!;
+        var dir = _trickplay.GetTrickplayDirectory(item, l.Columns, l.Rows, l.TileWidth, false);
+        var mark = Path.Combine(dir, MarkName);
+        if (File.Exists(mark) && File.ReadAllText(mark) == Mark(copy))
+        {
+            return;
+        }
+
+        await _one.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, true);
             }
 
-            await _trickplay.SaveTrickplayInfo(new TrickplayInfo
+            Directory.CreateDirectory(dir);
+            long biggest = 0;
+            for (var n = 0; n < l.Sheets; n++)
             {
-                ItemId = item.Id,
-                Width = tp.TileWidth,
-                Height = tp.TileHeight,
-                TileWidth = tp.Columns,
-                TileHeight = tp.Rows,
-                ThumbnailCount = tp.TileCount,
-                Interval = tp.IntervalMs,
-                Bandwidth = (int)Math.Min(bandwidth, int.MaxValue),
-            }).ConfigureAwait(false);
-            _log.LogInformation("MSFP: previews of {Key} kept ({Sheets} sheets, {Width} px)", playback.Title, tp.Sheets, tp.TileWidth);
+                var sheet = await SheetAsync(engine, peer, key, copy.Id, n).ConfigureAwait(false);
+                var file = Path.Combine(dir, n.ToString(CultureInfo.InvariantCulture) + ".jpg");
+                await File.WriteAllBytesAsync(file + ".part", sheet).ConfigureAwait(false);
+                File.Move(file + ".part", file, true);
+                biggest = Math.Max(biggest, sheet.Length);
+            }
+
+            await _trickplay.SaveTrickplayInfo(InfoOf(item.Id, l, biggest)).ConfigureAwait(false);
+            await File.WriteAllTextAsync(mark, Mark(copy)).ConfigureAwait(false);
+            _log.LogInformation("MSFP: previews of {Key} fetched ({Sheets} sheets, {Width} px)", key, l.Sheets, l.TileWidth);
         }
         finally
         {
@@ -122,14 +178,40 @@ internal sealed class PeerPreviews
         }
     }
 
-    private sealed class Bytes : IResponseSink
+    // One sheet; a rate limit or a busy peer waited out a few times.
+    private static async Task<byte[]> SheetAsync(MsfpEngine engine, string peer, string key, string copy, int n)
     {
-        public int Status { get; private set; }
-
-        public MemoryStream Body { get; } = new();
-
-        public void Start(int status, string contentType, long length, string contentRange) => Status = status;
-
-        public ValueTask WriteAsync(ReadOnlyMemory<byte> data, CancellationToken ct) => Body.WriteAsync(data, ct);
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return await engine.PreviewSheetAsync(peer, key, copy, n).ConfigureAwait(false);
+            }
+            catch (MsfpException e) when (Again(e.Code) && attempt < Waits.Length)
+            {
+                await Task.Delay(Waits[attempt]).ConfigureAwait(false);
+            }
+        }
     }
+
+    /// <summary>Whether a previews fetch that failed so is worth trying again later.</summary>
+    internal static bool Again(MsfpError code) => code is MsfpError.RateLimited or MsfpError.BackingOff or MsfpError.ServerBusy;
+
+    private async Task ForgetAsync(BaseItem item, System.Collections.Generic.Dictionary<int, TrickplayInfo> known)
+    {
+        foreach (var t in known.Values)
+        {
+            var dir = _trickplay.GetTrickplayDirectory(item, t.TileWidth, t.TileHeight, t.Width, false);
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, true);
+            }
+        }
+
+        await _trickplay.DeleteTrickplayDataAsync(item.Id, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private static bool Same(TrickplayInfo a, TrickplayInfo b) =>
+        a.Width == b.Width && a.Height == b.Height && a.TileWidth == b.TileWidth && a.TileHeight == b.TileHeight
+        && a.ThumbnailCount == b.ThumbnailCount && a.Interval == b.Interval;
 }

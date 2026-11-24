@@ -53,6 +53,14 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool BurnSubtitles { get; set; }
 
     /// <summary>
+    /// Whether paired servers' theme songs and videos are shown as Jellyfin's
+    /// theme media of their titles. Off by default: a theme plays on a
+    /// title's page without the viewer asking, and each is a playback on the
+    /// paired server, which so learns which page was opened.
+    /// </summary>
+    public bool PeersThemes { get; set; }
+
+    /// <summary>
     /// A TMDB key of the owner's (an API key or a read access token), used
     /// instead of the plugin's own to identify titles. Empty: the plugin's.
     /// </summary>
