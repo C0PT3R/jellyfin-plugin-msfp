@@ -43,10 +43,7 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<WantsKeeper>());
         serviceCollection.AddHostedService<CatalogWatcher>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<Identifier>());
-        // The paired servers' titles: their channel (registered here, as
-        // Jellyfin finds a plugin's channels among its services), and the
-        // stand-ins' keeper.
-        serviceCollection.AddSingleton<MediaBrowser.Controller.Channels.IChannel, PairedChannel>();
+        // The paired servers' titles: the stand-ins' keeper.
         serviceCollection.AddSingleton<PeerPreviews>();
         serviceCollection.AddSingleton<StandIns>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<StandIns>());

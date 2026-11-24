@@ -116,7 +116,7 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia, IDisposable
     // The tracks, previews and the rest are the copy's facts in the
     // catalog; here what isn't served apart: ASS, DVD and DVB subtitles
     // (and so no fonts) this release (decision 6).
-    public ValueTask<CopyInfo> DescribeAsync(string copy, CancellationToken ct)
+    public ValueTask<CopyInfo> DescribeAsync(PeerRef peer, string copy, CancellationToken ct)
     {
         var item = Item(copy);
         var info = new CopyInfo();
@@ -395,7 +395,7 @@ public sealed partial class JellyfinPlayback : IPlayback, IMedia, IDisposable
     }
 
     /// <inheritdoc />
-    public async ValueTask ServeAsync(string handle, MediaPath path, ByteRange? range, IResponseSink output, CancellationToken ct)
+    public async ValueTask ServeAsync(PeerRef peer, string handle, MediaPath path, ByteRange? range, IResponseSink output, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(output);

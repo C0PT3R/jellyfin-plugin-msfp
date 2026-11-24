@@ -9,7 +9,6 @@ using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.Msfp.Federation;
 using Jellyfin.Plugin.Msfp.Identification;
 using MediaBrowser.Common.Configuration;
-using MediaBrowser.Controller.Channels;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
@@ -33,9 +32,11 @@ namespace Jellyfin.Plugin.Msfp.Viewing;
 /// libraries the plugin makes, "Films from paired servers" and "Series
 /// from paired servers", with a stand-in for each film and episode read of
 /// a paired server that this server doesn't hold itself. A stand-in has no
-/// file: an msfp:// path from its key, the paired servers' channel, one
-/// source per copy of the holder with the best copy, each with its streams
-/// as Jellyfin's reading of the file would give them (StandInStreams), the
+/// file: an msfp:// path from its key (Jellyfin takes it for a remote item,
+/// which clients offer to play), marked as a shortcut with no target (no
+/// task of Jellyfin's reads it), one source per copy of the holder with the
+/// best copy, each with its streams as Jellyfin's reading of the file would
+/// give them (StandInStreams), the
 /// copy's length, size, chapters and skip markers, the day this server
 /// first saw the title (FirstSeen), and Jellyfin's own metadata from its
 /// TMDB or TheTVDB ID; a local title the owner's name, year and image,
@@ -58,7 +59,6 @@ public sealed class StandIns : IHostedService, IDisposable
     public static readonly TimeSpan Every = TimeSpan.FromHours(1);
 
     private readonly ILibraryManager _library;
-    private readonly IChannelManager _channels;
     private readonly IMediaStreamRepository _streams;
     private readonly IProviderManager _providers;
     private readonly IFileSystem _fs;
@@ -79,7 +79,6 @@ public sealed class StandIns : IHostedService, IDisposable
 
     public StandIns(
         ILibraryManager library,
-        IChannelManager channels,
         IMediaStreamRepository streams,
         IProviderManager providers,
         IFileSystem fs,
@@ -98,7 +97,6 @@ public sealed class StandIns : IHostedService, IDisposable
         _chapters = chapters;
         _segments = segments;
         _library = library;
-        _channels = channels;
         _streams = streams;
         _providers = providers;
         _fs = fs;
@@ -208,6 +206,21 @@ public sealed class StandIns : IHostedService, IDisposable
         }
 
         _every = new Timer(_ => Run(), null, TimeSpan.FromMinutes(2), Every);
+
+        // Stand-ins an earlier version made in its channel, which is gone:
+        // out of it at once, before a scan or a channel refresh of Jellyfin's
+        // deletes the items of a channel no longer installed.
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                MoveOutOfChannel();
+            }
+            catch (Exception e)
+            {
+                _log.LogError(e, "MSFP: taking the paired servers' titles out of the old channel failed (the next pass does it)");
+            }
+        });
         return Task.CompletedTask;
     }
 
@@ -315,13 +328,6 @@ public sealed class StandIns : IHostedService, IDisposable
             {
                 // Opening again (the settings were saved): the next pass.
                 return;
-            }
-
-            // The channel's own item, which Jellyfin makes when it lists its
-            // channels (at a scan): without it, a stand-in's refresh fails.
-            if (_library.GetItemById(ChannelId()) is null)
-            {
-                await _channels.GetChannelsInternalAsync(new MediaBrowser.Model.Channels.ChannelQuery()).ConfigureAwait(false);
             }
 
             var wanted = Wanted.Of(peers, Held(), Links(), Themes);
@@ -617,9 +623,10 @@ public sealed class StandIns : IHostedService, IDisposable
 
                 item = movie;
             }
-            else if (string.IsNullOrEmpty(item.Name) && f.Local is null)
+            else if ((await OutOfChannelAsync(item, library, ct).ConfigureAwait(false) || Unnamed(item)) && f.Local is null)
             {
-                // Its metadata never came (TMDB unreachable, ...): asked again.
+                // Its metadata never came (TMDB unreachable, the old
+                // channel, which had Jellyfin give it none): asked again.
                 created.Add(item.Id);
             }
 
@@ -750,13 +757,20 @@ public sealed class StandIns : IHostedService, IDisposable
 
                     item = episode;
                 }
-                else if (string.IsNullOrEmpty(item.Name) && w.Local is null)
+                else
                 {
-                    created.Add(item.Id);
-                }
-                else if (Keys(item, series))
-                {
-                    await _library.UpdateItemAsync(item, season, ItemUpdateType.MetadataEdit, ct).ConfigureAwait(false);
+                    // Out of the old channel; its metadata asked again when
+                    // it never came (the channel had Jellyfin give it none).
+                    var unread = MoveOut(item);
+                    if ((unread || Unnamed(item)) && w.Local is null)
+                    {
+                        created.Add(item.Id);
+                    }
+
+                    if (Keys(item, series) | unread)
+                    {
+                        await _library.UpdateItemAsync(item, season, ItemUpdateType.MetadataEdit, ct).ConfigureAwait(false);
+                    }
                 }
 
                 var local = w.Local is null ? null : w.Local with { Name = EpisodeName(e), Year = 0, Image = false };
@@ -772,7 +786,7 @@ public sealed class StandIns : IHostedService, IDisposable
     }
 
     // The extras: Jellyfin's extras of the stand-ins they belong to (their
-    // OwnerId, their type), in the paired servers' channel like a film,
+    // OwnerId, their type), shortcuts with no target like a film,
     // described from their copies like one; named by their type and number,
     // never looked up elsewhere. Those no longer wanted (their owner gone,
     // themes turned off) removed.
@@ -818,7 +832,7 @@ public sealed class StandIns : IHostedService, IDisposable
                 made.ExtraType = type;
                 made.Name = name;
                 made.IsLocked = true;
-                made.ChannelId = ChannelId();
+                Unread(made);
                 made.DateCreated = owner.DateCreated;
                 made.DateModified = DateTime.UtcNow;
 
@@ -828,7 +842,7 @@ public sealed class StandIns : IHostedService, IDisposable
                 _library.CreateItem(made, null);
                 item = made;
             }
-            else if (item.OwnerId != owner.Id || item.ExtraType != type || item.Name != name || !item.IsLocked || string.IsNullOrEmpty(item.PresentationUniqueKey))
+            else if (MoveOut(item) | item.OwnerId != owner.Id || item.ExtraType != type || item.Name != name || !item.IsLocked || string.IsNullOrEmpty(item.PresentationUniqueKey))
             {
                 item.PresentationUniqueKey = item.CreatePresentationUniqueKey();
                 item.OwnerId = owner.Id;
@@ -887,6 +901,11 @@ public sealed class StandIns : IHostedService, IDisposable
         return changed;
     }
 
+    // A stand-in whose metadata never came: no name, or the end of its path
+    // (Jellyfin's name for an item before its metadata: "782", "e1").
+    internal static bool Unnamed(BaseItem item) =>
+        string.IsNullOrEmpty(item.Name) || (item.Path is { } p && item.Name == p[(p.LastIndexOf('/') + 1)..]);
+
     // A local series' episode has no name of its own: its numbers name it (MSFP video section 3.10).
     private static string EpisodeName(WantedEpisode e) =>
         string.Create(System.Globalization.CultureInfo.InvariantCulture, $"S{e.Season:00}E{e.Episode:00}");
@@ -911,15 +930,13 @@ public sealed class StandIns : IHostedService, IDisposable
         return all;
     }
 
-    // A new stand-in. Only what plays (a film, an episode) belongs to the
-    // channel, which gives it a Play button; a series or a season stays a
-    // library item, or Jellyfin counts none of its episodes for it (unplayed
-    // count, watched percentage: Folder.SupportsUserDataFromChildren is
-    // false for an item from a channel).
-    private void Prepare(BaseItem item, Guid parent, DateTime created)
+    // A new stand-in: a library item like a local one (Jellyfin gives a
+    // channel's films and episodes no metadata, and counts no episodes for a
+    // channel's series), what plays a shortcut with no target.
+    private static void Prepare(BaseItem item, Guid parent, DateTime created)
     {
         item.ParentId = parent;
-        item.ChannelId = item is Series or Season ? Guid.Empty : ChannelId();
+        Unread(item);
         item.DateCreated = created;
         item.DateModified = DateTime.UtcNow;
         item.Name = string.Empty;
@@ -935,24 +952,105 @@ public sealed class StandIns : IHostedService, IDisposable
         }
     }
 
-    // A series or a season made by an earlier version in the channel: taken
-    // out of it, so that Jellyfin counts its episodes.
-    private async Task OutOfChannelAsync(BaseItem item, BaseItem parent, CancellationToken ct)
+    /// <summary>
+    /// A stand-in as it must be: in no channel (earlier versions made them
+    /// in the plugin's), and what plays (a film, an episode, an extra) a
+    /// shortcut with no target, as a .strm file without one: Jellyfin's
+    /// tasks that read a file (trickplay, chapter images, media probe, image
+    /// extraction) leave it alone, and its trickplay (a paired server's
+    /// previews) isn't pruned for its library not extracting any. True when
+    /// it changed.
+    /// </summary>
+    internal static bool Unread(BaseItem item)
     {
-        if (item.ChannelId.Equals(Guid.Empty))
+        var changed = false;
+        if (!item.ChannelId.Equals(Guid.Empty))
         {
-            return;
+            item.ChannelId = Guid.Empty;
+            changed = true;
         }
 
-        item.ChannelId = Guid.Empty;
-        await _library.UpdateItemAsync(item, parent, ItemUpdateType.MetadataEdit, ct).ConfigureAwait(false);
+        if (item is Video or MediaBrowser.Controller.Entities.Audio.Audio && (!item.IsShortcut || item.ShortcutPath is not null))
+        {
+            item.IsShortcut = true;
+            item.ShortcutPath = null;
+            changed = true;
+        }
+
+        return changed;
     }
+
+    // A stand-in made by an earlier version in the channel, or before
+    // stand-ins were shortcuts: as it must be now, saved. True when it
+    // changed (a film or an episode then gets its metadata, which Jellyfin
+    // gave none in the channel).
+    private async Task<bool> OutOfChannelAsync(BaseItem item, BaseItem parent, CancellationToken ct)
+    {
+        if (!MoveOut(item))
+        {
+            return false;
+        }
+
+        await _library.UpdateItemAsync(item, parent, ItemUpdateType.MetadataEdit, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    // Unread, and the sources an earlier version saved in the item's channel
+    // metadata folder (where Jellyfin reads a channel item's) removed: nothing
+    // reads them now. The folder goes when nothing else is in it (a local
+    // title's image may be).
+    private bool MoveOut(BaseItem item)
+    {
+        var old = item.ChannelId.Equals(Guid.Empty) ? null : Path.Combine(item.GetInternalMetadataPath(), "channelmediasourceinfos.json");
+        if (!Unread(item))
+        {
+            return false;
+        }
+
+        if (old is not null && File.Exists(old))
+        {
+            File.Delete(old);
+            var dir = Path.GetDirectoryName(old)!;
+            if (!Directory.EnumerateFileSystemEntries(dir).Any())
+            {
+                Directory.Delete(dir);
+            }
+        }
+
+        return true;
+    }
+
+    // At start: every stand-in still in the old channel out of it, kept as
+    // it is (its ID, watched state, dates, sources, extras, previews); its
+    // metadata comes at the next pass.
+    private void MoveOutOfChannel()
+    {
+        var channel = _library.GetNewItemId("Channel " + OldChannelName, typeof(MediaBrowser.Controller.Channels.Channel));
+        var moved = 0;
+        foreach (var item in _library.GetItemList(new InternalItemsQuery { ChannelIds = [channel] }))
+        {
+            if (!PairedSources.IsStandIn(item) || !MoveOut(item))
+            {
+                continue;
+            }
+
+            var parent = item.GetParent() ?? (item.OwnerId.Equals(Guid.Empty) ? null : _library.GetItemById(item.OwnerId));
+            _library.UpdateItemAsync(item, parent!, ItemUpdateType.MetadataEdit, CancellationToken.None).GetAwaiter().GetResult();
+            moved++;
+        }
+
+        if (moved > 0)
+        {
+            _log.LogInformation("MSFP: {Count} titles of paired servers taken out of the plugin's old channel", moved);
+        }
+    }
+
+    /// <summary>The name of the channel earlier versions made the stand-ins in (its item's ID comes from it).</summary>
+    internal const string OldChannelName = "Paired servers";
 
     private string SeasonName(int season) => season == 0
         ? new LibraryOptions().SeasonZeroDisplayName
         : string.Format(System.Globalization.CultureInfo.CurrentCulture, _localization.GetLocalizedString("NameSeasonNumber"), season);
-
-    private Guid ChannelId() => _library.GetNewItemId("Channel " + PairedChannel.ChannelName, typeof(Channel));
 
     // A series' IDs: TMDB's, TheTVDB's (Jellyfin's TMDB provider finds a
     // series by it too), IMDb's.
@@ -1044,9 +1142,9 @@ public sealed class StandIns : IHostedService, IDisposable
             _log.LogInformation(e, "MSFP: the skip markers of {Path} couldn't be kept", item.Path);
         }
 
+        // The best copy's streams, which Jellyfin shows as the item's source.
         var sources = Sources(item, holder, hasSegments);
         _streams.SaveMediaStreams(item.Id, sources[0].MediaStreams.ToList(), CancellationToken.None);
-        SaveSources(item, sources);
         SaveChapters(item, best);
         try
         {
@@ -1185,19 +1283,6 @@ public sealed class StandIns : IHostedService, IDisposable
         }
 
         return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"http://127.0.0.1:{net.InternalHttpPort}{baseUrl}/Msfp/Subtitle/{item.Id:N}/{sourceId}/{track}");
-    }
-
-    // The sources, saved where Jellyfin keeps a channel item's.
-    private static void SaveSources(BaseItem item, List<MediaSourceInfo> sources)
-    {
-        var dir = item.GetInternalMetadataPath();
-        Directory.CreateDirectory(dir);
-        var file = Path.Combine(dir, "channelmediasourceinfos.json");
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(sources, Jellyfin.Extensions.Json.JsonDefaults.Options);
-        if (!File.Exists(file) || !File.ReadAllBytes(file).AsSpan().SequenceEqual(bytes))
-        {
-            File.WriteAllBytes(file, bytes);
-        }
     }
 
     // The best copy's chapters, as a local file's (no images), when they changed.

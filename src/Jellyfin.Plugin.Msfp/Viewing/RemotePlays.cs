@@ -198,11 +198,31 @@ public sealed class RemotePlays : IHostedService, IDisposable
 
             play.Source = source;
         }
+        else
+        {
+            // The HLS way: the copy's source under the play's handle, which
+            // Jellyfin opens (OpenToken) within the PlaybackInfo request
+            // (PairedSources gives it there only).
+            var (source, _) = _standIns.SourceFor(item, choice.Holder, choice.Copy, play.Handle, s => Loopback() + SubtitlePath(play, s));
+            play.Source = Openable(source, item, play.Handle);
+        }
 
         return play;
     }
 
-    /// <summary>The ID of the stand-in's saved source a choice opens (the HLS way): the copy's when the stand-in's holder was chosen, else its first.</summary>
+    /// <summary>A play's source of the HLS way: opened by Jellyfin (its open token names the stand-in and the play's handle), never read or probed as it is.</summary>
+    internal static MediaSourceInfo Openable(MediaSourceInfo source, BaseItem item, string handle)
+    {
+        source.Id = handle;
+        source.OpenToken = PairedSources.TokenOf(item, handle);
+        source.RequiresOpening = true;
+        source.RequiresClosing = true;
+        source.SupportsDirectPlay = false;
+        source.SupportsProbing = false;
+        return source;
+    }
+
+    /// <summary>The ID of the stand-in's saved source for a choice's copy (the one its client is shown): the copy's when the stand-in's holder was chosen, else its first.</summary>
     internal string SavedSourceId(BaseItem item, Playable title, HandOver.Choice choice)
     {
         if (title.Chosen is { } h && h == choice.Holder)

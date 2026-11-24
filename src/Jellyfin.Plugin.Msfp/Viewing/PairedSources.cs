@@ -14,11 +14,12 @@ using Msfp.Protocol;
 namespace Jellyfin.Plugin.Msfp.Viewing;
 
 /// <summary>
-/// The stand-ins' media: one source per copy saved with each
-/// (<see cref="StandIns"/>), which Jellyfin shows; at PlaybackInfo the
-/// play's own (<see cref="HandOverFilter"/>): a plain file's, given here,
-/// or the HLS way's, opened here as a live stream (MSFP play,
-/// <see cref="RemotePlays"/>) and closed when Jellyfin is done (MSFP stop).
+/// The stand-ins' media: the best copy's streams saved with each
+/// (<see cref="StandIns"/>), which Jellyfin shows as a library item's
+/// source; at PlaybackInfo the play's own (<see cref="HandOverFilter"/>):
+/// a plain file's, given here, or the HLS way's, given here and opened here
+/// as a live stream (MSFP play, <see cref="RemotePlays"/>) and closed when
+/// Jellyfin is done (MSFP stop).
 /// </summary>
 public sealed class PairedSources : IMediaSourceProvider
 {
@@ -40,16 +41,16 @@ public sealed class PairedSources : IMediaSourceProvider
     /// </summary>
     public static readonly string TokenPrefix = typeof(PairedSources).FullName!.GetMD5().ToString("N") + "_";
 
-    /// <summary>Whether an item is a stand-in: of the paired servers' channel, at an msfp:// path.</summary>
+    /// <summary>Whether an item is a stand-in: at an msfp:// path.</summary>
     public static bool IsStandIn(BaseItem item) =>
         item.Path?.StartsWith(Wanted.PathOf(string.Empty), StringComparison.Ordinal) == true;
 
     /// <inheritdoc />
-    // A play's source (the plain file, HandOverFilter): within the
-    // PlaybackInfo request that made it, and in each later request naming
-    // its handle (Jellyfin's stream, HLS and subtitle routes), for the user
-    // it was made for. Nothing otherwise: the saved sources are the
-    // stand-in's own.
+    // A play's source (HandOverFilter): within the PlaybackInfo request
+    // that made it; the plain file's also in each later request naming its
+    // handle (Jellyfin's stream, HLS and subtitle routes), for the user it
+    // was made for. Nothing otherwise: the stand-in's own source is
+    // Jellyfin's, from its saved streams.
     public Task<IEnumerable<MediaSourceInfo>> GetMediaSources(BaseItem item, CancellationToken cancellationToken)
     {
         if (_http.HttpContext is not { } ctx || !IsStandIn(item))
@@ -58,6 +59,11 @@ public sealed class PairedSources : IMediaSourceProvider
         }
 
         var play = ctx.Items[HandOverFilter.ItemKey] as PlayToken;
+        if (HlsOf(play, item.Id) is { } hls)
+        {
+            return Task.FromResult<IEnumerable<MediaSourceInfo>>([hls]);
+        }
+
         string? shownAs = null;
         if (play is null && Guid.TryParse(ctx.User.FindFirst("Jellyfin-UserId")?.Value, out var user))
         {
@@ -93,6 +99,10 @@ public sealed class PairedSources : IMediaSourceProvider
 
         return Task.FromResult<IEnumerable<MediaSourceInfo>>([clone]);
     }
+
+    /// <summary>The source of a play of the HLS way made for this request and this stand-in (a copy), for Jellyfin to open; null otherwise.</summary>
+    internal static MediaSourceInfo? HlsOf(PlayToken? requestPlay, Guid item) =>
+        requestPlay is { Way: Way.Hls, Source: { } source } && requestPlay.Item == item ? RemotePlays.Clone(source) : null;
 
     // The media source IDs a request names: its query's MediaSourceId, its
     // route's (the subtitle routes carry it in the path).

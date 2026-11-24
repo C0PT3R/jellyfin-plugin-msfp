@@ -295,15 +295,14 @@ public sealed class HandOverFilter : IAsyncActionFilter
             return;
         }
 
-        // The HLS way: Jellyfin opens the stand-in's source (a live stream)
-        // within this request, or later by its open token: the play waits
-        // for it.
+        // The HLS way: Jellyfin opens the play's source (a live stream,
+        // PairedSources gives it under the play's handle) within this
+        // request.
         var hls = _plays.Mint(user.Id, item, choice with { Asked = choice.Asked! with { Replaces = replaces } });
         _log.LogInformation("MSFP: {Key} handed over as HLS from {Peer} ({Delivery})", choice.Holder.Key, choice.Holder.Peer, hls.Asked?.Delivery);
         context.HttpContext.Items[ItemKey] = hls;
-        var saved = _plays.SavedSourceId(item, title, choice);
-        args["mediaSourceId"] = saved;
-        SetMember(dto, "MediaSourceId", saved);
+        args["mediaSourceId"] = hls.Handle;
+        SetMember(dto, "MediaSourceId", hls.Handle);
         await next().ConfigureAwait(false);
     }
 
@@ -358,9 +357,9 @@ public sealed class HandOverFilter : IAsyncActionFilter
     }
 
     // The user may see the stand-in: its parental rating and tags, and its
-    // library (a stand-in is a channel item, which Jellyfin's own check
-    // lets through by the channel's access alone); an extra, as the title
-    // it belongs to.
+    // library (as Jellyfin's own checks, which earlier versions' channel
+    // items passed by the channel's access alone); an extra, as the title it
+    // belongs to.
     private bool Allowed(MediaBrowser.Controller.Entities.BaseItem item, Jellyfin.Database.Implementations.Entities.User user)
     {
         var title = !item.OwnerId.Equals(Guid.Empty) ? _library.GetItemById(item.OwnerId) : item;
