@@ -179,13 +179,16 @@ starts at its strictest:
     image and every preview sheet are re-encoded before Jellyfin gets them.
     The plugin's two libraries of paired servers' titles are never shared.
 
-<!-- Rules 22 to 24: written from the migration plan (4.3, answers 8 and 9) while phase 7 was built; check against its code after the merge. -->
-
-22. A copy's previews are fetched only for a copy someone plays, under
-    that playback's ticket, one request at a time per copy, and kept by its
-    etag and layout in Jellyfin's trickplay folder.
+22. A paired server's previews are fetched only when someone plays its
+    copy, and only for the copy the stand-in shows first: the copy's whole
+    set, in the background, under that playback's ticket (a previews
+    call's when the playback ended before the last sheet), one fetch at a
+    time across the server; never for a whole library ahead. Each sheet is
+    re-encoded (rule 21) and kept by the copy's etag and layout in
+    Jellyfin's trickplay folder.
 23. A paired server's extras are played like any of its copies, by rules
-    17 to 21.
+    17 to 21; the user's access is checked against the title the extra
+    belongs to as well as the extra.
 24. Paired servers' theme songs and videos are off by default (Settings).
     When on, each one played on a title page is a playback on the paired
     server, and so tells it which title page was opened.
