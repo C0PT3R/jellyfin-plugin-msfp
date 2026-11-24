@@ -26,11 +26,11 @@ Your friends' libraries become part of your Jellyfin experience.
 
 - **Browse their collections:** Films and series appear in two additional libraries, complete with posters, descriptions and metadata.
 - **Use your usual apps:** Everything works through your existing Jellyfin clients. No additional accounts or applications.
-- **A proper playback experience:** Subtitles (including image-based ones), seek-bar previews, intro and credits markers, and audio track selection.
+- **A proper playback experience:** Their titles play like your own files: subtitles (including image-based ones), seek-bar previews, intro and credits markers, audio track selection, special features and trailers. Theme songs and videos too, if you switch them on.
 - **Smart source selection:** When multiple friends have the same title, the best available source is tried first, with fallback to another server when one is busy.
 - **Progress that follows you:** If you get your own copy of something you were watching from a friend's server, your viewing progress carries over.
 
-Titles you already have aren't duplicated. Only films and series identified through TMDB are shared; music isn't supported.
+Titles you already have aren't duplicated. Films and series are shared once identified through TMDB (or TheTVDB for series only it knows); titles neither knows only if you switch that on. Music isn't supported.
 
 ## Your server. Your rules.
 
@@ -54,7 +54,7 @@ Getting started with a friend is straightforward:
 1. **Pair your servers.** One of you generates a pairing code and sends it to the other. The receiving server uses the code to initiate the connection, and the owner accepts it after verifying the server's fingerprint.
 2. **Choose what to share.** Each server independently decides which libraries the other is allowed to see.
 3. **Browse their libraries.** Shared films and series appear in the additional federation libraries created by the plugin.
-4. **Press play.** Your Jellyfin server retrieves the media from your friend's server and relays it to your users. They only communicate with your server, and the remote server never learns their identities.
+4. **Press play.** Your Jellyfin server reads the file from your friend's server and plays it to your users as it would a file of your own, converting it here when their device needs it. They only communicate with your server, and the remote server never learns their identities.
 
 A few friends can also form a **group**. Instead of manually pairing every server, members join through a group invitation and establish their connections through the group. Sharing permissions and resource limits can then be managed for the group as a whole.
 
@@ -89,6 +89,8 @@ Under **Settings**, configure:
 - **This server's address:** The HTTPS address other servers will use to reach yours (for example, `https://media.example.org`). Federation remains disabled until this is configured.
 - **This server's name:** An optional name that your friends will see.
 - **Transcodes at once:** The maximum number of simultaneous conversions allowed on your server, shared between your own users and remote viewers. The default is 2. Set it to 0 to prevent remote viewers from using transcoding.
+- **Burn subtitles into the picture for paired servers:** Lets a paired server ask for subtitles drawn into the picture, which costs a conversion. Off by default.
+- **Play paired servers' theme songs and videos:** Their titles' themes play on a title's page, as your own do. Each one is a playback on the paired server, which so learns which page was opened. Off by default.
 
 Save your settings. The **This server** tab displays your server's fingerprint, which identifies it to other servers.
 
@@ -108,7 +110,7 @@ Once paired, click **Manage…** on the other server's entry to configure sharin
 
 - **You share with it:** Choose which of your libraries the other server can access. Nothing is shared by default.
 - **You show on your server:** Choose which of its libraries appear in your Jellyfin. All libraries are shown by default, including new ones.
-- **What its viewers may use here:** Configure simultaneous streams, transcoding sessions and bitrate limits. The defaults are 2 streams, 1 transcode and no bitrate cap.
+- **What its viewers may use here:** Configure simultaneous streams, transcoding sessions and bitrate limits. The defaults are 2 streams, 1 transcode and no bitrate cap. Downloads and scans are off (0) unless you allow some.
 
 Your friend's titles should now appear in the two federation libraries:
 
@@ -144,6 +146,7 @@ This avoids sharing the wrong film or series when folder names are ambiguous or 
 ## Troubleshooting
 
 - **Federation is disabled:** The plugin displays the reason at the top of its page. Usually, the server address is missing or isn't HTTPS.
+- **A paired server shows "Titles not read":** The line under it says why. "It runs an older draft of the protocol" means it still runs this plugin 0.10 or earlier (or an Overfin of that time): 0.11.0 and later can't read it, nor it them, until it updates. The pairing is kept meanwhile.
 - **The other server reports an incompatible protocol version:** Update both servers to their latest plugin or Overfin versions.
 - **Your server's key was stolen:** For example, if a backup containing your server's private key was exposed, use **This server's key was stolen** under the **This server** tab. Paired servers will stop trusting the old key and follow your server to its replacement.
 - **You move your server:** Update **This server's address** under Settings and save. Paired servers are notified of the change.

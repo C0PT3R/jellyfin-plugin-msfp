@@ -17,19 +17,22 @@ assumed.
 
 ## What is built
 
-**Early.** Built: pairing from the plugin's page (make a code, use one,
-accept, check, end, confirm a peer's new key), this server's key changes
+**Early.** On MSFP's revised version 0 (msfp-spec proposals 16 and 17,
+since 0.11.0; a server on the draft before it, this plugin 0.10 and
+earlier, can't be read until it updates, and its pairing is kept).
+Built: pairing from the plugin's page (make a code, use one, accept,
+check, end, confirm a peer's new key), groups, this server's key changes
 (to the next key, or revoked when stolen), moves (a new address in the
-page), the `libraries` and `titles` calls both ways, and playback of this
-server's films and episodes by peers (`play`, `progress`, `stop` and the
-media). The operator picks, per peer, which Jellyfin libraries it is
-offered, and which of the peer's are read (by default all, those it adds
-later too). Paired peers' catalogs are read every 30 minutes and kept in
-the plugin's storage, where the plugin's page shows them.
-
-Peers' titles in this server's Jellyfin, played through MSFP (since
-2026-11-19): see "Paired servers' titles" below. Music isn't shared (the parts
-spoken are catalog, playback, media and video).
+page), the `libraries` and `titles` calls both ways with each title's
+copies described by their facts, and playback both ways: peers' viewers
+playing this server's films, episodes and extras (the delivery the
+engine decides, made exactly or refused), and this server's viewers
+playing peers' titles as Jellyfin items. The operator picks, per peer
+and per group, which Jellyfin libraries are offered, and which of a
+peer's are read (by default all, those it adds later too). Paired peers'
+catalogs are read every 30 minutes and kept in the plugin's storage,
+where the plugin's page shows them. Music isn't shared (the parts spoken
+are catalog, playback, media, video and groups).
 
 Tested on 2026-11-19 in a Jellyfin 12.2 container: msfp-spec's
 conformance suite, 0 failed, preview sheets passing since they are served;
@@ -70,24 +73,29 @@ ended it at 120).
 
 ## Building
 
-The plugin uses msfp-dotnet's packages from nuget.org (`Msfp.Engine`,
-which brings `Msfp.Protocol`). You need the .NET 10 SDK, or a container
-with it:
+Released versions use msfp-dotnet's packages from nuget.org
+(`Msfp.Engine`, which brings `Msfp.Protocol`, and `Msfp.Describe`). Until
+0.11.0 is released, the branch `msfp-revision` builds against
+msfp-dotnet's branch `revision` by project reference: clone it beside
+this repository (`../msfp-dotnet`), as CI does. You need the .NET 10 SDK,
+or a container with it:
 
 ```sh
 dotnet test Jellyfin.Plugin.Msfp.slnx
 dotnet build -c Release src/Jellyfin.Plugin.Msfp -o out
 ```
 
-With podman and no SDK on the host, from this repository:
+With podman and no SDK on the host, from the folder holding this
+repository (and `msfp-dotnet` beside it, on the branch `msfp-revision`):
 
 ```sh
-podman run --rm -v "$PWD":/src:Z -w /src mcr.microsoft.com/dotnet/sdk:10.0 \
+podman run --rm -v "$PWD":/src:Z -w /src/jellyfin-plugin-msfp mcr.microsoft.com/dotnet/sdk:10.0 \
   sh -c 'dotnet test Jellyfin.Plugin.Msfp.slnx && dotnet build -c Release src/Jellyfin.Plugin.Msfp -o out'
 ```
 
-The plugin is the four DLLs in `out`: `Jellyfin.Plugin.Msfp.dll`,
-`Msfp.Engine.dll`, `Msfp.Protocol.dll` and `BouncyCastle.Cryptography.dll`
+The plugin is the five DLLs build.yaml lists, in `out`:
+`Jellyfin.Plugin.Msfp.dll`, `Msfp.Engine.dll`, `Msfp.Protocol.dll`,
+`Msfp.Describe.dll` and `BouncyCastle.Cryptography.dll`
 (Jellyfin's own, and what ASP.NET Core brings, stay out). Copy them into a
 folder under Jellyfin's `plugins` directory and restart Jellyfin. It is
 built against Jellyfin 12.2 (`targetAbi` 12.2.0.0) and works with 12.2
@@ -97,8 +105,13 @@ and later.
 
 `tools/check-jellyfin.py IMAGE PLUGIN_DIR` starts a throwaway Jellyfin
 of that image with the plugin and checks that it is loaded and Active,
-that its API, channel and configuration page answer, that its two
-libraries are made, and that Jellyfin's log holds no error of its own.
+that its API and configuration page answer, that its two libraries are
+made and it registers no channel, that what it relies on in Jellyfin is
+there (the hand-over filter's controllers and actions, PlaybackInfo and
+the universal audio route, the special features and trailers lists, an
+item's previews listed by source ID), and that Jellyfin's log holds no
+error of its own. That extras each keep their own presentation key in
+Jellyfin's lists needs a paired server's titles: it is checked live.
 CI runs it for every Jellyfin the plugin supports, listed in
 `.github/workflows/jellyfin-check.yml` (12.2, 12.3 and 12.4 on
 2026-11-19; each new Jellyfin release is added there). The viewing and
@@ -173,16 +186,25 @@ openssl x509 -in cert.pem -pubkey -noout | openssl pkey -pubin -outform der \
   | openssl dgst -sha256 -binary | base64 | tr '+/' '-_' | tr -d '='
 ```
 
-What a peer sees of an offered library: the films, series, seasons and
-episodes that have a TMDB ID (of the film, or of the series), keyed by
-that ID, with their audio and subtitle languages, the picture of their
-best copy (its height, stepped, and its HDR formats), and their IMDb and
-TVDB IDs. It never sees files, paths, or Jellyfin's item or library IDs;
-libraries are named by IDs the engine makes. The plugin tells the engine
-when the titles may have changed: 30 seconds after Jellyfin's library
-events settle, and every 10 minutes whatever happens. The engine reads
-the catalog again then and keeps what changed, so peers can read only
-what changed.
+What a peer sees of an offered library: its films, series, seasons,
+episodes and their extras (trailers, featurettes, themes...), keyed by
+their TMDB ID (a series Jellyfin places only on TheTVDB under its
+TheTVDB ID; titles nothing identifies only where the owner switched
+local titles on), with their IMDb and TVDB IDs, and each title's copies
+described by their facts (MSFP video sections 3.2 to 3.9): the
+container, size and length; the picture's codec, size, colour and HDR;
+every audio and subtitle track with its codec, language and flags;
+chapters (names cleaned), skip markers and the preview layout. The
+plugin reads each file's headers once with Jellyfin's own ffprobe
+(msfp-dotnet's Describe, bounded as SECURITY.md rule 8 says) and keeps
+the read by the file's fingerprint; until then a copy is described from
+what Jellyfin knows of it. A peer never sees files, paths, the day a
+file was added, or Jellyfin's item or library IDs; libraries and copies
+are named by IDs the engine makes. The plugin tells the engine when the
+titles may have changed: 30 seconds after Jellyfin's library events
+settle, and every 10 minutes whatever happens. The engine reads the
+catalog again then and keeps what changed, so peers can read only what
+changed.
 
 Every address a peer gives is checked each time the engine connects to
 it, as MSFP core section 3.3 says: loopback, link-local (a cloud's
@@ -192,7 +214,10 @@ machine" in the plugin's page allows loopback, and nothing else.
 Federation calls are limited as MSFP core section 8.3 suggests (the
 engine's defaults). Behind a reverse proxy, set Jellyfin's known proxies
 (Dashboard, Networking), so that the per-address limit counts the client
-address the proxy forwards.
+address the proxy forwards, and so that the plugin's `/Msfp/Subtitle/...`
+and `/Msfp/Relay/...` routes, which answer this machine only (Jellyfin's
+own reads), can tell a request through a proxy on this machine from
+Jellyfin's (SECURITY.md rule 3).
 
 The engine's records are in the plugin's data folder, `msfp/` (JSON
 files, readable by their owner only, the keys sealed with
@@ -201,57 +226,61 @@ reads only some libraries of).
 
 ## Playing
 
-A peer's viewer plays one of this server's films or episodes from the
-libraries offered to that peer; the engine checks the call, the pairing's
-limits (2 streams and 1 transcode at once by default) and the copy, and
-the plugin serves it:
+A peer's viewer plays one of this server's films, episodes or extras from
+the libraries offered to that peer. The engine checks the call, the
+pairing's limits (2 streams and 1 transcode at once by default) and the
+copy, and decides what is served (MSFP playback section 2.7); the plugin
+makes exactly that, or refuses it (`delivery-refused`) before anything
+starts:
 
-- **Direct**, the file as it is with byte ranges, when the viewer's
-  device plays its container, video codec, audio, HDR, height and
-  bitrate.
-- **HLS** otherwise, made by Jellyfin itself: the video copied (remux)
-  when the device plays its codec, else transcoded to H.264; the audio
-  copied or AAC. The plugin asks Jellyfin's HLS over loopback with an API
-  key it makes, named "MSFP Federation" in Jellyfin's API keys, as a device
-  of the playback's own, and rewrites the playlists to the subset MSFP
-  allows. Progress keeps Jellyfin's transcode alive; stop ends it.
-- **Subtitles**: the text ones, as WebVTT made by Jellyfin's subtitle
-  encoder. Picture subtitles (PGS) aren't served.
+- **`file`**: the file as it is, by byte ranges, from disk, within the
+  path checks of SECURITY.md (rules 4 and 6), with its ETag.
+- **`remux`** (MPEG-TS or fMP4 segments), **`transcode`** (H.264 always;
+  HEVC and AV1 when Jellyfin's encoding settings allow them; the audio
+  copied or converted) and **the baseline** (H.264 High 4.1, at most 1080
+  lines, 8-bit 4:2:0, deinterlaced, SDR, AAC-LC stereo): made by
+  Jellyfin's own transcoder, asked over loopback (`main.m3u8`) with an API
+  key it makes, named "MSFP Federation" in Jellyfin's API keys, as a
+  device of the delivery's own, with Jellyfin's IDs and closed values
+  only. Jellyfin's ffmpeg command line is checked against the order when
+  it starts and at each restart (a seek), then ffprobe reads the first
+  output file; any difference (codecs, profile, level, size, pixel
+  format, tone mapping, audio, segments) stops the delivery and refuses
+  it; a lower bitrate than asked is fine. HDR is kept only when copied
+  (`range: keep` is refused this release), Dolby Vision profile 7 and
+  Dolby Vision on another codec than HEVC are refused in fMP4 remuxes,
+  and burned subtitles only when the setting is on. The master playlist
+  is the plugin's (`HlsMaster`), with the codecs the check read; the
+  media playlist is Jellyfin's, rewritten to the subset MSFP allows.
+  While a delivery is read the plugin pings Jellyfin; one with neither a
+  segment read nor a report for 120 seconds is stopped, its ffmpeg ended
+  and its files deleted; what a run left is deleted at the next start
+  (`deliveries.json`). At most 32 deliveries run at once.
+- **Subtitles apart**: text tracks as WebVTT (Jellyfin's subtitle
+  encoder), PGS tracks (inside the file, or an external `.sup`) as
+  pictures in 2-minute parts by display set (MSFP video section 6.4),
+  copied out by Jellyfin's ffmpeg once per track, bounded as SECURITY.md
+  rule 8 says. ASS, fonts, DVD and DVB subtitles aren't served apart this
+  release; they stay inside a `file` play.
 - **Seek-bar previews**: Jellyfin's own trickplay, when it has made some
   for the copy (trickplay image extraction on for the library, or its
   "Generate Trickplay Images" task). Of Jellyfin's sets, the one closest
-  to 320 pixels wide within MSFP's bounds (a sheet at most 4,096 pixels
-  each way) is sent; its sheets are served as Jellyfin drew them, JPEGs of
-  at most 8 MiB.
+  to 320 pixels wide within MSFP's bounds is listed as the copy's layout;
+  its sheets are checked as JPEGs within their size and re-encoded by the
+  engine before they leave.
+- **Downloads and scans** only within the pairing's or group's limits,
+  0 (none) by default.
 
-Transcodes also have a limit for the whole server, "Transcodes at once on
-this server" in the plugin's page (2 by default). It counts this server's
-own users' transcodes (their sessions playing with the video re-encoded)
-and peers' together. At the limit, a peer's transcode is refused as
+A copy made of several files (Jellyfin's parts: `- cd1`, `- part2`...)
+isn't listed to peers this release.
+
+Transcodes also have a limit for the whole server, "Transcodes at once"
+in the plugin's settings (2 by default). It counts this server's own
+users' transcodes (their sessions playing with the video re-encoded) and
+peers' together. At the limit, a peer's transcode is refused as
 `server-busy`, which its viewer's server shows as busy for now; this
 server's own users are never refused, even above it. Direct play and
-remux don't count. 0 gives peers no transcode. The page shows the
-transcodes in use now.
-
-A film in several files (Jellyfin's parts: `- cd1`, `- part2`...) is
-served as one HLS stream, as MSFP asks of such a copy: Jellyfin's ffmpeg
-joins the parts (its concat demuxer), copying the video and the audio,
-into a folder of the playback's own, and its playlist grows as the copy
-runs (an EVENT playlist, ended when done; far faster than playing). Only
-when every part has the same video (codec, size) and audio, and the
-viewer's device plays them as they are; otherwise the copy is refused
-(the viewer's server asks another server). Never converted: Jellyfin
-can't play parts as one, and a conversion outside it would miss its
-settings (hardware acceleration) and its dashboard.
-
-A remux asked of Jellyfin (the video copied) is watched while it starts:
-Jellyfin may re-encode the video anyway, by its own rules. The plugin
-reads the video encoder in Jellyfin's ffmpeg command for that playback;
-re-encoding, the playback counts as a transcode from then on (MSFP
-playback section 6.2), for the pairing and against "Transcodes at once
-on this server", and with none left it is stopped (reason `operator`:
-MSFP has no closer one, SPEC-GAPS). With the plugin's requests this is
-rare: Jellyfin works out a stream's bitrate the file doesn't give.
+remux don't count. 0 gives peers no transcode.
 
 Paired servers' playbacks show in Jellyfin's own dashboard: each one a
 session of its own, the paired server's name as the device, "MSFP" as
@@ -259,7 +288,7 @@ the client, no user (a paired server's viewers are never known here),
 with the title, the play method and the position, told as a client
 tells them (start, progress, stop); no one's watched state is touched.
 They don't count as this server's own users' transcodes ("Transcodes at
-once on this server" counts them as paired servers').
+once" counts them as paired servers').
 
 ## Paired servers' titles
 
@@ -267,27 +296,38 @@ The plugin makes two libraries, "Films from paired servers" and "Series
 from paired servers" (named in the server's language; a name changed by
 the owner stays), over folders in its data folder that hold only a
 README. In them, a stand-in for each film and episode read of a paired
-server:
+server, with the extras of the title it belongs to:
 
 - **No file.** Its path is `msfp://paired/` and its MSFP key
   (`msfp://paired/movie/tmdb/949`, `.../series/tmdb/1920/e127683`), so
   the same title always comes back as the same Jellyfin item, with its
-  watched state. It belongs to the plugin's empty channel "Paired
-  servers": Jellyfin takes a channel's items for remote ones, which
-  clients offer to play (an item with no file would be virtual, with no
-  Play button). The channel is in no user's channel list, so no empty
-  tile in My Media: Jellyfin asks `IsEnabledFor` only for those lists,
-  and its items' access and playback go by the channel's visibility
-  (user policy). Tried on 12.4: tile gone, stand-ins play.
-- **Metadata from Jellyfin's TMDb provider**, from the TMDB ID in the
-  key: a film's, a series' (episodes are placed by the `place` the
-  catalog gives, TMDB's numbering, never the peer's).
-- **Streams from the catalog:** the best picture's height and every
-  audio and subtitle language of the copies, saved as the item's streams
-  at each pass. Codecs aren't known before play.
-- **One source of its own,** saved where Jellyfin keeps a channel item's
-  (`channelmediasourceinfos.json`), which must be opened when someone
-  presses Play.
+  watched state. Jellyfin takes it for a remote item, which clients
+  offer to play. Since 0.11.0 stand-ins are ordinary library items (the
+  plugin's channel "Paired servers" is gone: Jellyfin fetched no
+  metadata for a channel item showing its sources); those made in it
+  move out once at the update, keeping their IDs and users' data. A
+  stand-in that plays is marked a shortcut without a target, so that
+  Jellyfin's trickplay and chapter-image tasks leave it alone, and no
+  task of Jellyfin's reads its path.
+- **Metadata from Jellyfin's providers**, from the key's TMDB ID (or
+  TheTVDB's for a series Jellyfin places only there): a film's, a
+  series' (episodes are placed by the `place` the catalog gives, never
+  the peer's numbering). A local title gets its owner's name, year and
+  image (re-encoded), never looked up elsewhere.
+- **One source per copy** of the paired server chosen for the title (the
+  one with the best copy), best first, each with its streams written as
+  Jellyfin's own probe of the file would write them (codecs, profile and
+  level, colour and HDR, every audio and subtitle track, external
+  subtitle files first), its container, size, bitrate and length, so that
+  Jellyfin's decision engine judges it as a local file. The chapters and
+  skip markers are saved (the markers under the plugin's segment provider
+  "MSFP Federation", which an owner can turn off per library).
+- **Recently added** is the day this server first saw the title; the
+  titles of a paired server's first reading count as old.
+- **Extras** (trailers, featurettes, behind the scenes...) are Jellyfin
+  extras of the stand-in they belong to, each with its own presentation
+  key so that Jellyfin lists them all; theme songs and videos only when
+  "Play paired servers' theme songs and videos" is on (off by default).
 
 One stand-in per title, whatever the number of peers holding it. None
 for a film this server holds itself, nor for an episode of a series it
@@ -304,130 +344,68 @@ within one folder, and the local copy is in another library, usually
 added before the stand-in goes. The plugin has Jellyfin reattach it to
 the local items sharing its keys, with Jellyfin's own merge (per user,
 the latest played wins), then saves it again per user so that
-Jellyfin's cache and its clients see it. Tried on 12.3: a film and an
-episode. The other way, a stand-in made again gets the local copy's
-user data from Jellyfin itself (a new item). Federation off empties both
-libraries, which stay. A library its owner removes isn't made again
-until the page's "Make the libraries again".
+Jellyfin's cache and its clients see it. The other way, a stand-in made
+again gets the local copy's user data from Jellyfin itself (a new item).
+Federation off empties both libraries, which stay. A library its owner
+removes isn't made again until the page's "Make the libraries again".
 
 Kept in step 30 seconds after a reading of a peer's catalog, the end of a
 pairing, or a change to this server's films and series settles, and every
 hour. The two libraries are never offered to peers.
 
-Playing one: opening its source sends MSFP `play` to the paired servers
-holding it, best copy first (height, then HDR), the next one when a
-server refuses or is busy. The plugin asks for everything MSFP lists
-(containers, codecs, HDR) so that the paired server sends its copy as it
-is whenever it can, which costs it least; Jellyfin converts it here when
-the viewer's device needs it, as it does a local file (that conversion
-counts in "Transcodes at once on this server"). Jellyfin reads the
-playback at the plugin's relay route on its own loopback,
-`/Msfp/Relay/<random token>/file` or `.../master.m3u8`, open to this
-machine only; the engine fetches each piece from the paired server with
-the playback's ticket, which never leaves it. The plugin reads the
-streams itself through the relay before handing the source over:
-Jellyfin's own probe of such a source keeps one audio track only.
-Jellyfin's playback reports go to the paired server as `progress`; its
-stop, or Jellyfin closing the source, as `stop`. A report is matched to
-its playback by the live stream the session names; some clients (Kodi's
-add-on) name none, so a session is also bound, as it starts playing, to
-the title's newest playback no session has, which tells apart two such
-viewers of one title. Every minute, a
-playback a Jellyfin session is still on (by its live stream) is
-reported too, paused or not: some clients report seldom while paused
-(Kodi's add-on every 250 seconds), past the paired server's 2 minutes
-without news and the plugin's own 3. Jellyfin ends a session's playback
-itself when its client hasn't reported for 5 minutes (checked every 5),
-or, when its operator set one, after a pause longer than the
-inactive-session limit; the paired server's playback ends with it. A
-playback the paired server's side ends (its operator, the pairing, its
-library no longer offered) is forgotten here as soon as the engine
-learns it, at the next `progress`. A playback no session is on, neither
-reported on nor read for 3 minutes, is stopped (some clients never say
-they stopped).
+Playing one is decided at PlaybackInfo, because after it Jellyfin has
+handed the client its source. An MVC filter on that request
+(`MediaInfo`/`GetPostedPlaybackInfo` and `GetPlaybackInfo`, and
+`UniversalAudio`/`GetUniversalAudioStream`, which jellyfin-web's audio
+player uses for a theme song) checks the user's access to the stand-in
+and its library (an extra's, to the title it belongs to), chooses the
+paired server (the copy picked, else the best, on a server with a
+stream free by its limits and this server's count; all busy: Jellyfin's
+own "too many streams" answer), and the way:
 
-Subtitles: the paired server's text tracks (regular and forced) become
-external WebVTT tracks of the playback. Jellyfin reads each whole at the
-relay, `.../subtitles/<track>/all.vtt`, which the plugin makes from the
-track's 2-minute parts (MSFP video section 6.2), each rebuilt by the
-engine as section 6.3 says, the cues the parts share kept once. They
-replace the text tracks found inside a file played as it is (the same
-tracks, cleaned); picture tracks found inside it stay. Jellyfin serves
-them to clients at its own subtitle route, or burns them in for a device
-that can't show them. While a stand-in plays, its saved source is the
-playback's (Jellyfin's subtitle route reads the saved one).
+- **The plain file**, by default: the copy read by byte ranges at the
+  plugin's file route, `/Msfp/File/<token>`, at the request's own address
+  (the loopback one for Jellyfin's own ffmpeg), behind a token made for
+  that one play (SECURITY.md rules 17 to 20). Jellyfin direct plays it,
+  remuxes it or converts it here as it does a local file (a conversion
+  counts in "Transcodes at once"). Its first read starts the MSFP
+  playback (`delivery: file`); a read after it ended (a long pause)
+  starts it again on the same etag. Embedded audio and subtitles come
+  with the bytes, and Jellyfin switches them; external subtitles are
+  fetched apart from the paired server (text joined into WebVTT, PGS
+  written to disk, which Jellyfin reads from there only).
+- **The paired server's HLS**, as Jellyfin's live stream, when the copy
+  has several parts, the server refused the plain file since its catalog
+  was last read, or the copy's bitrate is above the pairing's cap (the
+  paired server then converts it): a remux within the cap, a conversion
+  above it, a step lower at each refusal down to the baseline, read by
+  Jellyfin at the plugin's relay route on its loopback
+  (`/Msfp/Relay/...`). Picking another audio track makes a new play that
+  replaces the first.
 
-Audio: `play` carries the Jellyfin user's audio and subtitle languages
-(their settings, as Jellyfin's tag), which a paired server converting
-the stream uses to send the right audio track; a converted stream's one
-track is named from the answer. Played as it is, the file brings every
-track and the viewer switches here.
+The client sees the play's source under the stand-in's saved source ID,
+so that it finds that source's previews. Jellyfin's playback reports go
+to the paired server as `progress` (every minute at least, paused too);
+its stop, as `stop`. A play nothing reads or reports on for 3 minutes is
+stopped (some clients never say they stopped).
 
-Switching the audio of a converted stream while it plays: its source
-lists every audio track of the copy, each with an Index from its place
-among the copy's (the same for every playback of that copy), the one
-playing first after the video, since Jellyfin maps a stream to ffmpeg by
-its place in the list. A player picking another track asks Jellyfin for
-playback info again with the live stream already open, which Jellyfin
-would reuse. `AudioSwitchFilter`, an MVC action filter on that request
-(`MediaInfo`/`GetPostedPlaybackInfo`), sees a stand-in's live stream and
-a track it doesn't carry: it closes the live stream (MSFP `stop`) and
-clears the request's live stream so that Jellyfin opens the source again,
-which plays the copy with that track: its ID on the same paired server,
-its language on another (playback 2.3). Jellyfin's request type isn't
-one plugins can reference; the filter reads and sets its members by
-name, the same in 12.2, 12.3 and 12.4. Tried in jellyfin-web 12.4 with
-a film converted by a 12.2 server (English, then French): playback goes
-on at its position, the paired server's ffmpeg maps the new track. The
-same filter carries a track picked before Play (the audio menu on the
-title's page, sent in that request's body, which the source's opening
-can't read): its language, from the stand-in's saved streams, goes in
-`play` in place of the user's audio language. Tried: French picked, the
-paired server converts French.
+Seek-bar previews: the copy's layout is registered as the stand-in's
+trickplay from the catalog, so clients find it before they play; the
+sheets are fetched when that copy's playback starts, all of them, in the
+background, under the playback's ticket, re-encoded by the engine with
+SkiaSharp (the image library Jellyfin ships; not shipped with the
+plugin), and kept for every viewer while the copy's etag and layout
+hold.
 
-Seek-bar previews: when a playback's answer carries previews (MSFP
-video section 5.5) and the stand-in has none of that width, the plugin
-fetches the sheets in the background through the engine, which
-re-encodes each with SkiaSharp (the image library Jellyfin ships; not
-shipped with the plugin), and keeps them as the stand-in's own trickplay.
-They show from the next time the title is opened, for every viewer, and
-go with the stand-in. The stand-in's saved source isn't marked remote:
-Jellyfin lists the trickplay of local sources only.
+When every paired server holding the title is busy, the viewer gets
+Jellyfin's own answer for rate limits (`ErrorCode: RateLimitExceeded`),
+which clients show in the viewer's language ("This media cannot be
+played at this time due to rate limits."); a title no paired server
+holds now, Jellyfin's "no compatible stream".
 
-When every paired server holding the title refuses it as busy (its
-stream limit, or no answer), the plugin's MVC exception filter turns
-the failed open into Jellyfin's own answer for rate limits
-(`ErrorCode: RateLimitExceeded`), which clients show in the viewer's
-language ("This media cannot be played at this time due to rate
-limits."). It touches only that one exception of the plugin's. Other
-failures (no server holds it now, unreachable) stay Jellyfin's generic
-playback error ("Please try again later").
-
-Skip markers, both ways. Serving: a copy's media segments as Jellyfin
-keeps them (its providers', a plugin's), intro, outro (credits), recap,
-preview and commercial, are sent with `play` (MSFP video section 5.3).
-Viewing: a playback's markers replace the stand-in's media segments
-before Jellyfin hands the source over, under the plugin's segment
-provider "MSFP Federation" (Jellyfin lists only the segments of
-providers it knows; an owner can turn it off per library like any
-other), so clients offer to skip them.
-
-Kodi (Jellyfin for Kodi 2.2.0) syncs and plays these titles, but as
-live TV: the add-on treats every source that must be closed after play
-as a live channel, so there is no total time and no seeking, and one
-audio track. That rule is the add-on's (see DESIGN-NOTES, "Kodi").
-
-PGS subtitles, both ways. Serving: a copy's PGS tracks (inside the
-file, or an external `.sup`) are listed as picture tracks; a track is
-copied out once per playback by Jellyfin's ffmpeg (`-copyts`, the file's
-own times) and served in 2-minute parts by display set (MSFP video
-section 6.4). Viewing: the paired server's PGS tracks are fetched whole
-in the background when a playback starts, joined (each display set
-once), and written under the plugin's data folder for the playback's
-time (Jellyfin reads an external PGS track from disk only); Jellyfin
-burns them in, or sends them to a client that draws them. Asked in the
-first seconds of a playback, before the track is written, it may not
-show that time.
+Kodi (Jellyfin for Kodi) synced and played these titles as live TV
+before 0.11.0's plain-file way (see DESIGN-NOTES, "Kodi"); not tried
+since.
 
 ## Ed25519
 

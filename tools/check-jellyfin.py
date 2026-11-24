@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Checks the built plugin in a throwaway Jellyfin of a given image: that
 Jellyfin loads it (Active), that its services start (its page's API, its
-channel), and that Jellyfin's log holds no error of the plugin's.
+libraries), that what it relies on in Jellyfin is there (the hand-over's
+controllers and actions, the previews and extras lists), and that
+Jellyfin's log holds no error of the plugin's.
 
 usage: check-jellyfin.py IMAGE PLUGIN_DIR [PORT]
 The container is removed at the end, whatever happens."""
@@ -103,14 +105,28 @@ try:
             break
         time.sleep(5)
     expect("Films from paired servers" in names and "Series from paired servers" in names, "its two libraries are made")
-    # Its channel: registered (the pass made its item), but in no user's
-    # channel list or My Media, so no empty tile.
+    # No channel since 0.11.0: its titles are library items.
     st, features = call("GET", "/Channels/Features")
-    expect(st == 200 and any(f["Name"] == "Paired servers" for f in features), "its channel is registered")
-    st, channels = call("GET", "/Channels")
-    st2, views = call("GET", "/UserViews?userId=" + login["User"]["Id"])
-    expect(st == 200 and st2 == 200 and not any(c["Name"] == "Paired servers" for c in channels["Items"] + views["Items"]),
-           "its channel shows in no channel list nor My Media")
+    expect(st == 200 and not any(f["Name"] == "Paired servers" for f in features), "it registers no channel")
+
+    # What the hand-over and phase 7's previews and extras rest on in
+    # Jellyfin (its controllers and actions by name, the shapes clients
+    # read). Extras each with their own presentation key, so that
+    # Jellyfin's lists don't group them into one, can only be seen with a
+    # paired server's titles: checked live, not here.
+    for word in ["MediaInfoController", "GetPostedPlaybackInfo", "GetPlaybackInfo", "UniversalAudioController", "GetUniversalAudioStream"]:
+        found = docker("exec", name, "grep", "-c", "-a", word, "/jellyfin/Jellyfin.Api.dll", check=False).strip()
+        expect(found not in ("", "0"), "the hand-over filter's %s is in Jellyfin's API" % word)
+    st, spec = call("GET", "/api-docs/openapi.json")
+    ops = {op.get("operationId"): path for path, methods in (spec.get("paths", {}) if isinstance(spec, dict) else {}).items() for op in methods.values()}
+    expect(ops.get("GetPostedPlaybackInfo") == "/Items/{itemId}/PlaybackInfo" and ops.get("GetUniversalAudioStream") == "/Audio/{itemId}/universal",
+           "PlaybackInfo and the universal audio route where the filter expects them")
+    expect("GetSpecialFeatures" in ops and "GetLocalTrailers" in ops, "the special features and trailers lists the extras show in")
+    trickplay = (spec.get("components", {}).get("schemas", {}).get("BaseItemDto", {}).get("properties", {}).get("Trickplay", {})
+                 if isinstance(spec, dict) else {})
+    inner = trickplay.get("additionalProperties", {})
+    expect(isinstance(inner, dict) and inner.get("additionalProperties", {}).get("$ref", "").endswith("/TrickplayInfoDto"),
+           "an item's previews are listed by source ID, then width")
 
     errors = [l for l in docker("exec", name, "sh", "-c", "cat /config/log/log_*.log").splitlines()
               if ("[ERR]" in l or "[FTL]" in l) and ("Msfp" in l or "MSFP" in l)]

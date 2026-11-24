@@ -6,7 +6,9 @@ what the plugin assumed.
 
 Since 2026-11-19 the plugin is a host of msfp-dotnet, the MSFP engine for
 .NET, on MSFP version 1 (msfp-spec `9aa6166`), renumbered
-[version 0](https://github.com/msfp-io/msfp-spec/tree/main/spec/v0) on 2026-11-20: the protocol is the engine's, and gaps in it are
+[version 0](https://github.com/msfp-io/msfp-spec/tree/main/spec/v0) on 2026-11-20, and revised by proposals 16 and 17
+(copies described by their facts, the delivery named by the viewer's
+server) from 0.11.0: the protocol is the engine's, and gaps in it are
 msfp-dotnet's and msfp-go's to raise. What is left here is what a host
 inside a media server meets: the first section. The second is the plugin's
 own protocol code on version 0, before the engine, kept as history: every
@@ -69,13 +71,14 @@ own users are never refused. The pairings' `transcodes` apply as well.
 then on." How the owning server finds out is left to it; a host that asks
 its media server to copy the video can't always tell whether it did.
 
-**Assumed.** The plugin asks Jellyfin to copy the video only when the
-viewer's device plays its codec, HDR, height and bitrate, which is when
-Jellyfin copies. Since 2026-11-20 it also checks: while the remux
-starts, it reads the video encoder in Jellyfin's ffmpeg command for the
-playback; re-encoding, the playback counts as a transcode for the
-pairing and the server, and with none left it ends (see the last entry
-of this section for the reason it gives).
+**Assumed.** Until 0.11.0, the plugin read the video encoder in
+Jellyfin's ffmpeg command while a remux started, and counted a
+re-encoding remux as a transcode from then on. Since MSFP's revision
+(0.11.0) the viewer's server names the delivery, and the plugin makes
+exactly that or refuses it: Jellyfin's ffmpeg command line is checked
+against the order when it starts and at each restart, and a remux that
+would re-encode is stopped and refused (`delivery-refused`), so none
+runs as a transcode.
 
 ### core 11 and media 1: a prefix the discovery document can't announce
 
@@ -907,7 +910,7 @@ address, so the limit by network address becomes one limit for everyone,
 unless the server trusts the proxy's forwarded address.
 
 **Assumed.** The plugin takes the address Jellyfin gives the request,
-which follows Jellyfin's "known proxies" setting. The README says so.
+which follows Jellyfin's "known proxies" setting. TECHNICAL.md says so.
 
 ### Playback section 6: a remux found to re-encode, with no transcode left (2026-11-20, spec at 2ab01bf)
 

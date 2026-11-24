@@ -1,5 +1,5 @@
 # Checks every push and pull request: the build (warnings are errors), the
-# tests, the plugin as Jellyfin loads it (the four DLLs of build.yaml's
+# tests, the plugin as Jellyfin loads it (the DLLs of build.yaml's
 # artifacts), then that plugin in each Jellyfin version it supports
 # (jellyfin-check.yml). It builds in the .NET 10 SDK's own image, the same
 # one used locally (TECHNICAL.md, Building).

@@ -4,6 +4,69 @@ What changed in each release of MSFP Federation for Jellyfin, for the
 owners of the servers it runs on. Each release's notes on GitHub are its
 section here.
 
+## 0.11.0 (not released yet)
+
+On MSFP's revised version 0 (msfp-spec proposals 16 and 17, msfp-dotnet's
+revision): titles from paired servers are described, chosen and played
+as your own files are.
+
+### Before you update
+
+- **Pairings stop working until both sides update.** A server still on
+  0.10 or before (or on an Overfin or msfp-dotnet of the older draft)
+  can't be read by 0.11.0, nor read it: its entry on the plugin's page
+  says "Titles not read" and why. Your pairings, groups and settings are
+  kept; titles come back once both servers run 0.11.0 or later.
+- Titles from paired servers already on your server move out of the old
+  "Paired servers" channel once, at the first start: their IDs, watched
+  state, positions, favourites and dates are kept, and their names,
+  overviews and pictures are fetched again.
+
+### Added
+
+- Each version of a title you share is described to paired servers by
+  its file's facts (formats, every track, colour, chapters, skip markers),
+  read once from the file's headers with Jellyfin's ffprobe. **Import a
+  header read…** (This server) takes a read made for Overfin on the same
+  libraries instead of reading every file again.
+- A paired server's titles show their picture, audio and subtitle tracks
+  before anyone plays them, one version per copy, and get Jellyfin's
+  metadata like your own films and episodes.
+- Special features and trailers of paired servers' titles, under the
+  title they belong to. Their theme songs and videos with **Play paired
+  servers' theme songs and videos** (Settings), off by default.
+- Seek-bar previews of a paired server's title from its first play.
+- "Recently added" shows a paired server's title from the day your server
+  first saw it.
+- Series that TMDB doesn't know but Jellyfin places on TheTVDB are
+  shared, and, where you switch it on per server or group, titles neither
+  knows (their name, year and picture).
+- Per server and per group: downloads and scans by its viewers, 0 (none)
+  by default.
+- **Burn subtitles into the picture for paired servers** (Settings), off
+  by default.
+- The plugin page says why a paired server's titles couldn't be read, in
+  one line ("it didn't answer", "it runs an older draft of the protocol
+  and needs to update"...).
+- [SECURITY.md](SECURITY.md): the plugin's security rules, and what
+  paired servers learn.
+
+### Changed
+
+- Your viewers' plays of a paired server's title: the file is read as it
+  is, by byte ranges, and Jellyfin plays or converts it here as a local
+  file, so the paired server learns little of their devices. It converts
+  for you only when the file is above your pairing's bitrate cap, made of
+  several parts, or refused as a file.
+- Paired servers' plays here: what is made is exactly what was asked, by
+  Jellyfin's own transcoder, and checked; anything else is refused.
+- Films and episodes from paired servers are ordinary library items, no
+  longer in the plugin's channel.
+
+### Removed
+
+- Films in several files are no longer shared (until a later release).
+
 ## 0.10.1 (2026-11-21)
 
 Titles from paired servers behave more like your own: series count their

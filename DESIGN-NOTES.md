@@ -1,6 +1,11 @@
 # Design notes: showing peer titles in Jellyfin
 
-Notes only. Nothing here is built. The plugin reads paired peers' catalogs
+A journal, kept as written: the options weighed in 2026-11 and what was
+built at each step. Since 0.11.0 (MSFP's revision) much of it is
+superseded; the last section says what. How the plugin works today is in
+[TECHNICAL.md](TECHNICAL.md).
+
+The first sections were notes only, nothing built yet. The plugin reads paired peers' catalogs
 (`libraries` and `titles`), and the engine (msfp-dotnet) keeps them in the
 plugin's storage. How
 Jellyfin's users would then see and play those titles is still an open
@@ -344,3 +349,35 @@ anyone. Tried live on 12.2: two paired playbacks (direct, remux) shown as
 stop. Not seen on the remux's card: Jellyfin's transcode details.
 Learned on the way (remux check): Jellyfin makes no session for the
 plugin's API-key HLS requests; the job's ffmpeg command is read instead.
+
+## MSFP's revision, 0.11.0 (2026-11-23)
+
+MSFP's revised version 0 (msfp-spec proposals 16 and 17) describes each
+copy by its facts and has the viewer's server name the delivery. The
+viewer side was rebuilt on it (migration plan, phases 5 to 7); what that
+supersedes above:
+
+- **The channel.** Stand-ins are ordinary library items since 0.11.0:
+  Jellyfin fetched no metadata for a channel item that shows its sources
+  (needed for the decision engine below). A stand-in that plays is a
+  shortcut without a target, so that Jellyfin's trickplay and
+  chapter-image tasks leave it alone. Those made in the channel move out
+  once, keeping their IDs and users' data.
+- **The source opened at play, the relay, the probe through it.** Each
+  stand-in carries one source per copy from the catalog, with every
+  stream written as Jellyfin's own probe would. The play is decided at
+  PlaybackInfo by an MVC filter: the copy is read as a plain file behind a
+  per-play token, and Jellyfin direct plays, remuxes or converts it here
+  as a local file; the paired server's HLS (as a live stream, through
+  the relay) only where a plain file can't be had or shouldn't be.
+- **The audio switch filter.** Gone: with the plain file, Jellyfin
+  switches the file's own tracks; with HLS, another track is a new play.
+- **Previews from the next open.** The copy's layout is registered from
+  the catalog; the sheets are fetched at the first play's start.
+- **Kodi as live TV.** The add-on took sources that must be closed for
+  live channels; a plain-file play's source isn't one. Not tried with
+  Kodi since.
+- **Films in several files.** Not shared this release (the join is
+  unused).
+- **Watching a remux for re-encoding.** Replaced by the check of what
+  Jellyfin makes against the order, refused on a difference.
