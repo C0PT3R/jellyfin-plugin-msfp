@@ -14,7 +14,6 @@ using MediaBrowser.Model.Entities;
 using Msfp;
 using Msfp.Protocol;
 using MsfpVideo = Msfp.Protocol.Video;
-using Picture = Jellyfin.Plugin.Msfp.Federation.Picture;
 
 namespace Jellyfin.Plugin.Msfp.Catalog;
 
@@ -347,52 +346,5 @@ public sealed class JellyfinCatalogSource : ICatalogSource
 
             yield return new CatalogEntry(library, parent.ToString() + "/x/" + part, "extra") { Copies = copies, ExtraType = type };
         }
-    }
-
-    /// <summary>
-    /// A copy's picture (MSFP video section 3.2): its height, or a 16:9
-    /// picture's as wide when it is wider; its HDR formats.
-    /// </summary>
-    internal static Picture? PictureOf(MediaStream? video)
-    {
-        if (video?.Height is not > 0 || video.Width is not > 0)
-        {
-            return null;
-        }
-
-        var height = Math.Max(video.Height.Value, (int)((long)video.Width.Value * 9 / 16));
-        var hdr = HdrOf(video.VideoRangeType.ToString(), video.ColorTransfer);
-        return new Picture { Height = height, Hdr = hdr.Count > 0 ? hdr : null };
-    }
-
-    /// <summary>
-    /// The HDR formats of Jellyfin's range type ("DOVIWithHDR10" gives dv and
-    /// hdr10); a Dolby Vision Jellyfin finds invalid is its base layer, by its
-    /// transfer.
-    /// </summary>
-    internal static List<string> HdrOf(string rangeType, string? transfer)
-    {
-        if (rangeType == "DOVIInvalid")
-        {
-            rangeType = transfer switch { "smpte2084" => "HDR10", "arib-std-b67" => "HLG", _ => "SDR" };
-        }
-
-        var hdr = new List<string>();
-        if (rangeType.StartsWith("DOVI", StringComparison.Ordinal))
-        {
-            hdr.Add("dv");
-        }
-
-        if (rangeType.Contains("HDR10", StringComparison.Ordinal))
-        {
-            hdr.Add("hdr10");
-        }
-
-        if (rangeType.Contains("HLG", StringComparison.Ordinal))
-        {
-            hdr.Add("hlg");
-        }
-
-        return hdr;
     }
 }

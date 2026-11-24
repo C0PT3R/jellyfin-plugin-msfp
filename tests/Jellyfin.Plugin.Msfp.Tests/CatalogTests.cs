@@ -236,36 +236,6 @@ public class CatalogTests
     [InlineData("livetv", "")]
     public void Kinds(string? collectionType, string kind) => Assert.Equal(kind, JellyfinCatalogSource.Kind(collectionType));
 
-    [Fact]
-    public void PicturesAsVideoSaysThem()
-    {
-        // Wider than 16:9: a 16:9 picture's as wide (video section 3.2).
-        var scope = JellyfinCatalogSource.PictureOf(new MediaStream { Type = MediaStreamType.Video, Width = 3840, Height = 1606 });
-        Assert.Equal(2160, scope!.Height);
-        Assert.Null(scope.Hdr);
-        // A Dolby Vision Jellyfin finds invalid plays as its base layer.
-        var invalid = JellyfinCatalogSource.PictureOf(new MediaStream { Type = MediaStreamType.Video, Width = 1920, Height = 1080, BitDepth = 10, ColorTransfer = "smpte2084", ColorPrimaries = "bt2020", DvVersionMajor = 1, DvProfile = 8, RpuPresentFlag = 1, BlPresentFlag = 1, DvBlSignalCompatibilityId = 1 });
-        Assert.Equal(["hdr10"], invalid!.Hdr);
-        var hlg = JellyfinCatalogSource.PictureOf(new MediaStream { Type = MediaStreamType.Video, Width = 1920, Height = 1080, BitDepth = 10, ColorTransfer = "arib-std-b67", ColorPrimaries = "bt2020" });
-        Assert.Equal(["hlg"], hlg!.Hdr);
-        Assert.Null(JellyfinCatalogSource.PictureOf(new MediaStream { Type = MediaStreamType.Video }));
-        Assert.Null(JellyfinCatalogSource.PictureOf(null));
-    }
-
-    [Theory]
-    [InlineData("SDR", null, new string[0])]
-    [InlineData("HDR10", null, new[] { "hdr10" })]
-    [InlineData("HDR10Plus", null, new[] { "hdr10" })]
-    [InlineData("HLG", null, new[] { "hlg" })]
-    [InlineData("DOVI", null, new[] { "dv" })]
-    [InlineData("DOVIWithHDR10", null, new[] { "dv", "hdr10" })]
-    [InlineData("DOVIWithHLG", null, new[] { "dv", "hlg" })]
-    [InlineData("DOVIWithSDR", null, new[] { "dv" })]
-    [InlineData("DOVIInvalid", "smpte2084", new[] { "hdr10" })]
-    [InlineData("DOVIInvalid", "bt709", new string[0])]
-    public void HdrFromJellyfinsRangeTypes(string range, string? transfer, string[] hdr) =>
-        Assert.Equal(hdr, JellyfinCatalogSource.HdrOf(range, transfer));
-
     [Theory]
     [InlineData("", "")]
     [InlineData(null, "")]
