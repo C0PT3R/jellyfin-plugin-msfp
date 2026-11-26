@@ -43,6 +43,33 @@ public class PlaybackTests
         Assert.Equal("#EXTM3U\n#EXTINF:2.5,\nseg0.ts\n", media);
     }
 
+    // A segment's duration passes alone, as MSFP's check reads it: its
+    // title never, nor, without a comma, what follows the colon; one that
+    // isn't a number refuses the playlist; another tag holding an address
+    // is dropped (Overfin's own rewrite does the same).
+    [Theory]
+    [InlineData("#EXTINF:6.000000, nodesc", "#EXTINF:6.000000,")]
+    [InlineData("#EXTINF:6", "#EXTINF:6,")]
+    [InlineData("#EXTINF:4.5,uri=https://x.example.org", "#EXTINF:4.5,")]
+    public void ExtinfDurationOnly(string line, string want)
+    {
+        var names = new ConcurrentDictionary<string, string>();
+        var media = Hls.Media("#EXTM3U\n#EXT-X-VERSION:https://x.example.org\n" + line + "\nhls1/main/0.ts?a=b\n", names);
+        Assert.Equal("#EXTM3U\n" + want + "\nseg0.ts\n", media);
+    }
+
+    [Theory]
+    [InlineData("#EXTINF://")]
+    [InlineData("#EXTINF:")]
+    [InlineData("#EXTINF:-1,")]
+    [InlineData("#EXTINF:1e3,")]
+    public void ExtinfNotANumberIsRefused(string line)
+    {
+        var names = new ConcurrentDictionary<string, string>();
+        var e = Assert.Throws<MsfpException>(() => Hls.Media("#EXTM3U\n" + line + "\nhls1/main/0.ts?a=b\n", names));
+        Assert.Equal(MsfpError.NotFound, e.Code);
+    }
+
     [Theory]
     [InlineData("/m/Film.mp4", "mp4", "video/mp4")]
     [InlineData("/m/Film.MKV", "mkv", "video/x-matroska")]

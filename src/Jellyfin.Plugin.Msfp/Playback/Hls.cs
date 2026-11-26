@@ -22,6 +22,11 @@ internal static partial class Hls
     [GeneratedRegex(@"URI=""([^""]*)""", RegexOptions.IgnoreCase)]
     private static partial Regex UriAttribute();
 
+    // A segment's duration, as MSFP's check of a media playlist reads it:
+    // a number, its title after a comma, if any.
+    [GeneratedRegex(@"^#EXTINF:([0-9]+(?:\.[0-9]+)?)(?:,.*)?\z")]
+    private static partial Regex Extinf();
+
     // A media playlist: init.<ext> and seg<n>.<ext>, durations kept, titles not.
     internal static string Media(string text, ConcurrentDictionary<string, string> names)
     {
@@ -44,16 +49,27 @@ internal static partial class Hls
             }
             else if (line.StartsWith('#'))
             {
-                if (line.Contains("URI=", StringComparison.OrdinalIgnoreCase))
+                if (line.StartsWith("#EXTINF:", StringComparison.Ordinal))
+                {
+                    // The duration alone: without a comma, all after the
+                    // colon would be title. One that isn't a number: a
+                    // playlist this server can't vouch for.
+                    var d = Extinf().Match(line);
+                    if (!d.Success)
+                    {
+                        throw new MsfpException(MsfpError.NotFound);
+                    }
+
+                    sb.Append("#EXTINF:").Append(d.Groups[1].Value).Append(",\n");
+                    continue;
+                }
+
+                if (line.Contains("URI=", StringComparison.OrdinalIgnoreCase) || line.Contains("://", StringComparison.Ordinal))
                 {
                     continue;
                 }
 
-                if (line.StartsWith("#EXTINF:", StringComparison.Ordinal))
-                {
-                    sb.Append(line.AsSpan(0, line.IndexOf(',', StringComparison.Ordinal) is var c and >= 0 ? c : line.Length)).Append(",\n");
-                }
-                else if (keep.Any(k => line.StartsWith(k, StringComparison.Ordinal))
+                if (keep.Any(k => line.StartsWith(k, StringComparison.Ordinal))
                     || line is "#EXT-X-INDEPENDENT-SEGMENTS" or "#EXT-X-DISCONTINUITY" or "#EXT-X-ENDLIST")
                 {
                     sb.Append(line).Append('\n');
