@@ -11,6 +11,10 @@
     <!-- With their runtime assets here: the tests run outside Jellyfin. -->
     <PackageReference Include="Jellyfin.Controller" Version="12.2.0" />
     <PackageReference Include="Jellyfin.Model" Version="12.2.0" />
+    <!-- The plugin's image library, which Jellyfin ships: here with its
+         native library, for the local images' tests. -->
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.4" />
   </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
